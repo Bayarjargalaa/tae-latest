@@ -1,0 +1,27 @@
+{% extends 'base.html' %}
+
+{% block title %}Бүртгэл устгах - Euro Foods{% endblock %}
+
+{% block hide_mobile_menu %}hidden{% endblock %}
+
+{% block content %}
+<div class="flex min-h-screen bg-gray-50">
+    {% include 'shop/_sidebar.html' with active_page='meal_attendance' %}
+
+    <main class="flex-1 p-2 lg:p-8 lg:ml-0">
+        <div class="bg-white rounded-lg shadow p-6 max-w-lg">
+            <h1 class="text-xl font-bold text-gray-900 mb-4">Бүртгэл устгах</h1>
+            <p class="text-gray-600 mb-6">
+                <strong>{{ attendance.date }}</strong> өдрийн хоол идэх нэрсийн бүртгэлийг устгахдаа итгэлтэй байна уу?
+            </p>
+            <form method="post">
+                {% csrf_token %}
+                <button type="submit" class="bg-red-600 text-white px-6 py-2 rounded-lg hover:bg-red-700 transition">
+                    Тийм, устгах
+                </button>
+                <a href="{% url 'shop:meal_attendance_list' %}" class="ml-3 text-gray-600 hover:underline">Болих</a>
+            </form>
+        </div>
+    </main>
+</div>
+{% endblock %}

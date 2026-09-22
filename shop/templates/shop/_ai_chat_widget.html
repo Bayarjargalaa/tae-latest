@@ -1,0 +1,92 @@
+<!-- AI Chat Widget - бүх хуудсан дээр баруун доод буланд харагдана -->
+<div id="ai-chat-widget" class="fixed bottom-4 right-4 z-50">
+    <button id="ai-chat-toggle" type="button"
+            class="bg-primary text-white w-14 h-14 rounded-full shadow-lg flex items-center justify-center text-2xl hover:bg-green-700 transition">
+        💬
+    </button>
+
+    <div id="ai-chat-panel" class="hidden flex flex-col fixed bottom-20 right-4 w-80 sm:w-96 h-[28rem] bg-white rounded-lg shadow-2xl border border-gray-200 overflow-hidden">
+        <div class="bg-primary text-white px-4 py-3 flex items-center justify-between">
+            <span class="font-medium">🤖 AI Туслах</span>
+            <button id="ai-chat-close" type="button" class="text-white/80 hover:text-white">✕</button>
+        </div>
+
+        <div id="ai-chat-messages" class="flex-1 overflow-y-auto p-3 space-y-2 text-sm bg-gray-50">
+            <div class="bg-white rounded-lg px-3 py-2 shadow-sm max-w-[85%]">
+                Сайн байна уу! Танд юугаар туслах вэ?
+            </div>
+        </div>
+
+        <form id="ai-chat-form" class="flex items-center gap-2 border-t p-2">
+            <input type="text" id="ai-chat-input" autocomplete="off" placeholder="Асуултаа бичнэ үү..."
+                   class="flex-1 border border-gray-300 rounded-full px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary">
+            <button type="submit" class="bg-primary text-white w-9 h-9 rounded-full flex items-center justify-center hover:bg-green-700 transition">
+                ➤
+            </button>
+        </form>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const toggleBtn = document.getElementById('ai-chat-toggle');
+    const closeBtn = document.getElementById('ai-chat-close');
+    const panel = document.getElementById('ai-chat-panel');
+    const form = document.getElementById('ai-chat-form');
+    const input = document.getElementById('ai-chat-input');
+    const messages = document.getElementById('ai-chat-messages');
+
+    function getCookie(name) {
+        const match = document.cookie.match('(^|;)\\s*' + name + '\\s*=\\s*([^;]+)');
+        return match ? decodeURIComponent(match[2]) : null;
+    }
+
+    function addMessage(text, from) {
+        const bubble = document.createElement('div');
+        bubble.className = from === 'user'
+            ? 'bg-primary text-white rounded-lg px-3 py-2 shadow-sm max-w-[85%] ml-auto'
+            : 'bg-white rounded-lg px-3 py-2 shadow-sm max-w-[85%]';
+        bubble.textContent = text;
+        messages.appendChild(bubble);
+        messages.scrollTop = messages.scrollHeight;
+    }
+
+    toggleBtn.addEventListener('click', function () {
+        panel.classList.toggle('hidden');
+        if (!panel.classList.contains('hidden')) input.focus();
+    });
+    closeBtn.addEventListener('click', function () {
+        panel.classList.add('hidden');
+    });
+
+    form.addEventListener('submit', function (e) {
+        e.preventDefault();
+        const message = input.value.trim();
+        if (!message) return;
+
+        addMessage(message, 'user');
+        input.value = '';
+        input.disabled = true;
+
+        fetch('{% url "shop:ai_chat_message" %}', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCookie('csrftoken') || '{{ csrf_token }}',
+            },
+            body: JSON.stringify({ message: message }),
+        })
+            .then(function (res) { return res.json(); })
+            .then(function (data) {
+                addMessage(data.reply || data.error || 'Уучлаарай, хариу ирсэнгүй.', 'bot');
+            })
+            .catch(function () {
+                addMessage('Сүлжээний алдаа гарлаа. Дахин оролдоно уу.', 'bot');
+            })
+            .finally(function () {
+                input.disabled = false;
+                input.focus();
+            });
+    });
+});
+</script>

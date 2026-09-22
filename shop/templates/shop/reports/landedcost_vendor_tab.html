@@ -1,0 +1,67 @@
+{% load humanize %}
+<!-- Харилцагчаар (Vendor) Tab -->
+<div class="bg-white rounded-lg shadow p-6">
+    <h2 class="text-xl font-bold mb-4">Харилцагчаар задалсан (Vendor)</h2>
+    
+    <!-- Шүүлт -->
+    <form method="GET" class="mb-6">
+        <input type="hidden" name="tab" value="by_vendor">
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+                <label class="block text-sm font-medium mb-2">Харилцагч</label>
+                <select name="vendor" class="w-full border border-gray-300 rounded-lg px-4 py-2">
+                    <option value="">Бүгд</option>
+                    {% for vendor in vendors %}
+                    <option value="{{ vendor }}" {% if selected_vendor == vendor %}selected{% endif %}>{{ vendor }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <label class="block text-sm font-medium mb-2">Бараа</label>
+                <select name="item" class="w-full border border-gray-300 rounded-lg px-4 py-2">
+                    <option value="">Бүгд</option>
+                    {% for item in items %}
+                    <option value="{{ item.name }}" {% if selected_item == item.name %}selected{% endif %}>{{ item.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="flex items-end">
+                <button type="submit" class="w-full bg-primary text-white px-6 py-2 rounded-lg hover:bg-green-700 transition">
+                    Шүүх
+                </button>
+            </div>
+        </div>
+    </form>
+    
+    <!-- Table -->
+    <div class="overflow-x-auto">
+        <table id="vendorTable" class="w-full">
+            <thead class="bg-gray-50">
+                <tr>
+                    <th onclick="sortTable('vendorTable', 0, false)" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100">Харилцагч</th>
+                    <th onclick="sortTable('vendorTable', 1, true)" class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100">Тоо ширхэг</th>
+                    <th onclick="sortTable('vendorTable', 2, true)" class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100">Үнэ (валют)</th>
+                    <th onclick="sortTable('vendorTable', 3, true)" class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100">Дүн (валют)</th>
+                    <th onclick="sortTable('vendorTable', 4, true)" class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100">Захиалга</th>
+                    <th onclick="sortTable('vendorTable', 5, true)" class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100">Барааны төрөл</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for vendor in vendor_analysis %}
+                <tr class="hover:bg-gray-50">
+                    <td class="px-6 py-4 text-gray-900">{{ vendor.vendorname }}</td>
+                    <td class="px-6 py-4 text-right text-gray-700">{{ vendor.total_qty|floatformat:0|intcomma }}</td>
+                    <td class="px-6 py-4 text-right text-blue-600 font-bold">{{ vendor.total_price|floatformat:2|intcomma }}</td>
+                    <td class="px-6 py-4 text-right text-blue-600 font-bold">{{ vendor.total_amount|floatformat:2|intcomma }}</td>
+                    <td class="px-6 py-4 text-right">{{ vendor.orders|intcomma }}</td>
+                    <td class="px-6 py-4 text-right text-blue-600">{{ vendor.items|intcomma }}</td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="6" class="px-6 py-8 text-center text-gray-500">Өгөгдөл байхгүй</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>

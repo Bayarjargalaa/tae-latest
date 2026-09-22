@@ -1,0 +1,359 @@
+{% extends 'base.html' %}
+{% load humanize %}
+{% load product_filters %}
+
+{% block title %}Барааны үлдэгдэл - Euro Foods{% endblock %}
+
+{% block hide_mobile_menu %}hidden{% endblock %}
+
+{% block content %}
+<div class="flex min-h-screen bg-gray-50">
+    <!-- Mobile-responsive Sidebar -->
+    {% include 'shop/_sidebar.html' with active_page='inventory' %}
+
+    <!-- Main Content -->
+    <main class="flex-1 p-2 lg:p-8 lg:ml-0">
+        <div class="mb-4 lg:mb-6">
+            <h1 class="text-2xl lg:text-3xl font-bold text-gray-900">
+                📦 Барааны үлдэгдэл
+                {% if show_stock_only == 'true' %}
+                <span class="text-lg font-normal text-green-600 ml-2">(Үлдэгдэлтэй бараа)</span>
+                {% endif %}
+                {% if jijig_min_qty == 'true' %}
+                <span class="text-lg font-normal text-blue-600 ml-2">(Агуулах жижиг 10+)</span>
+                {% endif %}
+            </h1>
+            <p class="text-gray-600 mt-2">
+                Агуулахын бараа материалын үлдэгдэл
+                {% if selected_warehouse or selected_product or selected_brand %}
+                (Шүүлт: 
+                {% if selected_warehouse %}<strong>{{ selected_warehouse }}</strong>{% endif %}
+                {% if selected_product %}{% if selected_warehouse %} • {% endif %}<strong>{{ selected_product }}</strong>{% endif %}
+                {% if selected_brand %}{% if selected_warehouse or selected_product %} • {% endif %}<strong>{{ selected_brand }}</strong>{% endif %}
+                )
+                {% endif %}
+                {% if show_stock_only != 'true' %}
+                <span class="text-sm text-orange-600 font-medium">• Бүгдийг харуулж байна (үлдэгдэл 0-тэй ч багтана)</span>
+                {% endif %}
+            </p>
+            {% if last_updated %}
+            <p class="text-sm text-gray-500 mt-1">
+                🕒 Сүүлд шинэчилсэн: {{ last_updated|date:"Y-m-d H:i" }} (2 цаг тутамд автоматаар шинэчлэгддэг)
+            </p>
+            {% endif %}
+        </div>
+
+        <!-- Шүүлт -->
+        <div class="bg-white rounded-lg shadow p-4 lg:p-6 mb-4 lg:mb-6">
+            <h2 class="text-lg lg:text-xl font-bold mb-3 lg:mb-4">Шүүлт</h2>
+            
+            <form method="GET" class="space-y-3 lg:space-y-4">
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Агуулах сонгох</label>
+                        <select id="warehouse-select" name="warehouse" class="w-full border border-gray-300 rounded-lg px-4 py-2">
+                            <option value="">Бүх агуулах</option>
+                            {% for warehouse in warehouses_list %}
+                            <option value="{{ warehouse }}" {% if selected_warehouse == warehouse %}selected{% endif %}>
+                                {{ warehouse }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Бараа сонгох</label>
+                        <select id="product-select-inv" name="product" class="w-full border border-gray-300 rounded-lg px-4 py-2">
+                            <option value="">Бүх бараа</option>
+                            {% for product in products_list %}
+                            <option value="{{ product.name }}" {% if selected_product == product.name %}selected{% endif %}>
+                                {{ product.name }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Брэнд</label>
+                        <select id="brand-select-inv" name="brand" class="w-full border border-gray-300 rounded-lg px-4 py-2">
+                            <option value="">Б&#1199;х брэнд</option>
+                            {% for brand in brands_list %}
+                            <option value="{{ brand }}" {% if selected_brand == brand %}selected{% endif %}>
+                                {{ brand }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    
+                    <div class="flex flex-col sm:flex-row items-stretch sm:items-end gap-2">
+                        <button type="submit" class="bg-primary text-white px-4 lg:px-6 py-2 rounded-lg hover:bg-green-700 transition flex-1 text-sm lg:text-base">
+                            🔍 Хайх
+                        </button>
+                        <a href="{% url 'shop:inventory_report' %}?stock_only=true" 
+                           class="px-4 lg:px-6 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition text-center text-sm lg:text-base">
+                            Цэвэрлэх
+                        </a>
+                    </div>
+                </div>
+                
+                <!-- Үлдэгдэлтэй барааг л харуулах checkbox -->
+                <div class="flex flex-col gap-2 pt-2 border-t">
+                    <div class="flex items-center gap-3">
+                        <input type="checkbox" 
+                               id="stock-only-checkbox" 
+                               name="stock_only" 
+                               value="true" 
+                               {% if show_stock_only == 'true' %}checked{% endif %}
+                               onchange="this.form.submit()"
+                               class="w-4 h-4 text-primary border-gray-300 rounded focus:ring-primary">
+                        <label for="stock-only-checkbox" class="text-sm font-medium text-gray-700 cursor-pointer">
+                            📦 Үлдэгдэлтэй барааг л харуулах (Үлдэгдэл &gt; 0)
+                        </label>
+                        {% if show_stock_only == 'true' %}
+                        <span class="text-xs text-green-600 font-medium">Идэвхтэй ✓</span>
+                        {% else %}
+                        <span class="text-xs text-gray-500">Бүгдийг харуулж байна</span>
+                        {% endif %}
+                    </div>
+                    
+                    <div class="flex items-center gap-3">
+                        <input type="checkbox" 
+                               id="jijig-min-checkbox" 
+                               name="jijig_min" 
+                               value="true" 
+                               {% if jijig_min_qty == 'true' %}checked{% endif %}
+                               onchange="this.form.submit()"
+                               class="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500">
+                        <label for="jijig-min-checkbox" class="text-sm font-medium text-gray-700 cursor-pointer">
+                            🏢 Агуулах жижигт 10+ үлдэгдэлтэй бараа
+                        </label>
+                        {% if jijig_min_qty == 'true' %}
+                        <span class="text-xs text-blue-600 font-medium">Идэвхтэй ✓</span>
+                        {% else %}
+                        <span class="text-xs text-gray-500">Бүх үлдэгдэл</span>
+                        {% endif %}
+                    </div>
+                </div>
+            </form>
+        </div>
+
+        <!-- Үр дүн болон хуудаслалт -->
+        <div class="bg-white rounded-lg shadow p-3 lg:p-4 mb-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+            <p class="text-sm lg:text-base text-gray-600">
+                Нийт <strong>{{ total_items|intcomma }}</strong> бараа
+                {% if jijig_min_qty == 'true' %}
+                <span class="text-blue-600 font-medium">(Агуулах жижиг ≥10)</span>
+                {% endif %}
+                • Хуудас {{ page_obj.number }} / {{ page_obj.paginator.num_pages }}
+            </p>
+            {% if page_obj.has_other_pages %}
+            <div class="flex gap-2 text-sm lg:text-base">
+                {% if page_obj.has_previous %}
+                <a href="?page={{ page_obj.previous_page_number }}{% if selected_warehouse %}&warehouse={{ selected_warehouse }}{% endif %}{% if selected_product %}&product={{ selected_product }}{% endif %}{% if selected_brand %}&brand={{ selected_brand }}{% endif %}&stock_only={{ show_stock_only }}&jijig_min={{ jijig_min_qty }}" 
+                   class="px-3 lg:px-4 py-2 bg-primary text-white rounded-lg hover:bg-green-700 transition">
+                    ◀ <span class="hidden sm:inline">Өмнөх</span>
+                </a>
+                {% endif %}
+                <span class="px-3 lg:px-4 py-2 bg-gray-100 rounded-lg">
+                    {{ page_obj.number }} / {{ page_obj.paginator.num_pages }}
+                </span>
+                {% if page_obj.has_next %}
+                <a href="?page={{ page_obj.next_page_number }}{% if selected_warehouse %}&warehouse={{ selected_warehouse }}{% endif %}{% if selected_product %}&product={{ selected_product }}{% endif %}{% if selected_brand %}&brand={{ selected_brand }}{% endif %}&stock_only={{ show_stock_only }}&jijig_min={{ jijig_min_qty }}" 
+                   class="px-3 lg:px-4 py-2 bg-primary text-white rounded-lg hover:bg-green-700 transition">
+                    <span class="hidden sm:inline">Дараах</span> ▶
+                </a>
+                {% endif %}
+            </div>
+            {% endif %}
+        </div>
+
+        <!-- Өгөгдлийн хүснэгт -->
+        <div class="bg-white rounded-lg shadow overflow-hidden">
+            <div class="overflow-x-auto">
+                <table id="inventoryTable" class="w-full text-sm lg:text-base" data-sort-order="desc">
+                    <thead class="bg-gray-50 border-b">
+                        <tr>
+                            <th onclick="sortTable('inventoryTable', 0, false)" class="px-2 lg:px-4 py-2 lg:py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100 sticky left-0 bg-gray-50">Барааны нэр</th>
+                            <th onclick="sortTable('inventoryTable', 1, false)" class="px-2 lg:px-4 py-2 lg:py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100">Брэнд</th>
+                            {% for warehouse in target_warehouses %}
+                            <th onclick="sortTable('inventoryTable', {{ forloop.counter|add:1 }}, true)" class="px-2 lg:px-4 py-2 lg:py-3 text-right text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100">
+                                <span class="hidden lg:inline">{{ warehouse|slice:"8:" }}</span>
+                                <span class="lg:hidden">{{ warehouse|slice:"8:12" }}</span>
+                            </th>
+                            {% endfor %}
+                            <th onclick="sortTable('inventoryTable', {{ target_warehouses|length|add:2 }}, true)" class="px-2 lg:px-4 py-2 lg:py-3 text-right text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100 bg-yellow-50">
+                                <span class="hidden sm:inline">Нийт үлдэгдэл</span>
+                                <span class="sm:hidden">Нийт</span>
+                            </th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-200">
+                        {% for item in inventory_data %}
+                        <tr class="{% if item.total_qty > 0 %}hover:bg-gray-50{% else %}bg-red-50{% endif %}">
+                            <td class="px-2 lg:px-4 py-2 lg:py-3 text-xs lg:text-sm text-gray-900 sticky left-0 bg-white">
+                                <div class="max-w-xs lg:max-w-none truncate">{{ item.itemname }}</div>
+                            </td>
+                            <td class="px-2 lg:px-4 py-2 lg:py-3 text-xs lg:text-sm text-gray-600">
+                                <div class="max-w-[100px] lg:max-w-none truncate">{{ item.brandname }}</div>
+                            </td>
+                            {% for warehouse in target_warehouses %}
+                            <td class="px-2 lg:px-4 py-2 lg:py-3 text-xs lg:text-sm text-right">
+                                {% with wh_data=item.warehouses|get_item:warehouse %}
+                                    {% if wh_data %}
+                                        <span class="{% if wh_data.endqty > 0 %}text-green-600 font-medium{% else %}text-gray-400{% endif %}">
+                                            {{ wh_data.endqty|floatformat:0|intcomma }}
+                                        </span>
+                                        <span class="text-[10px] lg:text-xs text-gray-400 block">{{ wh_data.date|date:"m/d" }}</span>
+                                    {% else %}
+                                        <span class="text-gray-300">-</span>
+                                    {% endif %}
+                                {% endwith %}
+                            </td>
+                            {% endfor %}
+                            <td class="px-2 lg:px-4 py-2 lg:py-3 text-xs lg:text-sm text-right font-bold bg-yellow-50">
+                                <span class="{% if item.total_qty > 0 %}text-primary{% else %}text-red-600{% endif %}">
+                                    {{ item.total_qty|floatformat:0|intcomma }}
+                                </span>
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="{{ target_warehouses|length|add:3 }}" class="px-6 py-8 text-center text-gray-500">
+                                🔍 Сонгосон шүүлтээр өгөгдөл олдсонгүй.
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Доод хуудаслалт -->
+        {% if page_obj.has_other_pages %}
+        <div class="bg-white rounded-lg shadow p-4 mt-4 flex justify-center">
+            <div class="flex gap-2 items-center">
+                {% if page_obj.has_previous %}
+                <a href="?page=1{% if selected_warehouse %}&warehouse={{ selected_warehouse }}{% endif %}{% if selected_product %}&product={{ selected_product }}{% endif %}{% if selected_brand %}&brand={{ selected_brand }}{% endif %}&stock_only={{ show_stock_only }}" 
+                   class="px-3 py-2 bg-gray-100 rounded hover:bg-gray-200 transition">
+                    ⏮ Эхлэл
+                </a>
+                <a href="?page={{ page_obj.previous_page_number }}{% if selected_warehouse %}&warehouse={{ selected_warehouse }}{% endif %}{% if selected_product %}&product={{ selected_product }}{% endif %}{% if selected_brand %}&brand={{ selected_brand }}{% endif %}&stock_only={{ show_stock_only }}" 
+                   class="px-4 py-2 bg-primary text-white rounded-lg hover:bg-green-700 transition">
+                    ◀ Өмнөх
+                </a>
+                {% endif %}
+                
+                <span class="px-4 py-2 text-gray-700 font-medium">
+                    Хуудас {{ page_obj.number }} / {{ page_obj.paginator.num_pages }}
+                </span>
+                
+                {% if page_obj.has_next %}
+                <a href="?page={{ page_obj.next_page_number }}{% if selected_warehouse %}&warehouse={{ selected_warehouse }}{% endif %}{% if selected_product %}&product={{ selected_product }}{% endif %}{% if selected_brand %}&brand={{ selected_brand }}{% endif %}&stock_only={{ show_stock_only }}" 
+                   class="px-4 py-2 bg-primary text-white rounded-lg hover:bg-green-700 transition">
+                    Дараах ▶
+                </a>
+                <a href="?page={{ page_obj.paginator.num_pages }}{% if selected_warehouse %}&warehouse={{ selected_warehouse }}{% endif %}{% if selected_product %}&product={{ selected_product }}{% endif %}{% if selected_brand %}&brand={{ selected_brand }}{% endif %}&stock_only={{ show_stock_only }}" 
+                   class="px-3 py-2 bg-gray-100 rounded hover:bg-gray-200 transition">
+                    Төгсгөл ⏭
+                </a>
+                {% endif %}
+            </div>
+        </div>
+        {% endif %}
+        
+    </main>
+</div>
+
+<script>
+// Table sorting functionality
+function sortTable(tableId, columnIndex, isNumeric = false) {
+    const table = document.getElementById(tableId);
+    if (!table) return;
+    
+    const tbody = table.querySelector('tbody');
+    const rows = Array.from(tbody.querySelectorAll('tr:not(.hidden)'));
+    
+    const currentOrder = table.dataset.sortOrder || 'asc';
+    const newOrder = currentOrder === 'asc' ? 'desc' : 'asc';
+    table.dataset.sortOrder = newOrder;
+    
+    rows.sort((a, b) => {
+        const aCell = a.cells[columnIndex];
+        const bCell = b.cells[columnIndex];
+        
+        if (!aCell || !bCell) return 0;
+        
+        let aVal = aCell.textContent.trim();
+        let bVal = bCell.textContent.trim();
+        
+        if (isNumeric) {
+            aVal = parseFloat(aVal.replace(/[,₮-]/g, '')) || 0;
+            bVal = parseFloat(bVal.replace(/[,₮-]/g, '')) || 0;
+            return newOrder === 'asc' ? aVal - bVal : bVal - aVal;
+        } else {
+            return newOrder === 'asc' 
+                ? aVal.localeCompare(bVal, 'mn') 
+                : bVal.localeCompare(aVal, 'mn');
+        }
+    });
+    
+    rows.forEach(row => tbody.appendChild(row));
+    
+    const headers = table.querySelectorAll('th[onclick]');
+    headers.forEach(th => {
+        th.innerHTML = th.innerHTML.replace(/[▲▼]/g, '');
+    });
+    
+    const currentHeader = table.querySelectorAll('th')[columnIndex];
+    if (currentHeader) {
+        currentHeader.innerHTML += newOrder === 'asc' ? ' ▲' : ' ▼';
+    }
+}
+
+// Choices.js initialization
+document.addEventListener('DOMContentLoaded', function() {
+    const warehouseSelect = document.getElementById('warehouse-select');
+    const productSelect = document.getElementById('product-select-inv');
+    const brandSelect = document.getElementById('brand-select-inv');
+    
+    if (warehouseSelect) {
+        new Choices(warehouseSelect, {
+            searchEnabled: true,
+            searchPlaceholderValue: 'Хайх...',
+            noResultsText: 'Илэрц олдсонгүй',
+            itemSelectText: 'Сонгох',
+            removeItemButton: false,
+            shouldSort: false,
+            placeholder: true,
+            placeholderValue: 'Бүх агуулах'
+        });
+    }
+    
+    if (productSelect) {
+        new Choices(productSelect, {
+            searchEnabled: true,
+            searchPlaceholderValue: 'Хайх...',
+            noResultsText: 'Илэрц олдсонгүй',
+            itemSelectText: 'Сонгох',
+            removeItemButton: false,
+            shouldSort: false,
+            placeholder: true,
+            placeholderValue: 'Бүх бараа'
+        });
+    }
+    
+    if (brandSelect) {
+        new Choices(brandSelect, {
+            searchEnabled: true,
+            searchPlaceholderValue: 'Хайх...',
+            noResultsText: 'Илэрц олдсонгүй',
+            itemSelectText: 'Сонгох',
+            removeItemButton: false,
+            shouldSort: false,
+            placeholder: true,
+            placeholderValue: 'Бүх брэнд'
+        });
+    }
+});
+</script>
+{% endblock %}

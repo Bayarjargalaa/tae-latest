@@ -1,0 +1,404 @@
+{% extends 'base.html' %}
+{% load humanize %}
+
+{% block title %}{% if attendance %}Хоол идэх нэрс засах{% else %}Шинэ бүртгэл{% endif %} - Euro Foods{% endblock %}
+
+{% block hide_mobile_menu %}hidden{% endblock %}
+
+{% block extra_css %}
+<style>
+@media print {
+    @page { size: A4; margin: 8mm; }
+
+    #sidebar, #mobile-menu-button, #sidebar-overlay, header, footer, .no-print, .print-hide-empty { display: none !important; }
+    html, body { height: auto !important; }
+    main { margin: 0 !important; padding: 0 !important; }
+    body { background: white !important; font-size: 10px !important; }
+    .print-signature-col { display: table-cell !important; }
+    .print-only-date { display: block !important; }
+
+    /* Бүх хэвлэгдэх блокын зай/фонтыг нягтруулж A4 хуудсанд багтаана */
+    main, main * { box-shadow: none !important; }
+    .print-area, main form, main .bg-white { padding: 3px !important; margin-bottom: 4px !important; }
+    main h1, main h2, main h3 { font-size: 12px !important; margin: 0 0 3px 0 !important; }
+    main p { margin: 0 !important; }
+
+    /* Хоолнууд (1-р/2-р хоол, хачир) хэвлэхэд үргэлж нэг мөрөнд, багтахгүй бол орцын нэр wrap хийнэ */
+    .meal-groups-grid { display: flex !important; flex-wrap: nowrap !important; gap: 4px !important; margin-bottom: 4px !important; }
+    .meal-groups-grid > div { flex: 1 1 0; min-width: 0; padding: 3px !important; }
+    .meal-groups-grid table { table-layout: fixed; width: 100%; }
+    .meal-groups-grid td, .meal-groups-grid th { white-space: normal !important; word-break: break-word; font-size: 10.5px !important; padding: 2px 3px !important; }
+    .meal-groups-grid select, .meal-groups-grid input[type="number"], .meal-groups-grid input[type="text"] {
+        border: none !important; background: transparent !important; padding: 0 !important; width: 100% !important;
+    }
+
+    /* Ажилчдын нэрсийн хүснэгт - жижиг, нэрлүүгээ шахсан (бүтэн өргөн авахгүй), фонт томруулсан */
+    table td, table th { padding: 1px 3px !important; }
+    #attendance-names-table { width: auto !important; max-width: none !important; }
+    #attendance-names-table th, #attendance-names-table td { font-size: 12px !important; padding: 1px 6px !important; white-space: nowrap !important; }
+    #attendance-names-table input[type="text"] {
+        width: auto !important; min-width: 90px; max-width: 220px;
+        font-size: 12px !important; border: none !important; padding: 0 !important; background: transparent !important;
+    }
+}
+.print-signature-col { display: none; }
+.ingredient-row.is-new { background-color: #f0fdf4; border-left: 3px solid #22c55e; }
+.ingredient-row.is-changed { background-color: #fffbeb; border-left: 3px solid #f59e0b; }
+.ingredient-row.is-deleted { background-color: #fef2f2; border-left: 3px solid #ef4444; opacity: 0.6; text-decoration: line-through; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="flex min-h-screen bg-gray-50">
+    {% include 'shop/_sidebar.html' with active_page='meal_attendance' %}
+
+    <main class="flex-1 p-2 lg:p-8 lg:ml-0">
+        <div class="flex items-center justify-between mb-6 no-print">
+            <h1 class="text-2xl lg:text-3xl font-bold text-gray-900">
+                📝 {% if attendance %}Хоол идэх нэрс засах{% else %}Шинэ бүртгэл{% endif %}
+            </h1>
+            {% if attendance %}
+            <button type="button" onclick="window.print()" class="bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50 transition whitespace-nowrap">
+                🖨 Хэвлэх
+            </button>
+            {% endif %}
+        </div>
+
+        {% if messages %}
+        <div class="mb-4 no-print">
+            {% for message in messages %}
+            <div class="p-3 rounded-lg bg-green-100 text-green-800 mb-2">{{ message }}</div>
+            {% endfor %}
+        </div>
+        {% endif %}
+
+        {% if form.errors or formset.errors or ingredient_formset.errors %}
+        <div class="p-3 rounded-lg bg-red-100 text-red-800 mb-4 max-w-lg no-print">Мэдээллийг зөв бөглөнө үү.</div>
+        {% endif %}
+
+        <!-- Огноо сонгох -->
+        <div class="bg-white rounded-lg shadow p-6 mb-6 max-w-sm">
+            <label class="block text-sm text-gray-500 mb-1">Огноо</label>
+            <div class="text-lg font-semibold text-gray-900 print-only-date" style="display:none">{{ selected_date }}</div>
+            <form method="get" action="{% url 'shop:meal_attendance_create' %}" class="no-print">
+                <input type="date" name="date" value="{{ selected_date|date:'Y-m-d' }}" onchange="this.form.submit()"
+                       class="w-full border border-gray-300 rounded-lg px-4 py-2">
+            </form>
+            {% if attendance %}
+            <p class="text-xs text-gray-400 mt-1 no-print">Өөр огноо сонгоход тухайн өдрийн бүртгэл рүү шилжинэ (шинэ бол шинээр үүснэ).</p>
+            {% endif %}
+        </div>
+
+        {% if is_weekend %}
+        <div class="bg-yellow-50 text-yellow-800 rounded-lg p-4 max-w-sm">
+            Сонгосон өдөр амралтын өдөр тул хоол товлогдоогүй байна.
+        </div>
+        {% else %}
+        <form method="post" class="bg-white rounded-lg shadow p-6">
+            {% csrf_token %}
+            <input type="hidden" name="date" value="{{ selected_date|date:'Y-m-d' }}">
+
+            {% if menu_number is None %}
+            <div class="bg-yellow-50 text-yellow-800 rounded-lg p-3 mb-4 no-print">
+                Энэ өдөрт хоол тохируулаагүй байна (циклийн эхлэл тохируулсан огнооноос өмнөх өдөр байж болно).
+                Орцын мэдээлэлгүйгээр зөвхөн ажилчдын нэрсийг доор бүртгэж болно.
+            </div>
+            {% else %}
+            {{ ingredient_formset.management_form }}
+            <div id="meal-groups-grid" class="meal-groups-grid grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                {% for meal, ing_forms in meal_ingredient_groups %}
+                <div class="border rounded-lg p-4 min-w-0" data-meal-card>
+                    <h3 class="font-bold text-gray-900 mb-2 break-words">{{ meal.get_meal_type_display }}: {{ meal.name }}</h3>
+                    <table data-meal-table class="w-full text-xs table-fixed">
+                        <thead>
+                            <tr class="text-left text-gray-500">
+                                <th class="py-1">Орц</th>
+                                <th class="py-1 text-right">Хэмжээ</th>
+                                <th class="py-1 text-right">Нийт</th>
+                                <th class="py-1 pl-1">Нэгж</th>
+                                <th class="no-print py-1 w-5"></th>
+                            </tr>
+                        </thead>
+                        <tbody class="ingredient-rows-body" data-meal-id="{{ meal.pk }}">
+                            {% for ing_form in ing_forms %}
+                            <tr class="ingredient-row border-t">
+                                {{ ing_form.id }}
+                                {{ ing_form.meal }}
+                                <td class="py-1 break-words">
+                                    {% if ing_form.display_name %}
+                                    <input type="hidden" name="{{ ing_form.item_id.html_name }}" value="{{ ing_form.item_id.value|default_if_none:'' }}">
+                                    <span class="text-gray-800">{{ ing_form.display_name }}</span>
+                                    {% else %}
+                                    {{ ing_form.item_id.errors }}{{ ing_form.item_id }}
+                                    {% endif %}
+                                </td>
+                                <td class="py-1 text-right">{{ ing_form.quantity.errors }}{{ ing_form.quantity }}</td>
+                                <td class="py-1 text-right font-medium" data-total>0</td>
+                                <td class="py-1 pl-1">{{ ing_form.unit }}</td>
+                                <td class="no-print py-1 text-center">
+                                    <div class="hidden">{{ ing_form.DELETE }}</div>
+                                    <button type="button" class="remove-ingredient-row text-red-500 hover:text-red-700 text-xs">✕</button>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                    <button type="button" class="add-ingredient-btn no-print text-primary hover:underline text-xs mt-2" data-meal-id="{{ meal.pk }}">+ Орц нэмэх</button>
+                </div>
+                {% empty %}
+                <p class="text-gray-500 md:col-span-3">Энэ дугаарт хоол бүртгэгдээгүй байна. Эхлээд "Хоолны бүртгэл" цэснээс {{ menu_number }} дугаартай хоол нэмнэ үү.</p>
+                {% endfor %}
+            </div>
+
+            <div class="mb-8 max-w-lg no-print">
+                <label class="block text-sm text-gray-500 mb-1">{{ form.change_comment.label }}</label>
+                {{ form.change_comment }}
+                <p class="text-xs text-gray-400 mt-1">Орцонд өдрийн хазайлт орсон бол шалтгааныг энд бичээрэй - жагсаалт дээр харагдана.</p>
+            </div>
+            {% endif %}
+
+            <h2 class="text-lg font-bold text-gray-900 mb-2">Ажилчдын нэрс</h2>
+            {{ formset.management_form }}
+            <table id="attendance-names-table" class="text-sm border border-gray-300 mb-3 max-w-2xl w-full">
+                <thead>
+                    <tr class="bg-gray-50 text-left">
+                        <th class="border border-gray-300 px-2 py-1 w-10 text-center">Дд</th>
+                        <th class="border border-gray-300 px-2 py-1">Ажилчдын нэрс</th>
+                        <th class="print-signature-col border border-gray-300 px-2 py-1 w-32">Гарын үсэг</th>
+                        <th class="no-print w-10"></th>
+                    </tr>
+                </thead>
+                <tbody id="name-rows">
+                    {% for name_form in formset %}
+                    <tr class="name-row">
+                        <td class="border border-gray-300 px-2 py-1 text-center text-gray-400 row-index"></td>
+                        <td class="border border-gray-300 px-2 py-1">
+                            {{ name_form.id }}
+                            {{ name_form.name.errors }}
+                            {{ name_form.name }}
+                            <div class="hidden">{{ name_form.DELETE }}</div>
+                        </td>
+                        <td class="print-signature-col border border-gray-300 px-2 py-1">&nbsp;</td>
+                        <td class="no-print px-1 py-1 text-center">
+                            <button type="button" class="remove-row text-red-500 hover:text-red-700 text-sm">✕</button>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            <button type="button" id="add-name" class="no-print text-primary hover:underline text-sm mb-6">+ Нэр нэмэх</button>
+
+            <div class="max-w-xs mb-6 p-4 bg-gray-50 rounded-lg flex justify-between text-sm">
+                <span class="text-gray-600">Нийт хүний тоо:</span>
+                <span id="total-people" class="font-bold text-gray-900">0</span>
+            </div>
+
+            <div class="no-print">
+                <button type="submit" class="bg-primary text-white px-6 py-2 rounded-lg hover:bg-green-700 transition">
+                    Хадгалах
+                </button>
+                <a href="{% url 'shop:meal_attendance_list' %}" class="ml-3 text-gray-600 hover:underline">Болих</a>
+            </div>
+        </form>
+        {% endif %}
+    </main>
+</div>
+
+<!-- Формсетэд шинэ нэр мөр нэмэх template (JS-ээр хуулбарлана). script[type=text/template]
+     ашигласан нь HTML parser <tr>-ийг table context-гүйгээр устгах/эвдэхээс сэргийлнэ. -->
+<script type="text/template" id="empty-name-row">
+<tr class="name-row">
+    <td class="border border-gray-300 px-2 py-1 text-center text-gray-400 row-index"></td>
+    <td class="border border-gray-300 px-2 py-1">{{ formset.empty_form.name }}</td>
+    <td class="print-signature-col border border-gray-300 px-2 py-1">&nbsp;</td>
+    <td class="no-print px-1 py-1 text-center">
+        <button type="button" class="remove-row text-red-500 hover:text-red-700 text-sm">✕</button>
+    </td>
+</tr>
+</script>
+
+{% if ingredient_formset %}
+<script type="text/template" id="empty-ingredient-row">
+<tr class="ingredient-row border-t is-new">
+    {{ ingredient_formset.empty_form.meal }}
+    <td class="py-1 break-words">{{ ingredient_formset.empty_form.item_id }}</td>
+    <td class="py-1 text-right">{{ ingredient_formset.empty_form.quantity }}</td>
+    <td class="py-1 text-right font-medium" data-total>0</td>
+    <td class="py-1 pl-1">{{ ingredient_formset.empty_form.unit }}</td>
+    <td class="no-print py-1 text-center">
+        <button type="button" class="remove-ingredient-row text-red-500 hover:text-red-700 text-xs">✕</button>
+    </td>
+</tr>
+</script>
+{% endif %}
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const rowsContainer = document.getElementById('name-rows');
+    if (!rowsContainer) return;
+
+    const totalFormsInput = document.querySelector('input[name="names-TOTAL_FORMS"]');
+    const emptyTemplate = document.getElementById('empty-name-row').textContent;
+    const totalPeopleEl = document.getElementById('total-people');
+
+    function renumberRows() {
+        let n = 0;
+        rowsContainer.querySelectorAll('.name-row').forEach(function (row) {
+            if (row.style.display === 'none') return;
+            const input = row.querySelector('.attendee-name-input');
+            const isEmpty = !input || input.value.trim() === '';
+            // Хоосон (нэр бичигдээгүй) мөрийг хэвлэхгүй
+            row.classList.toggle('print-hide-empty', isEmpty);
+            const indexEl = row.querySelector('.row-index');
+            if (isEmpty) {
+                indexEl.textContent = '';
+            } else {
+                n += 1;
+                indexEl.textContent = n + '.';
+            }
+        });
+    }
+
+    function updateTotals() {
+        const count = Array.from(rowsContainer.querySelectorAll('.name-row .attendee-name-input'))
+            .filter(function (inp) {
+                return inp.closest('.name-row').style.display !== 'none' && inp.value.trim() !== '';
+            }).length;
+        totalPeopleEl.textContent = count;
+
+        document.querySelectorAll('.ingredient-row').forEach(function (row) {
+            if (row.style.display === 'none') return;
+            const qtyInput = row.querySelector('.ingredient-qty-input');
+            const totalCell = row.querySelector('[data-total]');
+            if (!qtyInput || !totalCell) return;
+            const perPerson = parseFloat(qtyInput.value) || 0;
+            totalCell.textContent = (perPerson * count).toFixed(2);
+        });
+        renumberRows();
+    }
+
+    document.getElementById('add-name').addEventListener('click', function () {
+        const formIndex = parseInt(totalFormsInput.value, 10);
+        const newRowHtml = emptyTemplate.replace(/__prefix__/g, formIndex);
+        // <tr>-ийг зөв задлахын тулд parent context нь <table> байх ёстой
+        const wrapper = document.createElement('table');
+        wrapper.innerHTML = newRowHtml.trim();
+        const newRow = wrapper.querySelector('tr');
+        rowsContainer.appendChild(newRow);
+        totalFormsInput.value = formIndex + 1;
+        newRow.querySelector('.attendee-name-input').focus();
+        updateTotals();
+    });
+
+    rowsContainer.addEventListener('click', function (e) {
+        if (!e.target.classList.contains('remove-row')) return;
+        const row = e.target.closest('.name-row');
+        const idInput = row.querySelector('input[name$="-id"]');
+        const deleteInput = row.querySelector('input[name$="-DELETE"]');
+        if (idInput && idInput.value) {
+            // Хадгалагдсан мөр - устгах тэмдэг тавиад нуух (формсетээр устгагдана)
+            if (deleteInput) deleteInput.checked = true;
+            row.style.display = 'none';
+        } else {
+            row.remove();
+        }
+        updateTotals();
+    });
+
+    rowsContainer.addEventListener('input', function (e) {
+        if (e.target.classList.contains('attendee-name-input')) updateTotals();
+    });
+
+    // --- Орцны мөрүүд: нэмэх / хасах / өнгөөр ялгах ---
+    const mealGroupsGrid = document.getElementById('meal-groups-grid');
+    if (mealGroupsGrid) {
+        const ingredientTotalForms = document.querySelector('input[name="ingredient_overrides-TOTAL_FORMS"]');
+        const emptyIngredientTemplateEl = document.getElementById('empty-ingredient-row');
+        const emptyIngredientTemplate = emptyIngredientTemplateEl ? emptyIngredientTemplateEl.textContent : '';
+
+        function markIngredientOriginal(row) {
+            if (row.classList.contains('is-new')) return;
+            const itemSelect = row.querySelector('.ingredient-item-select');
+            const qtyInput = row.querySelector('.ingredient-qty-input');
+            const unitInput = row.querySelector('input[name$="-unit"]');
+            row.dataset.originalItem = itemSelect ? itemSelect.value : '';
+            row.dataset.originalQty = qtyInput ? qtyInput.value : '';
+            row.dataset.originalUnit = unitInput ? unitInput.value : '';
+        }
+
+        function refreshIngredientRowState(row) {
+            if (row.classList.contains('is-new')) return;
+            const deleteInput = row.querySelector('input[name$="-DELETE"]');
+            if (deleteInput && deleteInput.checked) {
+                row.classList.add('is-deleted');
+                row.classList.remove('is-changed');
+                return;
+            }
+            row.classList.remove('is-deleted');
+            const itemSelect = row.querySelector('.ingredient-item-select');
+            const qtyInput = row.querySelector('.ingredient-qty-input');
+            const unitInput = row.querySelector('input[name$="-unit"]');
+            const changed = (itemSelect && itemSelect.value !== row.dataset.originalItem) ||
+                            (qtyInput && qtyInput.value !== row.dataset.originalQty) ||
+                            (unitInput && unitInput.value !== row.dataset.originalUnit);
+            row.classList.toggle('is-changed', !!changed);
+        }
+
+        mealGroupsGrid.querySelectorAll('.ingredient-row').forEach(function (row) {
+            markIngredientOriginal(row);
+            refreshIngredientRowState(row);
+        });
+
+        mealGroupsGrid.addEventListener('input', function (e) {
+            if (e.target.classList.contains('ingredient-qty-input') || e.target.name && e.target.name.endsWith('-unit')) {
+                refreshIngredientRowState(e.target.closest('.ingredient-row'));
+                updateTotals();
+            }
+        });
+        mealGroupsGrid.addEventListener('change', function (e) {
+            if (e.target.classList.contains('ingredient-item-select')) {
+                refreshIngredientRowState(e.target.closest('.ingredient-row'));
+            }
+        });
+
+        mealGroupsGrid.addEventListener('click', function (e) {
+            if (!e.target.classList.contains('remove-ingredient-row')) return;
+            const row = e.target.closest('.ingredient-row');
+            const idInput = row.querySelector('input[name$="-id"]');
+            const deleteInput = row.querySelector('input[name$="-DELETE"]');
+            if (idInput && idInput.value) {
+                if (deleteInput) deleteInput.checked = true;
+                row.classList.add('is-deleted');
+                row.classList.remove('is-changed');
+            } else {
+                row.remove();
+            }
+            updateTotals();
+        });
+
+        mealGroupsGrid.querySelectorAll('.add-ingredient-btn').forEach(function (btn) {
+            btn.addEventListener('click', function () {
+                const mealId = btn.dataset.mealId;
+                const tbody = mealGroupsGrid.querySelector('.ingredient-rows-body[data-meal-id="' + mealId + '"]');
+                const formIndex = parseInt(ingredientTotalForms.value, 10);
+                const newRowHtml = emptyIngredientTemplate.replace(/__prefix__/g, formIndex);
+                const wrapper = document.createElement('table');
+                wrapper.innerHTML = newRowHtml.trim();
+                const newRow = wrapper.querySelector('tr');
+                const mealInput = newRow.querySelector('input[name$="-meal"]');
+                if (mealInput) mealInput.value = mealId;
+                tbody.appendChild(newRow);
+                ingredientTotalForms.value = formIndex + 1;
+                updateTotals();
+            });
+        });
+    }
+
+    updateTotals();
+
+    if (new URLSearchParams(window.location.search).get('print') === '1') {
+        setTimeout(function () { window.print(); }, 300);
+    }
+});
+</script>
+{% endblock %}

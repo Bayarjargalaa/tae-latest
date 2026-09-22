@@ -1,0 +1,137 @@
+<!-- Mobile Hamburger Button (positioned to avoid navbar conflict) -->
+<button id="mobile-menu-button" class="lg:hidden fixed top-20 left-2 z-50 p-3 bg-primary text-white rounded-lg shadow-lg hover:bg-green-700 transition">
+    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path>
+    </svg>
+</button>
+
+<!-- Sidebar Overlay (mobile only) -->
+<div id="sidebar-overlay" class="lg:hidden fixed inset-0 bg-black bg-opacity-50 z-30 hidden"></div>
+
+<!-- Sidebar -->
+<aside id="sidebar" class="w-64 bg-white shadow-lg fixed lg:static inset-y-0 left-0 z-40 transform -translate-x-full lg:translate-x-0 transition-transform duration-300">
+    <div class="p-6">
+        <!-- Close button (mobile only) -->
+        <div class="lg:hidden flex justify-between items-center mb-4">
+            <h2 class="text-xl font-bold text-primary">Цэс</h2>
+            <button id="mobile-menu-close" class="p-2 text-gray-600 hover:text-gray-900">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                </svg>
+            </button>
+        </div>
+        
+        <h2 class="text-xl font-bold text-primary mb-6 hidden lg:block">Хяналтын самбар</h2>
+        
+        <nav class="space-y-1">
+            {% for group in menu_groups %}
+                {% if group.label %}
+                <div class="menu-group" data-group="{{ group.key }}">
+                    <button type="button" class="menu-group-toggle w-full flex items-center justify-between px-4 pt-3 pb-1 text-xs font-semibold text-gray-400 uppercase tracking-wide hover:text-gray-600 transition">
+                        <span>{{ group.label }}</span>
+                        <svg class="w-4 h-4 menu-group-chevron transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                        </svg>
+                    </button>
+                    <div class="menu-group-items space-y-2">
+                        {% for item in group.items %}
+                            {% if item.always_visible or item.key in visible_menu_keys %}
+                            <a href="{% url item.url_name %}" class="flex items-center gap-3 px-4 py-3 rounded-lg text-gray-700 hover:bg-gray-100 transition {% if active_page == item.key %}bg-primary text-white font-medium{% endif %}">
+                                {{ item.icon }} {{ item.label }}
+                            </a>
+                            {% endif %}
+                        {% endfor %}
+                    </div>
+                </div>
+                {% else %}
+                    {% for item in group.items %}
+                        {% if item.always_visible or item.key in visible_menu_keys %}
+                        <a href="{% url item.url_name %}" class="flex items-center gap-3 px-4 py-3 rounded-lg text-gray-700 hover:bg-gray-100 transition {% if active_page == item.key %}bg-primary text-white font-medium{% endif %}">
+                            {{ item.icon }} {{ item.label }}
+                        </a>
+                        {% endif %}
+                    {% endfor %}
+                {% endif %}
+            {% endfor %}
+
+            {% if user.is_superuser %}
+            <hr class="my-2">
+            <a href="{% url 'shop:menu_permission_config' %}" class="flex items-center gap-3 px-4 py-3 rounded-lg text-gray-700 hover:bg-gray-100 transition {% if active_page == 'menu_permission_config' %}bg-primary text-white font-medium{% endif %}">
+                🔐 Цэсний эрх тохируулах
+            </a>
+            <a href="/admin/" class="flex items-center gap-3 px-4 py-3 rounded-lg text-gray-700 hover:bg-gray-100 transition">
+                ⚙️ Тохиргоо
+            </a>
+            {% endif %}
+            <hr class="my-4">
+            <a href="{% url 'shop:home' %}" class="flex items-center gap-3 px-4 py-3 rounded-lg text-gray-700 hover:bg-gray-100 transition">
+                🏠 Нүүр хуудас руу
+            </a>
+        </nav>
+    </div>
+</aside>
+
+<script>
+// Sidebar group collapse/expand (localStorage-оор хадгална, идэвхтэй цэстэй бүлэг автоматаар нээгдэнэ)
+document.addEventListener('DOMContentLoaded', function() {
+    document.querySelectorAll('.menu-group').forEach(function(group) {
+        const toggle = group.querySelector('.menu-group-toggle');
+        const items = group.querySelector('.menu-group-items');
+        const chevron = group.querySelector('.menu-group-chevron');
+        const storageKey = 'sidebar-group-' + group.dataset.group;
+        const hasActive = items.querySelector('a.bg-primary') !== null;
+        const stored = localStorage.getItem(storageKey);
+
+        function setExpanded(expanded) {
+            items.classList.toggle('hidden', !expanded);
+            chevron.classList.toggle('-rotate-90', !expanded);
+        }
+
+        setExpanded(hasActive || stored === 'open');
+
+        toggle.addEventListener('click', function() {
+            const expanded = !items.classList.contains('hidden');
+            setExpanded(!expanded);
+            localStorage.setItem(storageKey, expanded ? 'closed' : 'open');
+        });
+    });
+});
+</script>
+
+<script>
+// Mobile sidebar toggle
+document.addEventListener('DOMContentLoaded', function() {
+    const menuButton = document.getElementById('mobile-menu-button');
+    const closeButton = document.getElementById('mobile-menu-close');
+    const sidebar = document.getElementById('sidebar');
+    const overlay = document.getElementById('sidebar-overlay');
+    
+    if (menuButton && sidebar && overlay && closeButton) {
+        // Open sidebar
+        menuButton.addEventListener('click', function() {
+            sidebar.classList.remove('-translate-x-full');
+            overlay.classList.remove('hidden');
+        });
+        
+        // Close sidebar
+        function closeSidebar() {
+            sidebar.classList.add('-translate-x-full');
+            overlay.classList.add('hidden');
+        }
+        
+        closeButton.addEventListener('click', closeSidebar);
+        overlay.addEventListener('click', closeSidebar);
+        
+        // Close on link click (mobile only)
+        const sidebarLinks = sidebar.querySelectorAll('a');
+        sidebarLinks.forEach(link => {
+            link.addEventListener('click', function() {
+                if (window.innerWidth < 1024) { // lg breakpoint
+                    closeSidebar();
+                }
+            });
+        });
+    }
+});
+</script>
+

@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="mn">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}EuroFoods - Европын Хүнс{% endblock %}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Choices.js - Searchable Dropdown (jQuery-гүй) -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/choices.js/public/assets/styles/choices.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/choices.js/public/assets/scripts/choices.min.js"></script>
+    
+    <style>
+        /* Choices.js custom styling */
+        .choices {
+            margin-bottom: 0;
+        }
+        .choices__inner {
+            min-height: 42px;
+            border-radius: 0.5rem;
+            border: 1px solid #d1d5db;
+            background-color: white;
+            padding: 0.5rem 1rem;
+        }
+        .choices__list--dropdown .choices__item--selectable {
+            padding: 0.5rem 1rem;
+        }
+        .choices__list--dropdown .choices__item--selectable.is-highlighted {
+            background-color: #f3f4f6;
+        }
+        .choices[data-type*="select-one"] .choices__input {
+            padding: 0.25rem 0;
+        }
+        
+        /* Mobile menu animation */
+        .mobile-menu {
+            transition: transform 0.3s ease-in-out;
+        }
+        .mobile-menu.hidden {
+            transform: translateX(-100%);
+        }
+    </style>
+    
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#2E7D32',
+                        secondary: '#1565C0',
+                    }
+                }
+            }
+        }
+    </script>
+    {% block extra_css %}{% endblock %}
+</head>
+<body class="bg-gray-50">
+    <!-- Header -->
+    <header class="bg-white shadow-sm sticky top-0 z-50">
+        <!-- Top Bar -->
+        <div class="bg-primary text-white">
+            <div class="container mx-auto px-4 py-2">
+                <div class="flex justify-between items-center text-xs lg:text-sm">
+                    <div class="hidden sm:block">📞 +976 7018-0085 | 📧 tugsamierdene@yahoo.com</div>
+                    <div class="sm:hidden">📞 7018-0085</div>
+                    <div class="hidden md:block">Европын чанартай хүнсний бүтээгдэхүүн</div>
+                    <div class="md:hidden">ТАЭ</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Navigation -->
+        <nav class="container mx-auto px-4 py-3 lg:py-4">
+            <div class="flex items-center justify-between">
+                <!-- Mobile Menu Button (Hidden on dashboard pages with sidebar) -->
+                <button id="mobile-menu-btn" class="md:hidden text-gray-700 hover:text-primary p-2 {% block hide_mobile_menu %}{% endblock %}">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path>
+                    </svg>
+                </button>
+                
+                <!-- Logo -->
+                <a href="/" class="flex items-center gap-2 lg:gap-3 text-lg lg:text-2xl font-bold text-primary">
+                    <div class="w-10 h-10 lg:w-12 lg:h-12 bg-gradient-to-br from-primary to-secondary rounded-lg flex items-center justify-center text-white text-sm lg:text-base">
+                            ТАЭ
+                    </div>
+                    <span class="hidden sm:inline">Төгс Амин Эрдэнэ ХХК</span>
+                </a>
+
+                <!-- Desktop Navigation Links -->
+                <div class="hidden md:flex items-center gap-4 lg:gap-8">
+                    {% if user.is_staff %}
+                    <a href="{% url 'shop:dashboard' %}" class="text-gray-700 hover:text-primary font-medium transition">📊 Хяналтын самбар</a>
+                    <a href="{% url 'shop:products' %}" class="text-gray-700 hover:text-primary font-medium transition">Бүтээгдэхүүн</a>
+                    {% else %}
+                    <a href="/" class="text-gray-700 hover:text-primary font-medium transition">Нүүр</a>
+                    <a href="{% if user.is_authenticated %}/products/{% else %}/products/?jijig_min=true{% endif %}" class="text-gray-700 hover:text-primary font-medium transition">Бүтээгдэхүүн</a>
+                    <a href="/about/" class="text-gray-700 hover:text-primary font-medium transition">Бидний тухай</a>
+                    <a href="/contact/" class="text-gray-700 hover:text-primary font-medium transition">Холбоо барих</a>
+                    {% endif %}
+                </div>
+
+                <!-- Search & Cart -->
+                <div class="flex items-center gap-2 lg:gap-4">
+                    <form action="/search/" method="get" class="hidden lg:block">
+                        <div class="relative">
+                            <input type="text" name="q" placeholder="Хайх..." 
+                                   class="pl-4 pr-10 py-2 border border-gray-300 rounded-full focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent w-48 lg:w-64">
+                            <button type="submit" class="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-500 hover:text-primary">
+                                🔍
+                            </button>
+                        </div>
+                    </form>
+                    
+                    <!-- Mobile Search Button -->
+                    <button id="mobile-search-btn" class="lg:hidden text-gray-700 hover:text-primary p-2">
+                        🔍
+                    </button>
+                    
+                    {% if user.is_authenticated %}
+                    <div class="hidden md:flex items-center gap-2 lg:gap-3">
+                        <span class="text-gray-700 text-sm lg:text-base">👤 <span class="hidden lg:inline">{{ user.first_name|default:user.username }}</span></span>
+                        {% if user.is_staff %}
+                        <span class="bg-green-100 text-green-800 text-xs px-2 py-1 rounded-full hidden lg:inline">Ажилтан</span>
+                        {% endif %}
+                        <form method="post" action="{% url 'shop:logout' %}" class="inline">
+                            {% csrf_token %}
+                            <button type="submit" class="text-gray-600 hover:text-primary text-xs lg:text-sm">Гарах</button>
+                        </form>
+                    </div>
+                    {% else %}
+                    <a href="{% url 'shop:login' %}" class="hidden md:inline text-gray-700 hover:text-primary font-medium text-sm lg:text-base">Нэвтрэх</a>
+                    <a href="{% url 'shop:register' %}" class="hidden md:inline bg-secondary text-white px-3 lg:px-4 py-2 rounded-full hover:bg-blue-700 text-xs lg:text-sm">Бүртгүүлэх</a>
+                    {% endif %}
+                    
+                    <a href="/cart/" class="relative bg-secondary text-white px-3 lg:px-4 py-2 rounded-full hover:bg-blue-700 transition text-xs lg:text-sm">
+                        🛒 <span class="hidden sm:inline">Сагс</span>
+                        <span class="absolute -top-2 -right-2 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">0</span>
+                    </a>
+                </div>
+            </div>
+            
+            <!-- Mobile Menu -->
+            <div id="mobile-menu" class="mobile-menu hidden md:hidden fixed inset-0 bg-white z-50 transform -translate-x-full">
+                <div class="flex flex-col h-full">
+                    <!-- Mobile Menu Header -->
+                    <div class="flex items-center justify-between p-4 border-b">
+                        <a href="/" class="flex items-center gap-2 text-xl font-bold text-primary">
+                            <div class="w-10 h-10 bg-gradient-to-br from-primary to-secondary rounded-lg flex items-center justify-center text-white">
+                                EF
+                            </div>
+                            <span>EuroFoods</span>
+                        </a>
+                        <button id="mobile-menu-close" class="text-gray-700 hover:text-primary p-2">
+                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                            </svg>
+                        </button>
+                    </div>
+                    
+                    <!-- Mobile Menu Content -->
+                    <div class="flex-1 overflow-y-auto p-4">
+                        <!-- Mobile Search -->
+                        <form action="/search/" method="get" class="mb-6">
+                            <div class="relative">
+                                <input type="text" name="q" placeholder="Хайх..." 
+                                       class="w-full pl-4 pr-10 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary">
+                                <button type="submit" class="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-500">
+                                    🔍
+                                </button>
+                            </div>
+                        </form>
+                        
+                        <!-- User Info (Mobile) -->
+                        {% if user.is_authenticated %}
+                        <div class="mb-6 p-4 bg-gray-50 rounded-lg">
+                            <div class="text-gray-700 font-medium mb-2">👤 {{ user.first_name|default:user.username }}</div>
+                            {% if user.is_staff %}
+                            <span class="bg-green-100 text-green-800 text-xs px-2 py-1 rounded-full">Ажилтан</span>
+                            {% endif %}
+                        </div>
+                        {% endif %}
+                        
+                        <!-- Navigation Links -->
+                        <nav class="space-y-2">
+                            {% if user.is_staff %}
+                            <a href="{% url 'shop:dashboard' %}" class="block px-4 py-3 rounded-lg text-gray-700 hover:bg-gray-100 font-medium">📊 Хяналтын самбар</a>
+                            <a href="{% url 'shop:products' %}" class="block px-4 py-3 rounded-lg text-gray-700 hover:bg-gray-100 font-medium">Бүтээгдэхүүн</a>
+                            {% else %}
+                            <a href="/" class="block px-4 py-3 rounded-lg text-gray-700 hover:bg-gray-100 font-medium">Нүүр</a>
+                            <a href="{% if user.is_authenticated %}/products/{% else %}/products/?jijig_min=true{% endif %}" class="block px-4 py-3 rounded-lg text-gray-700 hover:bg-gray-100 font-medium">Бүтээгдэхүүн</a>
+                            <a href="/about/" class="block px-4 py-3 rounded-lg text-gray-700 hover:bg-gray-100 font-medium">Бидний тухай</a>
+                            <a href="/contact/" class="block px-4 py-3 rounded-lg text-gray-700 hover:bg-gray-100 font-medium">Холбоо барих</a>
+                            {% endif %}
+                        </nav>
+                        
+                        <!-- Auth Links (Mobile) -->
+                        <div class="mt-6 space-y-2">
+                            {% if user.is_authenticated %}
+                            <form method="post" action="{% url 'shop:logout' %}">
+                                {% csrf_token %}
+                                <button type="submit" class="w-full px-4 py-3 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 font-medium">
+                                    Гарах
+                                </button>
+                            </form>
+                            {% else %}
+                            <a href="{% url 'shop:login' %}" class="block px-4 py-3 bg-primary text-white text-center rounded-lg hover:bg-green-700 font-medium">
+                                Нэвтрэх
+                            </a>
+                            <a href="{% url 'shop:register' %}" class="block px-4 py-3 bg-secondary text-white text-center rounded-lg hover:bg-blue-700 font-medium">
+                                Бүртгүүлэх
+                            </a>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Mobile Menu Overlay -->
+            <div id="mobile-menu-overlay" class="hidden fixed inset-0 bg-black bg-opacity-50 z-40"></div>
+        </nav>
+    </header>
+    
+    <script>
+        // Mobile menu toggle
+        document.addEventListener('DOMContentLoaded', function() {
+            const menuBtn = document.getElementById('mobile-menu-btn');
+            const closeBtn = document.getElementById('mobile-menu-close');
+            const mobileMenu = document.getElementById('mobile-menu');
+            const menuOverlay = document.getElementById('mobile-menu-overlay');
+            
+            function openMenu() {
+                mobileMenu.classList.remove('hidden');
+                menuOverlay.classList.remove('hidden');
+                setTimeout(() => mobileMenu.classList.remove('-translate-x-full'), 10);
+            }
+            
+            function closeMenu() {
+                mobileMenu.classList.add('-translate-x-full');
+                setTimeout(() => {
+                    mobileMenu.classList.add('hidden');
+                    menuOverlay.classList.add('hidden');
+                }, 300);
+            }
+            
+            if (menuBtn) menuBtn.addEventListener('click', openMenu);
+            if (closeBtn) closeBtn.addEventListener('click', closeMenu);
+            if (menuOverlay) menuOverlay.addEventListener('click', closeMenu);
+        });
+    </script>
+
+    <!-- Main Content -->
+    <main class="min-h-screen">
+        {% block content %}{% endblock %}
+    </main>
+
+    <!-- Footer -->
+    <footer class="bg-gray-900 text-white mt-8 lg:mt-16">
+        <div class="container mx-auto px-4 py-8 lg:py-12">
+            <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-6 lg:gap-8">
+                <!-- About -->
+                <div>
+                    <h3 class="text-lg lg:text-xl font-bold mb-3 lg:mb-4 text-primary">EuroFoods</h3>
+                    <p class="text-sm lg:text-base text-gray-400">Европын шилдэг брэндүүдийн хүнсний бүтээгдэхүүнийг импортлож, борлуулдаг.</p>
+                    <div class="mt-3 lg:mt-4 text-2xl lg:text-3xl">🇮🇹 🇫🇷 🇩🇪 🇪🇸 🇬🇷</div>
+                </div>
+
+                <!-- Links -->
+                <div>
+                    <h3 class="text-base lg:text-lg font-bold mb-3 lg:mb-4">Холбоосууд</h3>
+                    <ul class="space-y-2 text-sm lg:text-base">
+                        <li><a href="{% if user.is_authenticated %}/products/{% else %}/products/?jijig_min=true{% endif %}" class="text-gray-400 hover:text-white transition">Бүтээгдэхүүн</a></li>
+                        <li><a href="/categories/" class="text-gray-400 hover:text-white transition">Ангилал</a></li>
+                        <li><a href="/brands/" class="text-gray-400 hover:text-white transition">Брэнд</a></li>
+                        <li><a href="/promotions/" class="text-gray-400 hover:text-white transition">Урамшуулал</a></li>
+                    </ul>
+                </div>
+
+                <!-- Help -->
+                <div>
+                    <h3 class="text-base lg:text-lg font-bold mb-3 lg:mb-4">Тусламж</h3>
+                    <ul class="space-y-2 text-sm lg:text-base">
+                        <li><a href="/faq/" class="text-gray-400 hover:text-white transition">Түгээмэл асуулт</a></li>
+                        <li><a href="/shipping/" class="text-gray-400 hover:text-white transition">Хүргэлт</a></li>
+                        <li><a href="/returns/" class="text-gray-400 hover:text-white transition">Буцаалт</a></li>
+                        <li><a href="/terms/" class="text-gray-400 hover:text-white transition">Үйлчилгээний нөхцөл</a></li>
+                    </ul>
+                </div>
+
+                <!-- Contact -->
+                <div>
+                    <h3 class="text-base lg:text-lg font-bold mb-3 lg:mb-4">Холбоо барих</h3>
+                    <ul class="space-y-2 text-gray-400 text-sm lg:text-base">
+                        <li>📍 Улаанбаатар, Монгол</li>
+                        <li>📞 +976 7777-7777</li>
+                        <li>📧 info@eurofoods.mn</li>
+                        <li class="hidden sm:block">⏰ Даваа-Баасан: 09:00-18:00</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="border-t border-gray-800 mt-6 lg:mt-8 pt-6 lg:pt-8 text-center text-gray-500 text-xs lg:text-sm">
+                <p>&copy; 2025 EuroFoods. Бүх эрх хуулиар хамгаалагдсан.</p>
+            </div>
+        </div>
+    </footer>
+
+    {% block extra_js %}{% endblock %}
+    {% include 'shop/_ai_chat_widget.html' %}
+</body>
+</html>

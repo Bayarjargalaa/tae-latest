@@ -1,0 +1,75 @@
+{% extends 'base.html' %}
+
+{% block title %}Ажлын цагийн тохиргоо - Euro Foods{% endblock %}
+
+{% block hide_mobile_menu %}hidden{% endblock %}
+
+{% block content %}
+<div class="flex min-h-screen bg-gray-50">
+    {% include 'shop/_sidebar.html' with active_page='attendance_calc' %}
+
+    <main class="flex-1 p-2 lg:p-8 lg:ml-0">
+        <div class="flex items-center justify-between mb-6">
+            <div>
+                <h1 class="text-2xl lg:text-3xl font-bold text-gray-900">⏰ Албан тушаалын ажлын цагийн тохиргоо</h1>
+                <p class="text-gray-600 mt-2">Албан тушаал бүрийн ажил эхлэх цагийг тохируулна. Хоосон орхивол тухайн албан
+                    тушаал <strong>"бусад"</strong> дүрмээр тооцоологдоно: ирсэн цагаас хойш 8 цаг ажиллаагүй бол дутсан
+                    минутыг хоцролтоор тооцно.</p>
+            </div>
+            <a href="{% url 'shop:attendance_calc' %}" class="bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50 transition whitespace-nowrap">
+                ← Цаг бүртгэл рүү буцах
+            </a>
+        </div>
+
+        {% if messages %}
+        <div class="mb-6 space-y-2">
+            {% for message in messages %}
+            <div class="p-3 rounded-lg {% if message.tags == 'error' %}bg-red-100 text-red-800{% elif message.tags == 'warning' %}bg-yellow-100 text-yellow-800{% else %}bg-green-100 text-green-800{% endif %}">{{ message }}</div>
+            {% endfor %}
+        </div>
+        {% endif %}
+
+        <form method="post">
+            {% csrf_token %}
+            <div class="bg-white rounded-lg shadow p-6">
+                <div class="flex items-center justify-between mb-4">
+                    <h2 class="text-lg font-bold text-gray-900">Албан тушаал тус бүрийн эхлэх цаг</h2>
+                    <button type="submit" class="bg-primary text-white px-6 py-2 rounded-lg hover:bg-green-700 transition whitespace-nowrap">
+                        💾 Хадгалах
+                    </button>
+                </div>
+
+                <div class="overflow-x-auto">
+                    <table class="min-w-full text-sm border border-gray-200">
+                        <thead>
+                            <tr class="bg-gray-100 text-left">
+                                <th class="px-4 py-2 font-semibold text-gray-700">Албан тушаал</th>
+                                <th class="px-4 py-2 font-semibold text-gray-700 whitespace-nowrap">Ажил эхлэх цаг</th>
+                                <th class="px-4 py-2 font-semibold text-gray-700">Тайлбар</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for row in rows %}
+                            <tr class="border-t">
+                                <td class="px-4 py-2 font-medium text-gray-900 whitespace-nowrap">
+                                    {{ row.position_name }}
+                                    <input type="hidden" name="position_name" value="{{ row.position_name }}">
+                                </td>
+                                <td class="px-4 py-2">
+                                    <input type="time" name="start_time" value="{{ row.start_time }}" class="border border-gray-300 rounded-lg px-3 py-1.5">
+                                </td>
+                                <td class="px-4 py-2 text-gray-500 text-xs">
+                                    {% if row.start_time %}Ирсэн цаг {{ row.start_time }}-с хойш байвал хоцролт{% else %}Хоосон - "бусад" 8 цагийн дүрэм{% endif %}
+                                </td>
+                            </tr>
+                            {% empty %}
+                            <tr><td colspan="3" class="px-4 py-4 text-center text-gray-500">Албан тушаал олдсонгүй.</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </form>
+    </main>
+</div>
+{% endblock %}

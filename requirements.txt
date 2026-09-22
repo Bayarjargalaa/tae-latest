@@ -1,0 +1,36 @@
+# Core Django
+Django>=6.0,<6.1
+djangorestframework>=3.16,<4.0
+
+# Database
+psycopg2-binary>=2.9,<3.0
+pyodbc>=5.0,<6.0  # MSSQL connection
+SQLAlchemy>=2.0,<3.0  # Database toolkit
+
+# Data processing
+pandas>=2.1,<3.0
+openpyxl>=3.1,<4.0  # Excel (.xlsx) экспорт
+pyzk>=0.9,<1.0  # Хурууны хээ таних (ZKTeco) төхөөрөмжтэй холбогдох (Цаг бүртгэл)
+
+# Environment variables
+python-decouple>=3.8,<4.0
+
+# HTTP client (Anthropic API дуудахад)
+requests>=2.32,<3.0
+pip-system-certs>=4.0  # Windows дээрх corporate/antivirus TLS inspection-той орчинд OS-ийн cert store-г ашиглуулна
+
+# Image handling
+Pillow>=12.0,<13.0
+
+# API & Authentication (future)
+# djangorestframework-simplejwt>=5.3,<6.0
+# django-cors-headers>=4.3,<5.0
+
+# Development tools
+# django-debug-toolbar>=4.2,<5.0
+# ipython>=8.18,<9.0
+
+# Testing
+# pytest>=7.4,<8.0
+# pytest-django>=4.7,<5.0
+# coverage>=7.3,<8.0

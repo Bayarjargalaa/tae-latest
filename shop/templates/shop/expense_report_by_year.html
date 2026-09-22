@@ -1,0 +1,164 @@
+{% extends 'base.html' %}
+{% load humanize %}
+{% load product_filters %}
+
+{% block title %}Зардлын тооцоолол жилээр{% endblock %}
+
+{% block hide_mobile_menu %}hidden{% endblock %}
+
+{% block content %}
+<div class="flex min-h-screen bg-gray-50">
+    <!-- Sidebar -->
+    {% include 'shop/_sidebar.html' with active_page='expense_report_by_year' %}
+
+    <!-- Main Content -->
+    <main class="flex-1 py-2 lg:py-8">
+        <div class="mb-6 px-2 lg:px-8">
+            <h1 class="text-3xl font-bold text-gray-900">📊 Зардлын тооцоолол жилээр</h1>
+            <p class="text-gray-600 mt-2">Жил бүрийн зардал, орлого, ашгийн харьцуулалт</p>
+        </div>
+
+        <!-- Main Table -->
+        <div class="bg-white shadow overflow-x-auto">
+            <table class="border-collapse" style="min-width: max-content; width: 100%;">
+                <thead class="bg-gray-100 sticky top-0">
+                    <tr>
+                        <th class="min-w-[250px] px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase border-r whitespace-nowrap sticky left-0 bg-gray-100 z-10">Мэдээлэл</th>
+                        {% for year in available_years %}
+                            <th class="min-w-[150px] px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase whitespace-nowrap">{{ year|stringformat:"d" }}</th>
+                        {% endfor %}
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-200">
+                    <!-- 1. PayAmount - Борлуулалтын дүн -->
+                    <tr class="bg-green-50 hover:bg-green-100">
+                        <td class="px-4 py-3 font-semibold text-gray-900 border-r sticky left-0 bg-green-50 z-10">1. Борлуулалтын дүн (PayAmount)</td>
+                        {% for year in available_years %}
+                            <td class="px-4 py-3 text-right text-green-700 font-medium">
+                                {{ yearly_data|get_item:year|get_item:'payamount'|default:0|floatformat:0|intcomma }}₮
+                            </td>
+                        {% endfor %}
+                    </tr>
+
+                    <!-- 2. VatAmount - НӨАТ -->
+                    <tr class="hover:bg-gray-50">
+                        <td class="px-4 py-3 text-gray-700 border-r sticky left-0 bg-white z-10">2. НӨАТ (VatAmount)</td>
+                        {% for year in available_years %}
+                            <td class="px-4 py-3 text-right text-gray-600">
+                                {{ yearly_data|get_item:year|get_item:'vatamount'|default:0|floatformat:0|intcomma }}₮
+                            </td>
+                        {% endfor %}
+                    </tr>
+
+                    <!-- 3. AmountNonVat - НӨАТ-гүй дүн -->
+                    <tr class="bg-blue-50 hover:bg-blue-100">
+                        <td class="px-4 py-3 font-semibold text-gray-900 border-r sticky left-0 bg-blue-50 z-10">3. НӨАТ-гүй дүн (AmountNonVat)</td>
+                        {% for year in available_years %}
+                            <td class="px-4 py-3 text-right text-blue-700 font-medium">
+                                {{ yearly_data|get_item:year|get_item:'amountnonvat'|default:0|floatformat:0|intcomma }}₮
+                            </td>
+                        {% endfor %}
+                    </tr>
+
+                    <!-- 4. Cost - Нийт өртөг (UnitCost × Qty) -->
+                    <tr class="bg-orange-50 hover:bg-orange-100">
+                        <td class="px-4 py-3 text-gray-900 border-r sticky left-0 bg-orange-50 z-10">4. Нийт өртөг (UnitCost × Qty)</td>
+                        {% for year in available_years %}
+                            <td class="px-4 py-3 text-right text-orange-600">
+                                {{ yearly_data|get_item:year|get_item:'cost'|default:0|floatformat:0|intcomma }}₮
+                            </td>
+                        {% endfor %}
+                    </tr>
+
+                    <!-- 5. Бохир ашиг (AmountNonVat - Cost) -->
+                    <tr class="bg-emerald-100 hover:bg-emerald-200 border-t-2 border-emerald-300">
+                        <td class="px-4 py-3 font-bold text-emerald-900 border-r sticky left-0 bg-emerald-100 z-10">5. БОХИР АШИГ (3-4)</td>
+                        {% for year in available_years %}
+                            <td class="px-4 py-3 text-right text-emerald-800 font-bold">
+                                {{ yearly_data|get_item:year|get_item:'gross_profit'|default:0|floatformat:0|intcomma }}₮
+                            </td>
+                        {% endfor %}
+                    </tr>
+
+                    <!-- 6. Discount - Борлуулалтын хөнгөлөлт (520101) -->
+                    <tr class="bg-red-50 hover:bg-red-100">
+                        <td class="px-4 py-3 text-gray-900 border-r sticky left-0 bg-red-50 z-10">6. Борлуулалтын хөнгөлөлт (520101)</td>
+                        {% for year in available_years %}
+                            <td class="px-4 py-3 text-right text-red-600">
+                                {{ yearly_data|get_item:year|get_item:'discount'|default:0|floatformat:0|intcomma }}₮
+                            </td>
+                        {% endfor %}
+                    </tr>
+
+                    <!-- 7. Refund - Буцаалт -->
+                    <tr class="bg-red-50 hover:bg-red-100">
+                        <td class="px-4 py-3 text-gray-900 border-r sticky left-0 bg-red-50 z-10">7. Буцаалт</td>
+                        {% for year in available_years %}
+                            <td class="px-4 py-3 text-right text-red-600">
+                                {{ yearly_data|get_item:year|get_item:'refund'|default:0|floatformat:0|intcomma }}₮
+                            </td>
+                        {% endfor %}
+                    </tr>
+
+                    <!-- 8. Хөнгөлөлт, буцаалт хассан зардлын өмнөх ашиг -->
+                    <tr class="bg-purple-100 hover:bg-purple-200 border-t-2 border-purple-300">
+                        <td class="px-4 py-3 font-bold text-purple-900 border-r sticky left-0 bg-purple-100 z-10">8. ХӨНГӨЛӨЛТ, БУЦААЛТ ХАССАН ЗАРДЛЫН ӨМНӨХ АШИГ (3-4-6-7)</td>
+                        {% for year in available_years %}
+                            <td class="px-4 py-3 text-right text-purple-800 font-bold">
+                                {{ yearly_data|get_item:year|get_item:'gross_profit_after_discount'|default:0|floatformat:0|intcomma }}₮
+                            </td>
+                        {% endfor %}
+                    </tr>
+
+                    <!-- Зардлууд (7-р эхэлсэн дансууд) -->
+                    {% if expense_accounts %}
+                        <tr class="bg-gray-200">
+                            <td colspan="{{ available_years|length|add:1 }}" class="px-4 py-2 font-bold text-gray-800 uppercase sticky left-0 bg-gray-200 z-10">Зардлууд (7-р данс)</td>
+                        </tr>
+                        {% for account_id, account_data in expense_accounts.items %}
+                            <tr class="hover:bg-yellow-50">
+                                <td class="px-4 py-3 text-sm text-gray-700 border-r sticky left-0 bg-white z-10">
+                                    {{ account_id }} - {{ account_data.name }}
+                                </td>
+                                {% for year in available_years %}
+                                    <td class="px-4 py-3 text-right text-gray-600 text-sm">
+                                        {{ account_data.yearly|get_item:year|default:0|floatformat:0|intcomma }}₮
+                                    </td>
+                                {% endfor %}
+                            </tr>
+                        {% endfor %}
+                    {% endif %}
+
+                    <!-- 9. Нийт зардал -->
+                    <tr class="bg-yellow-100 hover:bg-yellow-200 border-t-2 border-yellow-300">
+                        <td class="px-4 py-3 font-bold text-gray-900 border-r sticky left-0 bg-yellow-100 z-10">9. НИЙТ ЗАРДАЛ</td>
+                        {% for year in available_years %}
+                            <td class="px-4 py-3 text-right text-yellow-800 font-bold">
+                                {{ yearly_data|get_item:year|get_item:'total_expense'|default:0|floatformat:0|intcomma }}₮
+                            </td>
+                        {% endfor %}
+                    </tr>
+
+                    <!-- 10. Цэвэр ашиг -->
+                    <tr class="bg-green-200 hover:bg-green-300 border-t-4 border-green-500">
+                        <td class="px-4 py-4 font-bold text-green-900 text-lg border-r sticky left-0 bg-green-200 z-10">10. ЦЭВЭР АШИГ (8-9)</td>
+                        {% for year in available_years %}
+                            <td class="px-4 py-4 text-right text-green-900 font-bold text-lg">
+                                {{ yearly_data|get_item:year|get_item:'net_profit'|default:0|floatformat:0|intcomma }}₮
+                            </td>
+                        {% endfor %}
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Тайлбар -->
+        <div class="mt-6 mx-2 lg:mx-8 bg-blue-50 border-l-4 border-blue-400 p-4">
+            <p class="text-sm text-blue-800">
+                <strong>Тэмдэглэл:</strong> Энэ тайлан нь жил бүрийн зардал, орлого, ашгийн харьцуулалтыг харуулж байна.
+                Мөр бүр тухайн мэдээллийн жил бүрийн үзүүлэлтийг агуулна. Эхний багана хажуу тийш scroll хийхэд байрандаа үлдэнэ.
+            </p>
+        </div>
+    </main>
+</div>
+{% endblock %}

@@ -1,0 +1,259 @@
+{% extends 'base.html' %}
+{% load humanize %}
+{% load product_filters %}
+
+{% block title %}Зардлын тооцоолол сараар{% endblock %}
+
+{% block hide_mobile_menu %}hidden{% endblock %}
+
+{% block content %}
+<div class="flex min-h-screen bg-gray-50">
+    <!-- Sidebar -->
+    {% include 'shop/_sidebar.html' with active_page='expense_report' %}
+
+    <!-- Main Content -->
+    <main class="flex-1 py-2 lg:py-8">
+        <div class="mb-6 flex justify-between items-center px-2 lg:px-8">
+            <h1 class="text-3xl font-bold text-gray-900">💰 Зардлын тооцоолол сараар</h1>
+            
+            <!-- Он сонгох -->
+            <form method="get" class="flex items-center gap-4">
+                <label class="text-sm font-medium text-gray-700">Он:</label>
+                <select name="year" class="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" onchange="this.form.submit()">
+                    {% for year in available_years %}
+                        <option value="{{ year }}" {% if year == selected_year %}selected{% endif %}>{{ year|stringformat:"d" }}</option>
+                    {% endfor %}
+                </select>
+            </form>
+        </div>
+
+        <!-- Main Table -->
+        <div class="bg-white shadow overflow-x-auto">
+            <table class="border-collapse" style="min-width: max-content; width: 100%;">
+                <thead class="bg-gray-100 sticky top-0">
+                    <tr>
+                        <th class="min-w-[250px] px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase border-r whitespace-nowrap sticky left-0 bg-gray-100 z-10">Мэдээлэл</th>
+                        {% for month in months %}
+                            <th class="min-w-[120px] px-2 py-3 text-right text-xs font-medium text-gray-500 uppercase whitespace-nowrap">{{ month }}-р сар</th>
+                        {% endfor %}
+                        <th class="min-w-[150px] px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase border-l bg-blue-50 whitespace-nowrap">Жилийн дүн</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-200">
+                    <!-- 1. PayAmount - Борлуулалтын дүн -->
+                    <tr class="bg-green-50 hover:bg-green-100">
+                        <td class="px-4 py-3 font-semibold text-gray-900 border-r sticky left-0 bg-green-50 z-10">1. Борлуулалтын дүн (PayAmount)</td>
+                        {% for month in months %}
+                            <td class="px-2 py-3 text-right text-green-700 font-medium" data-clickable data-row-type="sale" data-month="{{ month }}">
+                                {{ monthly_data|get_item:month|get_item:'payamount'|default:0|floatformat:0|intcomma }}
+                            </td>
+                        {% endfor %}
+                        <td class="px-4 py-3 text-right text-green-800 font-bold border-l bg-blue-50">
+                            {{ yearly_totals.payamount|floatformat:0|intcomma }}₮
+                        </td>
+                    </tr>
+
+                    <!-- 2. VatAmount - НӨАТ -->
+                    <tr class="hover:bg-gray-50">
+                        <td class="px-4 py-3 text-gray-700 border-r sticky left-0 bg-white z-10">2. НӨАТ (VatAmount)</td>
+                        {% for month in months %}
+                            <td class="px-2 py-3 text-right text-gray-600">
+                                {{ monthly_data|get_item:month|get_item:'vatamount'|default:0|floatformat:0|intcomma }}
+                            </td>
+                        {% endfor %}
+                        <td class="px-4 py-3 text-right text-gray-700 font-semibold border-l bg-blue-50">
+                            {{ yearly_totals.vatamount|floatformat:0|intcomma }}₮
+                        </td>
+                    </tr>
+
+                    <!-- 3. AmountNonVat - НӨАТ-гүй дүн -->
+                    <tr class="bg-blue-50 hover:bg-blue-100">
+                        <td class="px-4 py-3 font-semibold text-gray-900 border-r sticky left-0 bg-blue-50 z-10">3. НӨАТ-гүй дүн (AmountNonVat)</td>
+                        {% for month in months %}
+                            <td class="px-2 py-3 text-right text-blue-700 font-medium" data-clickable data-row-type="sale" data-month="{{ month }}">
+                                {{ monthly_data|get_item:month|get_item:'amountnonvat'|default:0|floatformat:0|intcomma }}
+                            </td>
+                        {% endfor %}
+                        <td class="px-4 py-3 text-right text-blue-800 font-bold border-l bg-blue-100">
+                            {{ yearly_totals.amountnonvat|floatformat:0|intcomma }}₮
+                        </td>
+                    </tr>
+
+                    <!-- 4. Cost - Нийт өртөг (UnitCost × Qty) -->
+                    <tr class="bg-orange-50 hover:bg-orange-100">
+                        <td class="px-4 py-3 text-gray-900 border-r sticky left-0 bg-orange-50 z-10">4. Нийт өртөг (UnitCost × Qty)</td>
+                        {% for month in months %}
+                            <td class="px-2 py-3 text-right text-orange-600" data-clickable data-row-type="sale" data-month="{{ month }}">
+                                {{ monthly_data|get_item:month|get_item:'cost'|default:0|floatformat:0|intcomma }}
+                            </td>
+                        {% endfor %}
+                        <td class="px-4 py-3 text-right text-orange-700 font-semibold border-l bg-blue-50">
+                            {{ yearly_totals.cost|floatformat:0|intcomma }}₮
+                        </td>
+                    </tr>
+
+                    <!-- 5. Бохир ашиг (AmountNonVat - Cost) -->
+                    <tr class="bg-emerald-100 hover:bg-emerald-200 border-t-2 border-emerald-300">
+                        <td class="px-4 py-3 font-bold text-emerald-900 border-r sticky left-0 bg-emerald-100 z-10">5. БОХИР АШИГ (3-4)</td>
+                        {% for month in months %}
+                            <td class="px-2 py-3 text-right text-emerald-800 font-bold">
+                                {{ monthly_data|get_item:month|get_item:'gross_profit'|default:0|floatformat:0|intcomma }}
+                            </td>
+                        {% endfor %}
+                        <td class="px-4 py-3 text-right text-emerald-900 font-bold border-l bg-emerald-200">
+                            {{ yearly_totals.gross_profit|floatformat:0|intcomma }}₮
+                        </td>
+                    </tr>
+
+                    <!-- 6. Discount - Борлуулалтын хөнгөлөлт (520101) -->
+                    <tr class="bg-red-50 hover:bg-red-100">
+                        <td class="px-4 py-3 text-gray-900 border-r sticky left-0 bg-red-50 z-10">6. Борлуулалтын хөнгөлөлт (520101)</td>
+                        {% for month in months %}
+                            <td class="px-2 py-3 text-right text-red-600" data-clickable data-row-type="discount" data-month="{{ month }}">
+                                {{ monthly_data|get_item:month|get_item:'discount'|default:0|floatformat:0|intcomma }}
+                            </td>
+                        {% endfor %}
+                        <td class="px-4 py-3 text-right text-red-700 font-semibold border-l bg-blue-50">
+                            {{ yearly_totals.discount|floatformat:0|intcomma }}₮
+                        </td>
+                    </tr>
+
+                    <!-- 7. Refund - Буцаалт -->
+                    <tr class="bg-red-50 hover:bg-red-100">
+                        <td class="px-4 py-3 text-gray-900 border-r sticky left-0 bg-red-50 z-10">7. Буцаалт</td>
+                        {% for month in months %}
+                            <td class="px-2 py-3 text-right text-red-600" data-clickable data-row-type="refund" data-month="{{ month }}">
+                                {{ monthly_data|get_item:month|get_item:'refund'|default:0|floatformat:0|intcomma }}
+                            </td>
+                        {% endfor %}
+                        <td class="px-4 py-3 text-right text-red-700 font-semibold border-l bg-blue-50">
+                            {{ yearly_totals.refund|floatformat:0|intcomma }}₮
+                        </td>
+                    </tr>
+
+                    <!-- 8. Хөнгөлөлт, буцаалт хассан зардлын өмнөх ашиг -->
+                    <tr class="bg-purple-100 hover:bg-purple-200 border-t-2 border-purple-300">
+                        <td class="px-4 py-3 font-bold text-purple-900 border-r sticky left-0 bg-purple-100 z-10">8. ХӨНГӨЛӨЛТ, БУЦААЛТ ХАССАН ЗАРДЛЫН ӨМНӨХ АШИГ (3-4-6-7)</td>
+                        {% for month in months %}
+                            <td class="px-2 py-3 text-right text-purple-800 font-bold">
+                                {{ monthly_data|get_item:month|get_item:'gross_profit_after_discount'|default:0|floatformat:0|intcomma }}
+                            </td>
+                        {% endfor %}
+                        <td class="px-4 py-3 text-right text-purple-900 font-bold border-l bg-purple-200">
+                            {{ yearly_totals.gross_profit_after_discount|floatformat:0|intcomma }}₮
+                        </td>
+                    </tr>
+
+                    <!-- Зардлууд (7-р эхэлсэн дансууд) -->
+                    {% if expense_accounts %}
+                        <tr class="bg-gray-200">
+                            <td colspan="14" class="px-4 py-2 font-bold text-gray-800 uppercase sticky left-0 bg-gray-200 z-10">Зардлууд (7-р данс)</td>
+                        </tr>
+                        {% for account_id, account_data in expense_accounts.items %}
+                            <tr class="hover:bg-yellow-50">
+                                <td class="px-4 py-3 text-sm text-gray-700 border-r sticky left-0 bg-white z-10">
+                                    {{ account_id }} - {{ account_data.name }}
+                                </td>
+                                {% for month in months %}
+                                    <td class="px-2 py-3 text-right text-gray-600 text-sm" data-clickable data-row-type="expense" data-month="{{ month }}" data-account-id="{{ account_id }}">
+                                        {{ account_data.monthly|get_item:month|default:0|floatformat:0|intcomma }}
+                                    </td>
+                                {% endfor %}
+                                <td class="px-4 py-3 text-right text-gray-700 font-medium border-l bg-blue-50 text-sm">
+                                    {{ account_data.yearly_total|floatformat:0|intcomma }}₮
+                                </td>
+                            </tr>
+                        {% endfor %}
+                    {% endif %}
+
+                    <!-- Нийт зардал -->
+                    <tr class="bg-yellow-100 hover:bg-yellow-200 border-t-2 border-yellow-300">
+                        <td class="px-4 py-3 font-bold text-gray-900 border-r sticky left-0 bg-yellow-100 z-10">9. НИЙТ ЗАРДАЛ</td>
+                        {% for month in months %}
+                            <td class="px-2 py-3 text-right text-yellow-800 font-bold">
+                                {{ total_expenses_monthly|get_item:month|default:0|floatformat:0|intcomma }}
+                            </td>
+                        {% endfor %}
+                        <td class="px-4 py-3 text-right text-yellow-900 font-bold border-l bg-yellow-200">
+                            {{ yearly_totals.total_expense|floatformat:0|intcomma }}₮
+                        </td>
+                    </tr>
+
+                    <!-- Цэвэр ашиг -->
+                    <tr class="bg-green-200 hover:bg-green-300 border-t-4 border-green-500">
+                        <td class="px-4 py-4 font-bold text-green-900 text-lg border-r sticky left-0 bg-green-200 z-10">10. ЦЭВЭР АШИГ (8-9)</td>
+                        {% for month in months %}
+                            <td class="px-2 py-4 text-right text-green-900 font-bold text-lg">
+                                {{ monthly_data|get_item:month|get_item:'net_profit'|default:0|floatformat:0|intcomma }}
+                            </td>
+                        {% endfor %}
+                        <td class="px-4 py-4 text-right text-green-900 font-bold text-xl border-l bg-green-300">
+                            {{ yearly_totals.net_profit|floatformat:0|intcomma }}₮
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="mt-4 text-sm text-gray-600">
+            Тайлангийн он: {{ selected_year }}
+        </div>
+    </main>
+</div>
+
+<!-- JavaScript болон data attributes -->
+<div id="report-data" 
+     data-selected-year="{{ selected_year }}" 
+     style="display:none;">
+</div>
+
+<script>
+// Хүснэгтний нүдийг дарахад гүйлгээний задаргаа харуулах
+function openTransactionDetail(year, month, type, accountId = null) {
+    // Параметрүүдийг шалгах
+    if (!year || !month || !type) {
+        console.error('Missing parameters:', {year, month, type});
+        alert('Алдаа: Параметр дутуу байна');
+        return;
+    }
+    
+    let url = `/dashboard/expense-transaction-detail/?year=${year}&month=${month}&type=${type}`;
+    if (accountId) {
+        url += `&account_id=${accountId}`;
+    }
+    console.log('Opening URL:', url);
+    console.log('Parameters:', {year, month, type, accountId});
+    window.open(url, '_blank');
+}
+
+// PayAmount, AmountNonVat, Cost нүднүүдэд click handler
+document.addEventListener('DOMContentLoaded', function() {
+    // Data attribute-с жилийг авах
+    const reportData = document.getElementById('report-data');
+    const selectedYearStr = reportData ? reportData.dataset.selectedYear : null;
+    
+    if (!selectedYearStr) {
+        console.error('Selected year not found!');
+        return;
+    }
+    
+    // String-г number болгох (мянгачлалыг арилгах)
+    const selectedYear = parseInt(selectedYearStr.replace(/,/g, ''), 10);
+    
+    console.log('Selected year:', selectedYear, '(type:', typeof selectedYear, ')');
+    
+    const cells = document.querySelectorAll('[data-clickable]');
+    console.log('Found clickable cells:', cells.length);
+    cells.forEach(cell => {
+        cell.style.cursor = 'pointer';
+        cell.addEventListener('click', function() {
+            const rowType = this.dataset.rowType;
+            const month = this.dataset.month;
+            const accountId = this.dataset.accountId || null;
+            console.log('Cell clicked - Row type:', rowType, 'Month:', month, 'Account:', accountId, 'Year:', selectedYear);
+            openTransactionDetail(selectedYear, month, rowType, accountId);
+        });
+    });
+});
+</script>
+{% endblock %}

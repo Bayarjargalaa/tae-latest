@@ -1,0 +1,123 @@
+{% extends 'base.html' %}
+{% load humanize %}
+
+{% block title %}Хоолны бүртгэл - Euro Foods{% endblock %}
+
+{% block hide_mobile_menu %}hidden{% endblock %}
+
+{% block content %}
+<div class="flex min-h-screen bg-gray-50">
+    {% include 'shop/_sidebar.html' with active_page='meal_list' %}
+
+    <main class="flex-1 p-2 lg:p-8 lg:ml-0">
+        <div class="flex items-center justify-between mb-6">
+            <div>
+                <h1 class="text-2xl lg:text-3xl font-bold text-gray-900">🍲 Хоолны бүртгэл</h1>
+                <p class="text-gray-600 mt-2">Хоол болон орцын жагсаалт</p>
+            </div>
+            <a href="{% url 'shop:meal_create' %}" class="bg-primary text-white px-4 py-2 rounded-lg hover:bg-green-700 transition whitespace-nowrap">
+                + Шинэ хоол
+            </a>
+        </div>
+
+        {% if messages %}
+        <div class="mb-4">
+            {% for message in messages %}
+            <div class="p-3 rounded-lg bg-green-100 text-green-800 mb-2">{{ message }}</div>
+            {% endfor %}
+        </div>
+        {% endif %}
+
+        <div class="bg-white rounded-lg shadow p-4 mb-6">
+            <h2 class="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-2">Хоолны циклийн эхлэл тохируулах</h2>
+            <p class="text-xs text-gray-400 mb-3">
+                Огноо болон дугаар сонгож хадгалахад, тэр өдрийг сонгосон дугаартай болгож, түүнээс хойшхи
+                бүх ажлын өдрүүдэд дараалал (жиш: 5 гэж тохируулбал дараагийн ажлын өдөр 6, дараа нь 7...) үргэлжилнэ.
+                Сонгосон огнооноос өмнөх огноонд хоол харагдахгүй.
+            </p>
+            <form method="post" action="{% url 'shop:meal_cycle_settings_update' %}" class="flex flex-wrap items-end gap-3">
+                {% csrf_token %}
+                <div>
+                    <label class="block text-xs text-gray-500 mb-1">Огноо</label>
+                    <input type="date" name="date" value="{{ cycle_effective_from|date:'Y-m-d' }}" required class="border border-gray-300 rounded-lg px-3 py-2">
+                </div>
+                <div>
+                    <label class="block text-xs text-gray-500 mb-1">Хоолны дугаар</label>
+                    <select name="number" required class="border border-gray-300 rounded-lg px-3 py-2">
+                        {% for n in number_choices %}
+                        <option value="{{ n }}" {% if n == cycle_effective_number %}selected{% endif %}>{{ n }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <button type="submit" class="bg-primary text-white px-4 py-2 rounded-lg hover:bg-green-700 transition">
+                    Хадгалах
+                </button>
+            </form>
+            <p class="text-xs text-gray-500 mt-3">
+                Одоогийн тохиргоо:
+                {% if cycle_effective_from %}
+                <strong>{{ cycle_effective_from }}</strong> = <strong>{{ cycle_effective_number }}</strong>-р дугаар
+                {% else %}
+                <span class="text-gray-400">тохируулаагүй</span>
+                {% endif %}
+                · Өнөөдөр ({{ today }}) = <strong>{{ today_menu_number|default:'амралтын өдөр' }}</strong>{% if today_menu_number %}-р дугаар{% endif %}
+            </p>
+        </div>
+
+        <div class="bg-white rounded-lg shadow overflow-x-auto">
+            <table class="min-w-full text-sm">
+                <thead>
+                    <tr class="bg-gray-100 text-left">
+                        <th class="px-4 py-3 font-semibold text-gray-700">Төрөл</th>
+                        <th class="px-4 py-3 font-semibold text-gray-700">Дугаар</th>
+                        <th class="px-4 py-3 font-semibold text-gray-700">Нэр</th>
+                        <th class="px-4 py-3 font-semibold text-gray-700">Орц</th>
+                        <th class="px-4 py-3 font-semibold text-gray-700 text-right">Үйлдэл</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for meal in meals %}
+                    <tr class="border-t">
+                        <td class="px-4 py-3">{{ meal.get_meal_type_display }}</td>
+                        <td class="px-4 py-3">{{ meal.number_display|default:'-' }}</td>
+                        <td class="px-4 py-3 font-medium text-gray-900">{{ meal.name }}</td>
+                        <td class="px-4 py-3 text-gray-600">
+                            {% if meal.ingredients.all %}
+                            <table class="min-w-full text-xs border border-gray-200 rounded">
+                                <thead>
+                                    <tr class="bg-gray-50 text-left">
+                                        <th class="px-2 py-1 font-medium text-gray-500">Орц</th>
+                                        <th class="px-2 py-1 font-medium text-gray-500">Хэмжээ</th>
+                                        <th class="px-2 py-1 font-medium text-gray-500">Нэгж</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for ingredient in meal.ingredients.all %}
+                                    <tr class="border-t border-gray-200">
+                                        <td class="px-2 py-1">{{ ingredient.item.name|default:ingredient.item_id }}</td>
+                                        <td class="px-2 py-1">{{ ingredient.quantity|default:'-' }}</td>
+                                        <td class="px-2 py-1">{{ ingredient.unit|default:'-' }}</td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                            {% else %}
+                            <span class="text-gray-400">-</span>
+                            {% endif %}
+                        </td>
+                        <td class="px-4 py-3 text-right whitespace-nowrap">
+                            <a href="{% url 'shop:meal_edit' meal.pk %}" class="text-primary hover:underline mr-3">Засах</a>
+                            <a href="{% url 'shop:meal_delete' meal.pk %}" class="text-red-600 hover:underline">Устгах</a>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="5" class="px-4 py-6 text-center text-gray-500">Хоол бүртгэгдээгүй байна.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </main>
+</div>
+{% endblock %}

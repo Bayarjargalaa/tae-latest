@@ -1,0 +1,265 @@
+{% extends 'base.html' %}
+{% load product_filters %}
+
+{% block title %}Бүтээгдэхүүн - EuroFoods{% endblock %}
+
+{% block content %}
+<!-- Page Header -->
+<section class="bg-gradient-to-r from-primary to-secondary text-white py-12">
+    <div class="container mx-auto px-4">
+        <h1 class="text-4xl font-bold mb-2">
+            Бүтээгдэхүүн
+            {% if jijig_min_qty == 'true' %}
+            <span class="text-2xl bg-blue-600 px-3 py-1 rounded-full ml-2">🏢 Үлдэгдэлтэй бараа 10+</span>
+            {% endif %}
+        </h1>
+        <p class="text-lg opacity-90">
+            {{ page_obj.paginator.count }} бүтээгдэхүүн олдлоо
+            {% if jijig_min_qty == 'true' %}
+            <span class="text-sm">(Агуулах жижиг ≥10)</span>
+            {% endif %}
+        </p>
+    </div>
+</section>
+
+<!-- Filters & Products -->
+<section class="py-8">
+    <div class="container mx-auto px-4">
+        <div class="flex flex-col lg:flex-row gap-8">
+            <!-- Sidebar Filters -->
+            <aside class="lg:w-1/4">
+                <div class="bg-white rounded-lg shadow-md p-6 sticky top-24">
+                    <h2 class="text-xl font-bold mb-4">Шүүлт</h2>
+                    
+                    <!-- Search -->
+                    <form method="get" class="mb-6">
+                        <input type="text" name="q" value="{{ search_query|default:'' }}" 
+                               placeholder="Хайх..." 
+                               class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent">
+                        {% if jijig_min_qty == 'true' %}
+                        <input type="hidden" name="jijig_min" value="true">
+                        {% endif %}
+                        <button type="submit" class="w-full mt-2 bg-primary text-white py-2 rounded-lg hover:bg-green-700 transition">
+                            🔍 Хайх
+                        </button>
+                    </form>
+
+                    <!-- Categories -->
+                    {% if categories %}
+                    <div class="mb-6">
+                        <h3 class="font-bold mb-3">Ангилал</h3>
+                        <div class="space-y-2 max-h-64 overflow-y-auto">
+                            <a href="?{% if jijig_min_qty == 'true' %}jijig_min=true{% endif %}" class="block px-3 py-2 rounded hover:bg-gray-100 transition {% if not current_category %}bg-primary text-white hover:bg-green-700{% endif %}">
+                                Бүгд
+                            </a>
+                            {% for category in categories %}
+                            <a href="?category={{ category }}{% if jijig_min_qty == 'true' %}&jijig_min=true{% endif %}" 
+                               class="block px-3 py-2 rounded hover:bg-gray-100 transition {% if current_category == category %}bg-primary text-white hover:bg-green-700{% endif %}">
+                                {{ category }}
+                            </a>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    {% endif %}
+
+                    <!-- Brands -->
+                    {% if brands %}
+                    <div class="mb-6">
+                        <h3 class="font-bold mb-3">Брэнд</h3>
+                        <div class="space-y-2 max-h-64 overflow-y-auto">
+                            <a href="?{% if jijig_min_qty == 'true' %}jijig_min=true{% endif %}" class="block px-3 py-2 rounded hover:bg-gray-100 transition {% if not current_brand %}bg-primary text-white hover:bg-green-700{% endif %}">
+                                Бүгд
+                            </a>
+                            {% for brand in brands %}
+                            <a href="?brand={{ brand }}{% if jijig_min_qty == 'true' %}&jijig_min=true{% endif %}" 
+                               class="block px-3 py-2 rounded hover:bg-gray-100 transition {% if current_brand == brand %}bg-primary text-white hover:bg-green-700{% endif %}">
+                                {{ brand }}
+                            </a>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    {% endif %}
+
+                    <!-- Үлдэгдлийн шүүлт -->
+                    {% if user.is_authenticated %}
+                    <div class="mb-6">
+                        <h3 class="font-bold mb-3">Үлдэгдэл</h3>
+                        <form method="get" id="stock-filter-form">
+                            <!-- Бусад параметрүүдийг хадгалах -->
+                            {% if current_category %}
+                            <input type="hidden" name="category" value="{{ current_category }}">
+                            {% endif %}
+                            {% if current_brand %}
+                            <input type="hidden" name="brand" value="{{ current_brand }}">
+                            {% endif %}
+                            {% if search_query %}
+                            <input type="hidden" name="q" value="{{ search_query }}">
+                            {% endif %}
+                            
+                            <!-- Агуулах жижиг 10+ checkbox -->
+                            <label class="flex items-start space-x-3 p-3 bg-blue-50 rounded-lg border border-blue-200 hover:bg-blue-100 transition cursor-pointer">
+                                <input type="checkbox" 
+                                       id="jijig-min-checkbox" 
+                                       name="jijig_min" 
+                                       value="true" 
+                                       {% if jijig_min_qty == 'true' %}checked{% endif %}
+                                       onchange="this.form.submit()"
+                                       class="mt-1 w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500">
+                                <div class="flex-1">
+                                    <span class="block text-sm font-medium text-blue-900">🏢 Агуулах жижигт 10+</span>
+                                    <span class="block text-xs text-blue-700 mt-1">
+                                        {% if jijig_min_qty == 'true' %}
+                                        Идэвхтэй ✓
+                                        {% else %}
+                                        Бүх бараа
+                                        {% endif %}
+                                    </span>
+                                </div>
+                            </label>
+                        </form>
+                    </div>
+                    {% else %}
+                    <!-- Нэвтрээгүй хэрэглэгчдэд мэдэгдэл -->
+                    <div class="mb-6">
+                        <h3 class="font-bold mb-3">Үлдэгдэл</h3>
+                        <div class="p-3 bg-blue-50 rounded-lg border border-blue-200">
+                            <div class="flex items-start space-x-2">
+                                <span class="text-blue-600">🔒</span>
+                                <div class="flex-1">
+                                    <span class="block text-sm font-medium text-blue-900">Агуулах жижигт 10+</span>
+                                    <span class="block text-xs text-blue-700 mt-1">
+                                        Зөвхөн үлдэгдэлтэй бараа харагдаж байна
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    {% endif %}
+                </div>
+            </aside>
+
+            <!-- Products Grid -->
+            <main class="lg:w-3/4">
+                {% if page_obj %}
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {% for product in page_obj %}
+                    <div class="bg-white rounded-lg shadow-md hover:shadow-xl transition-all duration-300 transform hover:-translate-y-2 overflow-hidden">
+                        <!-- Product Image -->
+                        <a href="{% url 'shop:product_detail' product.id %}">
+                            <div class="h-48 bg-gray-50 overflow-hidden">
+                                <img src="{{ product|product_image_url }}" 
+                                     alt="{{ product.name }}"
+                                     class="w-full h-full object-contain hover:scale-110 transition-transform duration-300">
+                            </div>
+                        </a>
+
+                        <!-- Product Info -->
+                        <div class="p-4">
+                            <div class="text-xs text-gray-500 uppercase mb-2">{{ product.itemcategoryname|default:"Бусад" }}</div>
+                            
+                            <!-- Монгол нэр эсвэл англи нэр -->
+                            <h3 class="font-bold text-lg mb-2 line-clamp-2 h-14">
+                                {% if product.extension and product.extension.name_mn %}
+                                    {{ product.extension.name_mn }}
+                                {% else %}
+                                    {{ product.name }}
+                                {% endif %}
+                            </h3>
+                            
+                            <!-- Брэнд болон үйлдвэрлэсэн улс -->
+                            <div class="text-sm text-gray-600 mb-2 space-y-1">
+                                {% if product.brandname %}
+                                <div>🏷️ {{ product.brandname }}</div>
+                                {% endif %}
+                                {% if product.extension and product.extension.country_of_origin %}
+                                <div>🌍 {{ product.extension.country_of_origin }}</div>
+                                {% endif %}
+                                {% if product.extension and product.extension.qty_per_box %}
+                                <div>📦 {{ product.extension.qty_per_box }} ш/хайрцаг</div>
+                                {% endif %}
+                            </div>
+
+                            <div class="flex items-center justify-between mb-3">
+                                <div>
+                                    <div class="text-2xl font-bold text-primary">
+                                        {{ product.saleprice|floatformat:0 }}₮
+                                    </div>
+                                    {% if product.measurename %}
+                                    <div class="text-xs text-gray-500">/ {{ product.measurename }}</div>
+                                    {% endif %}
+                                </div>
+                                {% if product.activestatus == 'Y' %}
+                                <span class="bg-green-100 text-green-800 text-xs px-2 py-1 rounded-full">Нөөцтэй</span>
+                                {% else %}
+                                <span class="bg-red-100 text-red-800 text-xs px-2 py-1 rounded-full">Дууссан</span>
+                                {% endif %}
+                            </div>
+
+                            <button class="w-full bg-secondary text-white py-2 rounded-lg hover:bg-blue-700 transition font-medium {% if product.activestatus != 'Y' %}opacity-50 cursor-not-allowed{% endif %}"
+                                    {% if product.activestatus != 'Y' %}disabled{% endif %}>
+                                {% if product.activestatus == 'Y' %}
+                                🛒 Сагслах
+                                {% else %}
+                                Дууссан
+                                {% endif %}
+                            </button>
+                            
+                            {% if user.is_staff %}
+                            <a href="{% url 'shop:product_edit' product.id %}" 
+                               class="block text-center w-full mt-2 bg-gray-100 text-gray-700 py-2 rounded-lg hover:bg-gray-200 transition text-sm">
+                                ✏️ Засах
+                            </a>
+                            {% endif %}
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+
+                <!-- Pagination -->
+                {% if page_obj.has_other_pages %}
+                <div class="mt-8 flex justify-center">
+                    <nav class="flex items-center gap-2">
+                        {% if page_obj.has_previous %}
+                        <a href="?page=1{% if current_category %}&category={{ current_category }}{% endif %}{% if current_brand %}&brand={{ current_brand }}{% endif %}{% if search_query %}&q={{ search_query }}{% endif %}{% if jijig_min_qty == 'true' %}&jijig_min=true{% endif %}" 
+                           class="px-3 py-2 bg-white rounded-lg border hover:bg-gray-50 transition">
+                            ««
+                        </a>
+                        <a href="?page={{ page_obj.previous_page_number }}{% if current_category %}&category={{ current_category }}{% endif %}{% if current_brand %}&brand={{ current_brand }}{% endif %}{% if search_query %}&q={{ search_query }}{% endif %}{% if jijig_min_qty == 'true' %}&jijig_min=true{% endif %}" 
+                           class="px-3 py-2 bg-white rounded-lg border hover:bg-gray-50 transition">
+                            «
+                        </a>
+                        {% endif %}
+
+                        <span class="px-4 py-2 bg-primary text-white rounded-lg font-medium">
+                            {{ page_obj.number }} / {{ page_obj.paginator.num_pages }}
+                        </span>
+
+                        {% if page_obj.has_next %}
+                        <a href="?page={{ page_obj.next_page_number }}{% if current_category %}&category={{ current_category }}{% endif %}{% if current_brand %}&brand={{ current_brand }}{% endif %}{% if search_query %}&q={{ search_query }}{% endif %}{% if jijig_min_qty == 'true' %}&jijig_min=true{% endif %}" 
+                           class="px-3 py-2 bg-white rounded-lg border hover:bg-gray-50 transition">
+                            »
+                        </a>
+                        <a href="?page={{ page_obj.paginator.num_pages }}{% if current_category %}&category={{ current_category }}{% endif %}{% if current_brand %}&brand={{ current_brand }}{% endif %}{% if search_query %}&q={{ search_query }}{% endif %}{% if jijig_min_qty == 'true' %}&jijig_min=true{% endif %}" 
+                           class="px-3 py-2 bg-white rounded-lg border hover:bg-gray-50 transition">
+                            »»
+                        </a>
+                        {% endif %}
+                    </nav>
+                </div>
+                {% endif %}
+
+                {% else %}
+                <div class="text-center py-16">
+                    <div class="text-6xl mb-4">🔍</div>
+                    <h3 class="text-2xl font-bold text-gray-800 mb-2">Бүтээгдэхүүн олдсонгүй</h3>
+                    <p class="text-gray-600 mb-4">Өөр шүүлт ашиглаж үзнэ үү</p>
+                    <a href="/products/" class="inline-block bg-primary text-white px-6 py-2 rounded-lg hover:bg-green-700 transition">
+                        Бүх бүтээгдэхүүн
+                    </a>
+                </div>
+                {% endif %}
+            </main>
+        </div>
+    </div>
+</section>
+{% endblock %}

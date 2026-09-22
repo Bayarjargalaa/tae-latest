@@ -1,0 +1,227 @@
+{% extends 'base.html' %}
+{% load humanize %}
+
+{% block title %}Борлуулалтын тайлан - Euro Foods{% endblock %}
+
+{% block hide_mobile_menu %}hidden{% endblock %}
+
+{% block content %}
+<div class="flex min-h-screen bg-gray-50">
+    <!-- Mobile-responsive Sidebar -->
+    {% include 'shop/_sidebar.html' with active_page='sales_report' %}
+    
+    <!-- Main Content -->
+    <main class="flex-1 p-2 lg:p-8 lg:ml-0">
+        <div class="max-w-7xl mx-auto">
+            <!-- Header -->
+            <div class="mb-4 lg:mb-6">
+                <h1 class="text-2xl lg:text-3xl font-bold text-gray-800">📊 Борлуулалтын тайлан</h1>
+                <p class="text-gray-600 mt-2">
+                    {% if active_tab == 'summary' %}
+                        <strong>📅 {{ earliest_date }} - {{ latest_date }}</strong> • БҮХ борлуулалт ({{ all_records_count|intcomma }} бичлэг)
+                    {% else %}
+                        {% if date_from or date_to %}
+                            {% if date_from %}{{ date_from }}{% else %}эхнээс{% endif %} ~ 
+                            {% if date_to %}{{ date_to }}{% else %}одоог хүртэл{% endif %}
+                        {% else %}
+                            БҮХ хугацаа ({{ earliest_date }} - {{ latest_date }})
+                        {% endif %}
+                        • {{ total_records|intcomma }} борлуулалт
+                    {% endif %}
+                </p>
+            </div>
+            
+            <!-- Tab Navigation -->
+            <div class="bg-white rounded-lg shadow mb-4 lg:mb-6">
+                <div class="border-b overflow-x-auto">
+                    <nav class="flex space-x-0 lg:space-x-2 px-2 lg:px-4 min-w-max lg:min-w-0" aria-label="Tabs">
+                        <a href="?tab=summary&date_from={{ date_from }}&date_to={{ date_to }}" 
+                           class="px-3 lg:px-6 py-2 lg:py-3 font-medium text-sm lg:text-base whitespace-nowrap transition {% if active_tab == 'summary' %}text-primary border-b-2 border-primary{% else %}text-gray-500 hover:text-gray-700{% endif %}">
+                            📈 Нэгтгэл
+                        </a>
+                        <a href="?tab=by_product&date_from={{ date_from }}&date_to={{ date_to }}" 
+                           class="px-3 lg:px-6 py-2 lg:py-3 font-medium text-sm lg:text-base whitespace-nowrap transition {% if active_tab == 'by_product' %}text-primary border-b-2 border-primary{% else %}text-gray-500 hover:text-gray-700{% endif %}">
+                            📦 Бараагаар
+                        </a>
+                        <a href="?tab=by_customer&date_from={{ date_from }}&date_to={{ date_to }}" 
+                           class="px-3 lg:px-6 py-2 lg:py-3 font-medium text-sm lg:text-base whitespace-nowrap transition {% if active_tab == 'by_customer' %}text-primary border-b-2 border-primary{% else %}text-gray-500 hover:text-gray-700{% endif %}">
+                            👥 Харилцагчаар
+                        </a>
+                        <a href="?tab=by_date&date_from={{ date_from }}&date_to={{ date_to }}" 
+                           class="px-3 lg:px-6 py-2 lg:py-3 font-medium text-sm lg:text-base whitespace-nowrap transition {% if active_tab == 'by_date' %}text-primary border-b-2 border-primary{% else %}text-gray-500 hover:text-gray-700{% endif %}">
+                            📅 Огноогоор
+                        </a>
+                    </nav>
+                </div>
+            </div>
+            
+            <!-- Global Stats -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+                <div class="bg-white rounded-lg shadow p-6">
+                    <p class="text-gray-500 text-sm">Нийт орлого</p>
+                    <p class="text-3xl font-bold text-primary mt-2">{{ stats.total_revenue|default:0|floatformat:0|intcomma }}₮</p>
+                </div>
+                <div class="bg-white rounded-lg shadow p-6">
+                    <p class="text-gray-500 text-sm">Нийт захиалга</p>
+                    <p class="text-3xl font-bold text-blue-600 mt-2">{{ stats.total_orders|default:0|intcomma }}</p>
+                </div>
+                <div class="bg-white rounded-lg shadow p-6">
+                   <p class="text-gray-500 text-sm">Зарагдсан бараа</p>
+                    <p class="text-3xl font-bold text-green-600 mt-2">{{ stats.total_qty|default:0|floatformat:0|intcomma }}</p>
+                </div>
+            </div>
+            
+            <!-- Tab Content -->
+            {% if active_tab == 'summary' %}
+                {% include 'shop/reports/sale_summary_tab.html' %}
+            {% elif active_tab == 'by_product' %}
+                {% include 'shop/reports/sale_product_tab.html' %}
+            {% elif active_tab == 'by_customer' %}
+                {% include 'shop/reports/sale_customer_tab.html' %}
+            {% elif active_tab == 'by_date' %}
+                {% include 'shop/reports/sale_date_tab.html' %}
+            {% endif %}
+        </div>
+    </main>
+</div>
+
+<script>
+// Pivot table toggle functionality
+function toggleYear(yearId) {
+    console.log('toggleYear called with:', yearId);
+    const monthsRow = document.getElementById('months-' + yearId);
+    const icon = document.getElementById('icon-' + yearId);
+    
+    console.log('monthsRow:', monthsRow);
+    console.log('icon:', icon);
+    
+    if (!monthsRow || !icon) {
+        console.error('Elements not found for year:', yearId);
+        return;
+    }
+    
+    if (monthsRow.classList.contains('hidden')) {
+        monthsRow.classList.remove('hidden');
+        icon.textContent = '▼';
+        console.log('Showed months for year:', yearId);
+    } else {
+        monthsRow.classList.add('hidden');
+        icon.textContent = '►';
+        console.log('Hidden months for year:', yearId);
+    }
+}
+
+// Table sorting functionality
+function sortTable(tableId, columnIndex, isNumeric = false) {
+    const table = document.getElementById(tableId);
+    if (!table) return;
+    
+    const tbody = table.querySelector('tbody');
+    const rows = Array.from(tbody.querySelectorAll('tr:not(.hidden)'));
+    
+    // Одоогийн эрэмбэ шалгах
+    const currentOrder = table.dataset.sortOrder || 'asc';
+    const newOrder = currentOrder === 'asc' ? 'desc' : 'asc';
+    table.dataset.sortOrder = newOrder;
+    
+    rows.sort((a, b) => {
+        const aCell = a.cells[columnIndex];
+        const bCell = b.cells[columnIndex];
+        
+        if (!aCell || !bCell) return 0;
+        
+        let aVal = aCell.textContent.trim();
+        let bVal = bCell.textContent.trim();
+        
+        if (isNumeric) {
+            // Тоон утгыг цэвэрлэх (,₮ гэх мэт)
+            aVal = parseFloat(aVal.replace(/[,₮]/g, '')) || 0;
+            bVal = parseFloat(bVal.replace(/[,₮]/g, '')) || 0;
+            return newOrder === 'asc' ? aVal - bVal : bVal - aVal;
+        } else {
+            // Текст эрэмбэлэх
+            return newOrder === 'asc' 
+                ? aVal.localeCompare(bVal, 'mn') 
+                : bVal.localeCompare(aVal, 'mn');
+        }
+    });
+    
+    // Эрэмбэлсэн мөрүүдийг буцааж оруулах
+    rows.forEach(row => tbody.appendChild(row));
+    
+    // Header icons шинэчлэх
+    const headers = table.querySelectorAll('th[onclick]');
+    headers.forEach(th => {
+        th.innerHTML = th.innerHTML.replace(/[▲▼]/g, '');
+    });
+    
+    const currentHeader = table.querySelectorAll('th')[columnIndex];
+    if (currentHeader) {
+        currentHeader.innerHTML += newOrder === 'asc' ? ' ▲' : ' ▼';
+    }
+}
+
+// Choices.js initialization - Searchable dropdown
+document.addEventListener('DOMContentLoaded', function() {
+    // Бараагаар tab-ын dropdown-ууд
+    const productSelect = document.getElementById('product-select');
+    const customerSelect = document.getElementById('customer-select');
+    
+    if (productSelect) {
+        new Choices(productSelect, {
+            searchEnabled: true,
+            searchPlaceholderValue: 'Хайх...',
+            noResultsText: 'Илэрц олдсонгүй',
+            itemSelectText: 'Сонгох',
+            removeItemButton: false,
+            shouldSort: false,
+            placeholder: true,
+            placeholderValue: 'Бүх бараа'
+        });
+    }
+    
+    if (customerSelect) {
+        new Choices(customerSelect, {
+            searchEnabled: true,
+            searchPlaceholderValue: 'Хайх...',
+            noResultsText: 'Илэрц олдсонгүй',
+            itemSelectText: 'Сонгох',
+            removeItemButton: false,
+            shouldSort: false,
+            placeholder: true,
+            placeholderValue: 'Бүх харилцагч'
+        });
+    }
+    
+    // Харилцагчаар tab-ын dropdown-ууд
+    const customerSelectMain = document.getElementById('customer-select-main');
+    const productSelectMain = document.getElementById('product-select-main');
+    
+    if (customerSelectMain) {
+        new Choices(customerSelectMain, {
+            searchEnabled: true,
+            searchPlaceholderValue: 'Хайх...',
+            noResultsText: 'Илэрц олдсонгүй',
+            itemSelectText: 'Сонгох',
+            removeItemButton: false,
+            shouldSort: false,
+            placeholder: true,
+            placeholderValue: 'Бүх харилцагч'
+        });
+    }
+    
+    if (productSelectMain) {
+        new Choices(productSelectMain, {
+            searchEnabled: true,
+            searchPlaceholderValue: 'Хайх...',
+            noResultsText: 'Илэрц олдсонгүй',
+            itemSelectText: 'Сонгох',
+            removeItemButton: false,
+            shouldSort: false,
+            placeholder: true,
+            placeholderValue: 'Бүх бараа'
+        });
+    }
+});
+</script>
+{% endblock %}

@@ -1,0 +1,149 @@
+{% extends 'base.html' %}
+
+{% block title %}Бүртгүүлэх - EuroFoods{% endblock %}
+
+{% block content %}
+<div class="container mx-auto px-4 py-12">
+    <div class="max-w-md mx-auto bg-white rounded-lg shadow-md p-8">
+        <h1 class="text-3xl font-bold text-center mb-6">Бүртгүүлэх</h1>
+        
+        {% if messages %}
+        <div class="mb-4">
+            {% for message in messages %}
+            <div class="p-4 rounded-lg {% if message.tags == 'success' %}bg-green-100 text-green-800{% else %}bg-blue-100 text-blue-800{% endif %}">
+                {{ message }}
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
+        
+        <form method="post" class="space-y-4">
+            {% csrf_token %}
+            
+            {% if form.non_field_errors %}
+            <div class="bg-red-100 text-red-800 p-4 rounded-lg">
+                {{ form.non_field_errors }}
+            </div>
+            {% endif %}
+            
+            <!-- First Name -->
+            <div>
+                <label class="block text-sm font-medium mb-2">{{ form.first_name.label }} <span class="text-red-500">*</span></label>
+                {{ form.first_name }}
+                {% if form.first_name.errors %}
+                <p class="text-red-600 text-sm mt-1">{{ form.first_name.errors.0 }}</p>
+                {% endif %}
+            </div>
+            
+            <!-- Email -->
+            <div>
+                <label class="block text-sm font-medium mb-2">{{ form.email.label }} <span class="text-red-500">*</span></label>
+                {{ form.email }}
+                <p class="text-xs text-gray-500 mt-1">Имэйл хаягаараа нэвтэрнэ. Ажилтны имэйл бол автоматаар засах эрх олгогдоно</p>
+                {% if form.email.errors %}
+                <p class="text-red-600 text-sm mt-1">{{ form.email.errors.0 }}</p>
+                {% endif %}
+            </div>
+            
+            <!-- Phone -->
+            <div>
+                <label class="block text-sm font-medium mb-2">{{ form.phone.label }} <span class="text-red-500">*</span></label>
+                {{ form.phone }}
+                {% if form.phone.errors %}
+                <p class="text-red-600 text-sm mt-1">{{ form.phone.errors.0 }}</p>
+                {% endif %}
+            </div>
+            
+            <!-- Password1 -->
+            <div>
+                <label class="block text-sm font-medium mb-2">{{ form.password1.label }}</label>
+                <div class="relative">
+                    {{ form.password1 }}
+                    <button type="button" 
+                            onclick="togglePassword('id_password1', 'eyeIcon1')"
+                            class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700 focus:outline-none"
+                            style="min-height: 44px; min-width: 44px;">
+                        <svg id="eyeIcon1" class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+                        </svg>
+                    </button>
+                </div>
+                {% if form.password1.errors %}
+                <p class="text-red-600 text-sm mt-1">{{ form.password1.errors.0 }}</p>
+                {% endif %}
+            </div>
+            
+            <!-- Password2 -->
+            <div>
+                <label class="block text-sm font-medium mb-2">{{ form.password2.label }}</label>
+                <div class="relative">
+                    {{ form.password2 }}
+                    <button type="button" 
+                            onclick="togglePassword('id_password2', 'eyeIcon2')"
+                            class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700 focus:outline-none"
+                            style="min-height: 44px; min-width: 44px;">
+                        <svg id="eyeIcon2" class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+                        </svg>
+                    </button>
+                </div>
+                {% if form.password2.errors %}
+                <p class="text-red-600 text-sm mt-1">{{ form.password2.errors.0 }}</p>
+                {% endif %}
+            </div>
+            
+            <!-- Submit -->
+            <button type="submit" class="w-full bg-primary text-white py-3 rounded-lg hover:bg-green-700 font-bold" style="min-height: 48px; font-size: 16px;">
+                Бүртгүүлэх
+            </button>
+        </form>
+        
+        <p class="text-center mt-6 text-gray-600">
+            Бүртгэлтэй юу? <a href="{% url 'shop:login' %}" class="text-primary hover:underline font-medium inline-block py-2" style="min-height: 44px; line-height: 28px;">Нэвтрэх</a>
+        </p>
+    </div>
+</div>
+
+<style>
+    input[type="text"],
+    input[type="email"],
+    input[type="password"] {
+        width: 100%;
+        padding: 0.75rem 1rem;
+        padding-right: 3rem; /* Eye icon-д зай үлдээх */
+        border: 1px solid #d1d5db;
+        border-radius: 0.5rem;
+        font-size: 1rem;
+    }
+    input:focus {
+        outline: none;
+        border-color: #2E7D32;
+        ring: 2px;
+        ring-color: #2E7D32;
+    }
+</style>
+
+<script>
+function togglePassword(inputId, iconId) {
+    const passwordInput = document.getElementById(inputId);
+    const eyeIcon = document.getElementById(iconId);
+    
+    if (passwordInput.type === 'password') {
+        passwordInput.type = 'text';
+        // Eye slash icon (нуух)
+        eyeIcon.innerHTML = `
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"/>
+        `;
+    } else {
+        passwordInput.type = 'password';
+        // Eye icon (харуулах)
+        eyeIcon.innerHTML = `
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+        `;
+    }
+}
+</script>
+{% endblock %}

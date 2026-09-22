@@ -1,0 +1,121 @@
+{% extends 'base.html' %}
+{% load humanize %}
+
+{% block title %}Хоол идэх нэгтгэл - Euro Foods{% endblock %}
+
+{% block hide_mobile_menu %}hidden{% endblock %}
+
+{% block extra_css %}
+<style>
+@media print {
+    #sidebar, #mobile-menu-button, #sidebar-overlay, header, footer, .no-print { display: none !important; }
+    main { margin: 0 !important; padding: 0 !important; }
+    body { background: white !important; }
+    .print-area { box-shadow: none !important; }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="flex min-h-screen bg-gray-50">
+    {% include 'shop/_sidebar.html' with active_page='meal_attendance' %}
+
+    <main class="flex-1 p-2 lg:p-8 lg:ml-0">
+        <div class="flex items-center justify-between mb-6 no-print">
+            <div>
+                <h1 class="text-2xl lg:text-3xl font-bold text-gray-900">📊 Хоол идэх нэгтгэл</h1>
+                <p class="text-gray-600 mt-2">Сонгосон хугацааны хоол идсэн хүмүүс болон орцын нэгтгэл</p>
+            </div>
+            <div class="flex gap-2">
+                <button onclick="window.print()" class="bg-primary text-white px-4 py-2 rounded-lg hover:bg-green-700 transition whitespace-nowrap">
+                    🖨 Хэвлэх
+                </button>
+                <a href="{% url 'shop:meal_attendance_list' %}" class="bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50 transition whitespace-nowrap">
+                    Буцах
+                </a>
+            </div>
+        </div>
+
+        <form method="get" class="bg-white rounded-lg shadow p-4 mb-6 flex flex-wrap items-end gap-4 no-print">
+            <div>
+                <label class="block text-sm font-medium mb-1">Эхлэх огноо</label>
+                <input type="date" name="date_from" value="{{ date_from|date:'Y-m-d' }}" class="border border-gray-300 rounded-lg px-4 py-2">
+            </div>
+            <div>
+                <label class="block text-sm font-medium mb-1">Дуусах огноо</label>
+                <input type="date" name="date_to" value="{{ date_to|date:'Y-m-d' }}" class="border border-gray-300 rounded-lg px-4 py-2">
+            </div>
+            <div>
+                <label class="block text-sm font-medium mb-1">Харах төрөл</label>
+                <select name="view" class="border border-gray-300 rounded-lg px-4 py-2">
+                    <option value="ingredients" {% if view_mode == 'ingredients' %}selected{% endif %}>Орц (материал)</option>
+                    <option value="people" {% if view_mode == 'people' %}selected{% endif %}>Хүмүүс</option>
+                </select>
+            </div>
+            <button type="submit" class="bg-primary text-white px-6 py-2 rounded-lg hover:bg-green-700 transition">
+                Харах
+            </button>
+        </form>
+
+        <div class="print-area bg-white rounded-lg shadow p-6">
+            <div class="mb-4">
+                <h2 class="text-lg font-bold text-gray-900">
+                    {% if view_mode == 'people' %}Хоол идэх хүмүүсийн нэгтгэл{% else %}Орцны хэрэглээний нэгтгэл{% endif %}
+                </h2>
+                <p class="text-sm text-gray-500">{{ date_from }} - {{ date_to }}</p>
+            </div>
+
+            {% if not dates %}
+            <p class="text-gray-500">Сонгосон хугацаанд бүртгэл алга байна.</p>
+            {% else %}
+            <div class="overflow-x-auto">
+                <table class="min-w-full text-xs border border-gray-200">
+                    <thead>
+                        <tr class="bg-gray-100 text-left">
+                            <th class="px-3 py-2 font-semibold text-gray-700 sticky left-0 bg-gray-100">
+                                {% if view_mode == 'people' %}Нэр{% else %}Орц{% endif %}
+                            </th>
+                            {% if view_mode == 'ingredients' %}
+                            <th class="px-2 py-2 font-semibold text-gray-700">Нэгж</th>
+                            {% endif %}
+                            {% for d in dates %}
+                            <th class="px-2 py-2 font-semibold text-gray-700 text-right whitespace-nowrap">{{ d|date:'m/d' }}</th>
+                            {% endfor %}
+                            <th class="px-3 py-2 font-semibold text-gray-900 text-right bg-gray-200">Нийт</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in rows %}
+                        <tr class="border-t">
+                            <td class="px-3 py-1.5 font-medium text-gray-900 sticky left-0 bg-white whitespace-nowrap">{{ row.label }}</td>
+                            {% if view_mode == 'ingredients' %}
+                            <td class="px-2 py-1.5 text-gray-400">{{ row.unit|default:'-' }}</td>
+                            {% endif %}
+                            {% for value in row.cells %}
+                            <td class="px-2 py-1.5 text-right">{% if value %}{{ value|floatformat:2 }}{% else %}-{% endif %}</td>
+                            {% endfor %}
+                            <td class="px-3 py-1.5 text-right font-semibold bg-gray-50">{{ row.total|floatformat:2 }}</td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="20" class="px-3 py-4 text-center text-gray-500">Өгөгдөл алга байна.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                    <tfoot>
+                        <tr class="border-t-2 border-gray-300 bg-gray-100 font-semibold">
+                            <td class="px-3 py-2 sticky left-0 bg-gray-100">Нийт</td>
+                            {% if view_mode == 'ingredients' %}
+                            <td class="px-2 py-2"></td>
+                            {% endif %}
+                            {% for total in column_totals %}
+                            <td class="px-2 py-2 text-right">{{ total|floatformat:2 }}</td>
+                            {% endfor %}
+                            <td class="px-3 py-2 text-right bg-gray-200">{{ grand_total|floatformat:2 }}</td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+            {% endif %}
+        </div>
+    </main>
+</div>
+{% endblock %}

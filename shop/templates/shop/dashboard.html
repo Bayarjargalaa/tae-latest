@@ -1,0 +1,86 @@
+{% extends 'base.html' %}
+
+{% block title %}Ажилтны хяналтын самбар - EuroFoods{% endblock %}
+
+{% block hide_mobile_menu %}{% endblock %}
+
+{% block content %}
+<div class="flex min-h-screen bg-gray-50">
+    <!-- Mobile-responsive Sidebar -->
+    {% include 'shop/_sidebar.html' with active_page='dashboard' %}
+    
+    <!-- Main Content -->
+    <main class="flex-1 p-8">
+        <div class="max-w-7xl mx-auto">
+            <!-- Header -->
+            <div class="mb-8">
+                <h1 class="text-3xl font-bold text-gray-800">Тавтай морил, {{ user.first_name|default:user.username }}!</h1>
+                <p class="text-gray-600 mt-2">Ажилтны хяналтын самбар</p>
+            </div>
+            
+            <!-- Stats Cards -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6 mb-8">
+                <div class="bg-white rounded-lg shadow p-6">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-gray-500 text-sm">Нийт бүтээгдэхүүн</p>
+                            <p class="text-3xl font-bold text-primary mt-2">{{ total_products }}</p>
+                        </div>
+                        <div class="text-4xl">📦</div>
+                    </div>
+                </div>
+
+                <div class="bg-white rounded-lg shadow p-6">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-gray-500 text-sm">Идэвхтэй</p>
+                            <p class="text-3xl font-bold text-green-600 mt-2">{{ active_products }}</p>
+                        </div>
+                        <div class="text-4xl">✅</div>
+                    </div>
+                </div>
+
+                <div class="bg-white rounded-lg shadow p-6">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-gray-500 text-sm">Үлдэгдэлтэй бараа</p>
+                            <p class="text-3xl font-bold text-orange-600 mt-2">{{ in_stock_products }}</p>
+                        </div>
+                        <div class="text-4xl">📊</div>
+                    </div>
+                </div>
+
+                <div class="bg-white rounded-lg shadow p-6">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-gray-500 text-sm">Харилцагч</p>
+                            <p class="text-3xl font-bold text-blue-600 mt-2">{{ total_customers }}</p>
+                        </div>
+                        <div class="text-4xl">👥</div>
+                    </div>
+                </div>
+                
+                <div class="bg-white rounded-lg shadow p-6">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-gray-500 text-sm">Ажилчид</p>
+                            <p class="text-3xl font-bold text-purple-600 mt-2">{{ total_employees }}</p>
+                        </div>
+                        <div class="text-4xl">👨‍💼</div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Recent Activity -->
+            <div class="bg-white rounded-lg shadow">
+                <div class="p-6 border-b">
+                    <h2 class="text-xl font-bold">Сүүлийн үйл ажиллагаа</h2>
+                </div>
+                <div class="p-6">
+                    <p class="text-gray-500">Тун удахгүй...</p>
+                </div>
+            </div>
+        </div>
+    </main>
+</div>
+{% endblock %}

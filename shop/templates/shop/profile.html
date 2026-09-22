@@ -1,0 +1,65 @@
+{% extends 'base.html' %}
+
+{% block title %}Хувийн мэдээлэл - Euro Foods{% endblock %}
+
+{% block hide_mobile_menu %}hidden{% endblock %}
+
+{% block content %}
+<div class="flex min-h-screen bg-gray-50">
+    {% include 'shop/_sidebar.html' with active_page='profile' %}
+
+    <main class="flex-1 p-2 lg:p-8 lg:ml-0">
+        <div class="mb-6">
+            <h1 class="text-2xl lg:text-3xl font-bold text-gray-900">👤 Хувийн мэдээлэл</h1>
+            <p class="text-gray-600 mt-2">Таны ажилтны болон холбоо барих мэдээлэл</p>
+        </div>
+
+        {% if messages %}
+        <div class="mb-4">
+            {% for message in messages %}
+            <div class="p-3 rounded-lg bg-green-100 text-green-800 mb-2">{{ message }}</div>
+            {% endfor %}
+        </div>
+        {% endif %}
+
+        <div class="bg-white rounded-lg shadow p-6 max-w-2xl">
+            {% if employee %}
+            <dl class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
+                <div>
+                    <dt class="text-sm text-gray-500">Нэр</dt>
+                    <dd class="text-gray-900 font-medium">{{ employee.name|default:'-' }}</dd>
+                </div>
+                <div>
+                    <dt class="text-sm text-gray-500">Албан тушаал</dt>
+                    <dd class="text-gray-900 font-medium">{{ employee.positionname|default:'-' }}</dd>
+                </div>
+                <div>
+                    <dt class="text-sm text-gray-500">Хэлтэс</dt>
+                    <dd class="text-gray-900 font-medium">{{ employee.departmentname|default:'-' }}</dd>
+                </div>
+                <div>
+                    <dt class="text-sm text-gray-500">Имэйл</dt>
+                    <dd class="text-gray-900 font-medium">{{ employee.email|default:'-' }}</dd>
+                </div>
+                <div>
+                    <dt class="text-sm text-gray-500">Ажилд орсон огноо</dt>
+                    <dd class="text-gray-900 font-medium">{{ employee.hiredate|default:'-' }}</dd>
+                </div>
+            </dl>
+            {% else %}
+            <p class="text-gray-600 mb-6">Таны бүртгэлтэй ажилтны мэдээлэл олдсонгүй.</p>
+            {% endif %}
+
+            <form method="post">
+                {% csrf_token %}
+                <label class="block text-sm text-gray-500 mb-1">Утасны дугаар</label>
+                <input type="text" name="phone" value="{{ user_profile.phone }}"
+                       class="w-full border border-gray-300 rounded-lg px-4 py-2 mb-4 focus:outline-none focus:ring-2 focus:ring-primary">
+                <button type="submit" class="bg-primary text-white px-6 py-2 rounded-lg hover:bg-green-700 transition">
+                    Хадгалах
+                </button>
+            </form>
+        </div>
+    </main>
+</div>
+{% endblock %}

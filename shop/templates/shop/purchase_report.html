@@ -1,0 +1,110 @@
+{% extends 'base.html' %}
+{% load humanize %}
+
+{% block title %}Татан авалтын тайлан - Euro Foods{% endblock %}
+
+{% block hide_mobile_menu %}hidden{% endblock %}
+
+{% block content %}
+<div class="flex min-h-screen bg-gray-50">
+    <!-- Mobile-responsive Sidebar -->
+    {% include 'shop/_sidebar.html' with active_page='purchase_report' %}
+    
+    <!-- Main Content -->
+    <main class="flex-1 p-2 lg:p-8 lg:ml-0">
+        <div class="max-w-7xl mx-auto">
+            <!-- HeaderОдоо summary_tab.html-г үзээд purchase_report-ын template-үүдийг үүсгэе.
+</thinking> -->
+            <div class="mb-4 lg:mb-6">
+                <h1 class="text-2xl lg:text-3xl font-bold text-gray-800">🚚 Татан авалтын тайлан</h1>
+                <p class="text-gray-600 mt-2">
+                    {% if date_from or date_to %}
+                        {% if date_from %}{{ date_from }}{% else %}эхнээс{% endif %} ~ 
+                        {% if date_to %}{{ date_to }}{% else %}одоог хүртэл{% endif %}
+                    {% else %}
+                        БҮХ хугацаа
+                    {% endif %}
+                    • {{ total_records|intcomma }} татан авалт
+                </p>
+            </div>
+            
+            <!-- Tab Navigation -->
+            <div class="bg-white rounded-lg shadow mb-4 lg:mb-6">
+                <div class="border-b overflow-x-auto">
+                    <nav class="flex space-x-0 lg:space-x-2 px-2 lg:px-4 min-w-max lg:min-w-0" aria-label="Tabs">
+                        <a href="?tab=summary&date_from={{ date_from }}&date_to={{ date_to }}" 
+                           class="px-3 lg:px-6 py-2 lg:py-3 font-medium text-sm lg:text-base whitespace-nowrap transition {% if active_tab == 'summary' %}text-primary border-b-2 border-primary{% else %}text-gray-500 hover:text-gray-700{% endif %}">
+                            📈 Нэгтгэл (Он-Сар)
+                        </a>
+                        <a href="?tab=by_vendor&date_from={{ date_from }}&date_to={{ date_to }}" 
+                           class="px-3 lg:px-6 py-2 lg:py-3 font-medium text-sm lg:text-base whitespace-nowrap transition {% if active_tab == 'by_vendor' %}text-primary border-b-2 border-primary{% else %}text-gray-500 hover:text-gray-700{% endif %}">
+                            🏢 Харилцагчаар
+                        </a>
+                        <a href="?tab=by_item&date_from={{ date_from }}&date_to={{ date_to }}" 
+                           class="px-3 lg:px-6 py-2 lg:py-3 font-medium text-sm lg:text-base whitespace-nowrap transition {% if active_tab == 'by_item' %}text-primary border-b-2 border-primary{% else %}text-gray-500 hover:text-gray-700{% endif %}">
+                            📦 Бараагаар
+                        </a>
+                        <a href="?tab=by_date&date_from={{ date_from }}&date_to={{ date_to }}" 
+                           class="px-3 lg:px-6 py-2 lg:py-3 font-medium text-sm lg:text-base whitespace-nowrap transition {% if active_tab == 'by_date' %}text-primary border-b-2 border-primary{% else %}text-gray-500 hover:text-gray-700{% endif %}">
+                            📅 Өдрөөр
+                        </a>
+                    </nav>
+                </div>
+            </div>
+            
+            <!-- Global Stats -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+                <div class="bg-white rounded-lg shadow p-6">
+                    <p class="text-gray-500 text-sm">Нийт тоо ширхэг</p>
+                    <p class="text-3xl font-bold text-green-600 mt-2">{{ stats.total_qty|default:0|floatformat:0|intcomma }}</p>
+                </div>
+                <div class="bg-white rounded-lg shadow p-6">
+                    <p class="text-gray-500 text-sm">Дундаж үнэ</p>
+                    <p class="text-3xl font-bold text-blue-600 mt-2">{{ stats.total_price|default:0|floatformat:2|intcomma }}</p>
+                </div>
+                <div class="bg-white rounded-lg shadow p-6">
+                   <p class="text-gray-500 text-sm">Нийт дүн (валют)</p>
+                    <p class="text-3xl font-bold text-blue-600 mt-2">{{ stats.total_amount|default:0|floatformat:2|intcomma }}</p>
+                </div>
+            </div>
+            
+            <!-- Tab Content -->
+            {% if active_tab == 'summary' %}
+                {% include 'shop/reports/landedcost_summary_tab.html' %}
+            {% elif active_tab == 'by_vendor' %}
+                {% include 'shop/reports/landedcost_vendor_tab.html' %}
+            {% elif active_tab == 'by_item' %}
+                {% include 'shop/reports/landedcost_item_tab.html' %}
+            {% elif active_tab == 'by_date' %}
+                {% include 'shop/reports/landedcost_date_tab.html' %}
+            {% endif %}
+        </div>
+    </main>
+</div>
+
+<script>
+// Table sorting
+function sortTable(tableId, columnIndex, isNumeric) {
+    const table = document.getElementById(tableId);
+    if (!table) return;
+    
+    const tbody = table.querySelector('tbody');
+    const rows = Array.from(tbody.querySelectorAll('tr'));
+    
+    rows.sort((a, b) => {
+        const aText = a.cells[columnIndex].textContent.trim();
+        const bText = b.cells[columnIndex].textContent.trim();
+        
+        if (isNumeric) {
+            const aVal = parseFloat(aText.replace(/[,₮]/g, '')) || 0;
+            const bVal = parseFloat(bText.replace(/[,₮]/g, '')) || 0;
+            return bVal - aVal;  // Descending
+        } else {
+            return aText.localeCompare(bText);  // Ascending для текста
+        }
+    });
+    
+    rows.forEach(row => tbody.appendChild(row));
+}
+</script>
+{% endblock %}

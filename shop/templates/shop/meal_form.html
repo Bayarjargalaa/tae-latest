@@ -1,0 +1,146 @@
+{% extends 'base.html' %}
+
+{% block title %}{% if meal %}Хоол засах{% else %}Шинэ хоол{% endif %} - Euro Foods{% endblock %}
+
+{% block hide_mobile_menu %}hidden{% endblock %}
+
+{% block content %}
+<div class="flex min-h-screen bg-gray-50">
+    {% include 'shop/_sidebar.html' with active_page='meal_list' %}
+
+    <main class="flex-1 p-2 lg:p-8 lg:ml-0">
+        <div class="mb-6">
+            <h1 class="text-2xl lg:text-3xl font-bold text-gray-900">
+                🍲 {% if meal %}Хоол засах{% else %}Шинэ хоол бүртгэх{% endif %}
+            </h1>
+        </div>
+
+        {% if form.errors or formset.errors or number_formset.errors %}
+        <div class="p-3 rounded-lg bg-red-100 text-red-800 mb-4">Мэдээллийг зөв бөглөнө үү.</div>
+        {% endif %}
+
+        <form method="post" class="bg-white rounded-lg shadow p-6 max-w-3xl">
+            {% csrf_token %}
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
+                <div>
+                    <label class="block text-sm text-gray-500 mb-1">{{ form.meal_type.label }}</label>
+                    {{ form.meal_type }}
+                    {{ form.meal_type.errors }}
+                </div>
+                <div>
+                    <label class="block text-sm text-gray-500 mb-1">{{ form.name.label }}</label>
+                    {{ form.name }}
+                    {{ form.name.errors }}
+                </div>
+                <div class="sm:col-span-2">
+                    <label class="block text-sm text-gray-500 mb-1">{{ form.description.label }}</label>
+                    {{ form.description }}
+                    {{ form.description.errors }}
+                </div>
+            </div>
+
+            <h2 class="text-lg font-bold text-gray-900 mb-2">Дугаарууд</h2>
+            <p class="text-xs text-gray-400 mb-2">
+                Хоолны циклийн аль дугаар(ууд)-т энэ хоол сонгогдохыг тохируулна. Нэг хоолыг олон
+                дугаарт (жиш: 3 болон 8) өгвөл, 2 өөр 7 хоногт хоёуланд нь сонгогдоно.
+            </p>
+            {{ number_formset.management_form }}
+            <div id="number-rows" class="space-y-2 mb-3 max-w-xs">
+                {% for number_form in number_formset %}
+                <div class="number-row flex flex-wrap items-center gap-2 border-b pb-2">
+                    {{ number_form.id }}
+                    {{ number_form.number.errors }}
+                    <div class="flex-1">{{ number_form.number }}</div>
+                    {% if number_form.instance.pk %}
+                    <label class="text-xs text-red-600 flex items-center gap-1">
+                        {{ number_form.DELETE }} Устгах
+                    </label>
+                    {% else %}
+                    <div class="hidden">{{ number_form.DELETE }}</div>
+                    {% endif %}
+                </div>
+                {% endfor %}
+            </div>
+            <button type="button" id="add-number" class="text-primary hover:underline text-sm mb-6">+ Дугаар нэмэх</button>
+
+            <h2 class="text-lg font-bold text-gray-900 mb-2">Орц</h2>
+            {{ formset.management_form }}
+            <div id="ingredient-rows" class="space-y-2 mb-3">
+                {% for ingredient_form in formset %}
+                <div class="ingredient-row flex flex-wrap items-center gap-2 border-b pb-2">
+                    {{ ingredient_form.id }}
+                    <div class="flex-1 min-w-[200px]">{{ ingredient_form.item_id }}</div>
+                    <div>{{ ingredient_form.quantity }}</div>
+                    <div>{{ ingredient_form.unit }}</div>
+                    {% if ingredient_form.instance.pk %}
+                    <label class="text-xs text-red-600 flex items-center gap-1">
+                        {{ ingredient_form.DELETE }} Устгах
+                    </label>
+                    {% else %}
+                    <div class="hidden">{{ ingredient_form.DELETE }}</div>
+                    {% endif %}
+                </div>
+                {% endfor %}
+            </div>
+            <button type="button" id="add-ingredient" class="text-primary hover:underline text-sm mb-6">+ Орц нэмэх</button>
+
+            <div>
+                <button type="submit" class="bg-primary text-white px-6 py-2 rounded-lg hover:bg-green-700 transition">
+                    Хадгалах
+                </button>
+                <a href="{% url 'shop:meal_list' %}" class="ml-3 text-gray-600 hover:underline">Болих</a>
+            </div>
+        </form>
+    </main>
+</div>
+
+<!-- Формсетэд шинэ мөр нэмэх template (JS-ээр хуулбарлана) -->
+<template id="empty-ingredient-row">
+    <div class="ingredient-row flex flex-wrap items-center gap-2 border-b pb-2">
+        <div class="flex-1 min-w-[200px]">{{ formset.empty_form.item_id }}</div>
+        <div>{{ formset.empty_form.quantity }}</div>
+        <div>{{ formset.empty_form.unit }}</div>
+        <div class="hidden">{{ formset.empty_form.DELETE }}</div>
+    </div>
+</template>
+
+<template id="empty-number-row">
+    <div class="number-row flex flex-wrap items-center gap-2 border-b pb-2">
+        <div class="flex-1">{{ number_formset.empty_form.number }}</div>
+        <div class="hidden">{{ number_formset.empty_form.DELETE }}</div>
+    </div>
+</template>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const addButton = document.getElementById('add-ingredient');
+    const rowsContainer = document.getElementById('ingredient-rows');
+    const totalForms = document.querySelector('#id_ingredients-TOTAL_FORMS');
+    const emptyTemplate = document.getElementById('empty-ingredient-row').innerHTML;
+
+    addButton.addEventListener('click', function () {
+        const formIndex = parseInt(totalForms.value, 10);
+        const newRowHtml = emptyTemplate.replace(/__prefix__/g, formIndex);
+        const wrapper = document.createElement('div');
+        wrapper.innerHTML = newRowHtml.trim();
+        rowsContainer.appendChild(wrapper.firstChild);
+        totalForms.value = formIndex + 1;
+    });
+
+    const addNumberButton = document.getElementById('add-number');
+    const numberRowsContainer = document.getElementById('number-rows');
+    const numberTotalForms = document.querySelector('#id_numbers-TOTAL_FORMS');
+    const emptyNumberTemplate = document.getElementById('empty-number-row').innerHTML;
+
+    addNumberButton.addEventListener('click', function () {
+        const formIndex = parseInt(numberTotalForms.value, 10);
+        const newRowHtml = emptyNumberTemplate.replace(/__prefix__/g, formIndex);
+        const wrapper = document.createElement('div');
+        wrapper.innerHTML = newRowHtml.trim();
+        numberRowsContainer.appendChild(wrapper.firstChild);
+        numberTotalForms.value = formIndex + 1;
+    });
+});
+</script>
+{% endblock %}

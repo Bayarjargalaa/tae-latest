@@ -1,0 +1,148 @@
+{% extends 'base.html' %}
+{% load product_filters %}
+
+{% block title %}{{ product.name }} - EuroFoods{% endblock %}
+
+{% block content %}
+<div class="container mx-auto px-4 py-8">
+    <div class="bg-white rounded-lg shadow-lg overflow-hidden">
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 p-8">
+            <!-- Product Images -->
+            <div>
+                <div class="mb-4">
+                    <img src="{{ product|product_image_url }}" 
+                         alt="{{ product.name }}"
+                         class="w-full h-96 object-contain bg-gray-50 rounded-lg">
+                </div>
+                
+                <!-- Thumbnail Images -->
+                {% if product.extension %}
+                <div class="grid grid-cols-3 gap-2">
+                    <img src="{{ product.extension.image_url }}" 
+                         alt="{{ product.name }}"
+                         class="h-24 object-contain bg-gray-50 rounded cursor-pointer hover:ring-2 ring-primary">
+                    {% if product.extension.image_2 %}
+                    <img src="{{ product.extension.get_image_url.2 }}" 
+                         alt="{{ product.name }}"
+                         class="h-24 object-contain bg-gray-50 rounded cursor-pointer hover:ring-2 ring-primary">
+                    {% endif %}
+                    {% if product.extension.image_3 %}
+                    <img src="{{ product.extension.get_image_url.3 }}" 
+                         alt="{{ product.name }}"
+                         class="h-24 object-contain bg-gray-50 rounded cursor-pointer hover:ring-2 ring-primary">
+                    {% endif %}
+                </div>
+                {% endif %}
+            </div>
+            
+            <!-- Product Info -->
+            <div>
+                <div class="mb-4">
+                    <span class="text-sm text-gray-500 uppercase">{{ product.itemcategoryname|default:"Бусад" }}</span>
+                    {% if product.brandname %}
+                    <span class="mx-2">•</span>
+                    <span class="text-sm text-primary font-medium">{{ product.brandname }}</span>
+                    {% endif %}
+                </div>
+                
+                <h1 class="text-3xl font-bold mb-4">
+                    {% if product.extension and product.extension.name_mn %}
+                        {{ product.extension.name_mn }}
+                    {% else %}
+                        {{ product.name }}
+                    {% endif %}
+                </h1>
+                
+                {% if product.extension and product.extension.country_of_origin %}
+                <div class="mb-4 flex items-center gap-2 text-gray-600">
+                    <span>🌍</span>
+                    <span>{{ product.extension.country_of_origin }}</span>
+                </div>
+                {% endif %}
+                
+                <!-- Price -->
+                <div class="mb-6">
+                    {% if product.saleprice %}
+                    <div class="text-4xl font-bold text-primary">
+                        {{ product.saleprice|floatformat:0 }}₮
+                    </div>
+                    {% if product.baseprice and product.baseprice != product.saleprice %}
+                    <div class="text-xl text-gray-400 line-through">
+                        {{ product.baseprice|floatformat:0 }}₮
+                    </div>
+                    {% endif %}
+                    {% endif %}
+                </div>
+                
+                <!-- Product Details -->
+                <div class="border-t border-b py-4 mb-6 space-y-3">
+                    {% if product.barcode %}
+                    <div class="flex justify-between">
+                        <span class="text-gray-600">Баркод:</span>
+                        <span class="font-medium">{{ product.barcode }}</span>
+                    </div>
+                    {% endif %}
+                    
+                    {% if product.measurename %}
+                    <div class="flex justify-between">
+                        <span class="text-gray-600">Хэмжих нэгж:</span>
+                        <span class="font-medium">{{ product.measurename }}</span>
+                    </div>
+                    {% endif %}
+                    
+                    {% if product.extension and product.extension.qty_per_box %}
+                    <div class="flex justify-between">
+                        <span class="text-gray-600">Хайрцаг дахь тоо:</span>
+                        <span class="font-medium">{{ product.extension.qty_per_box }}</span>
+                    </div>
+                    {% endif %}
+                    
+                    {% if product.manufacturername %}
+                    <div class="flex justify-between">
+                        <span class="text-gray-600">Үйлдвэрлэгч:</span>
+                        <span class="font-medium">{{ product.manufacturername }}</span>
+                    </div>
+                    {% endif %}
+                </div>
+                
+                <!-- Actions -->
+                <div class="space-y-3">
+                    <button class="w-full bg-primary text-white py-4 rounded-lg hover:bg-green-700 font-bold text-lg transition">
+                        🛒 Сагсанд нэмэх
+                    </button>
+                    
+                    {% if user.is_staff %}
+                    <a href="{% url 'shop:product_edit' product.id %}" 
+                       class="block w-full bg-secondary text-white py-3 rounded-lg hover:bg-blue-700 font-medium text-center transition">
+                        ✏️ Засах
+                    </a>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Related Products -->
+    {% if related_products %}
+    <div class="mt-12">
+        <h2 class="text-2xl font-bold mb-6">Төстэй бүтээгдэхүүн</h2>
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+            {% for related in related_products %}
+            <a href="{% url 'shop:product_detail' related.id %}" 
+               class="bg-white rounded-lg shadow hover:shadow-lg transition p-4">
+                <div class="h-32 mb-3 bg-gray-50 rounded overflow-hidden">
+                    <img src="{{ related|product_image_url }}" 
+                         alt="{{ related.name }}"
+                         class="w-full h-full object-contain">
+                </div>
+                <h3 class="font-medium text-sm line-clamp-2">{{ related.name }}</h3>
+                {% if related.saleprice %}
+                <p class="text-primary font-bold mt-2">{{ related.saleprice|floatformat:0 }}₮</p>
+                {% endif %}
+            </a>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,165 @@
+{% extends 'base.html' %}
+{% load humanize %}
+
+{% block title %}Түгээлтийн тайлан{% endblock %}
+
+{% block hide_mobile_menu %}hidden{% endblock %}
+
+{% block content %}
+<div class="flex min-h-screen bg-gray-50">
+    <!-- Mobile-responsive Sidebar -->
+    {% include 'shop/_sidebar.html' with active_page='delivery_report' %}
+
+    <!-- Main Content -->
+    <main class="flex-1 p-2 lg:p-8 lg:ml-0">
+        <!-- Header -->
+        <div class="mb-8">
+            <h1 class="text-3xl font-bold text-gray-800">Түгээлтийн тайлан</h1>
+            <p class="text-gray-600 mt-2">Жолооч бүрийн өдрийн түгээлтийн мэдээлэл</p>
+        </div>
+
+        <!-- Filters -->
+        <div class="bg-white rounded-lg shadow p-6 mb-6">
+            <form method="GET" class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div>
+                    <label class="block text-sm font-medium mb-2">Эхлэх огноо</label>
+                    <input type="date" name="date_from" value="{{ date_from }}" class="w-full border border-gray-300 rounded-lg px-4 py-2">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium mb-2">Дуусах огноо</label>
+                    <input type="date" name="date_to" value="{{ date_to }}" class="w-full border border-gray-300 rounded-lg px-4 py-2">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium mb-2">Жолооч</label>
+                    <select name="seller" class="w-full border border-gray-300 rounded-lg px-4 py-2">
+                        <option value="">Бүгд</option>
+                        {% for seller in sellers %}
+                        <option value="{{ seller }}" {% if selected_seller == seller %}selected{% endif %}>{{ seller }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="flex items-end">
+                    <button type="submit" class="w-full bg-primary text-white px-6 py-2 rounded-lg hover:bg-green-700 transition">
+                        Шүүх
+                    </button>
+                </div>
+            </form>
+        </div>
+
+        <!-- Statistics -->
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
+            <div class="bg-white rounded-lg shadow p-6">
+                <p class="text-gray-500 text-sm">Нийт дүн</p>
+                <p class="text-3xl font-bold text-green-600 mt-2">{{ stats.total_amount|default:0|floatformat:0|intcomma }}₮</p>
+            </div>
+            <div class="bg-white rounded-lg shadow p-6">
+                <p class="text-gray-500 text-sm">Нийт тоо ширхэг</p>
+                <p class="text-3xl font-bold text-blue-600 mt-2">{{ stats.total_qty|default:0|floatformat:0|intcomma }}</p>
+            </div>
+            <div class="bg-white rounded-lg shadow p-6">
+                <p class="text-gray-500 text-sm">Нийт захиалга</p>
+                <p class="text-3xl font-bold text-purple-600 mt-2">{{ stats.total_orders|default:0|intcomma }}</p>
+            </div>
+            <div class="bg-white rounded-lg shadow p-6">
+                <p class="text-gray-500 text-sm">Нийт жолооч</p>
+                <p class="text-3xl font-bold text-orange-600 mt-2">{{ stats.total_sellers|default:0|intcomma }}</p>
+            </div>
+        </div>
+
+        <!-- Pivot Table -->
+        <div class="bg-white rounded-lg shadow p-6">
+            <h2 class="text-xl font-bold mb-4">Өдөр бүрийн түгээлт (Жилээр задалсан)</h2>
+            
+            <div class="overflow-x-auto">
+                <form method="get" id="tableFilterForm">
+                <table class="w-full">
+                    <thead class="bg-gray-50">
+                        <tr>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">№</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Он</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Сар</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Өдөр</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Жолооч</th>
+                            <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Үнийн дүн</th>
+                        </tr>
+                        <!-- Filter Row -->
+                        <tr class="bg-white border-b-2 border-gray-200">
+                            <th class="px-2 py-2"></th>
+                            <th class="px-2 py-2">
+                                <input type="number" name="filter_year" value="{{ request.GET.filter_year }}" 
+                                    placeholder="Он..." 
+                                    class="w-full px-2 py-1 border border-gray-300 rounded text-sm focus:outline-none focus:border-blue-500"
+                                    onchange="document.getElementById('tableFilterForm').submit()">
+                            </th>
+                            <th class="px-2 py-2">
+                                <select name="filter_month" 
+                                    class="w-full px-2 py-1 border border-gray-300 rounded text-sm focus:outline-none focus:border-blue-500"
+                                    onchange="document.getElementById('tableFilterForm').submit()">
+                                    <option value="">Сар...</option>
+                                    {% for m in "123456789101112" %}
+                                        <option value="{{ forloop.counter }}" {% if request.GET.filter_month == forloop.counter|stringformat:"s" %}selected{% endif %}>{{ forloop.counter }}</option>
+                                    {% endfor %}
+                                </select>
+                            </th>
+                            <th class="px-2 py-2">
+                                <input type="number" name="filter_day" value="{{ request.GET.filter_day }}" 
+                                    placeholder="Өдөр..." min="1" max="31"
+                                    class="w-full px-2 py-1 border border-gray-300 rounded text-sm focus:outline-none focus:border-blue-500"
+                                    onchange="document.getElementById('tableFilterForm').submit()">
+                            </th>
+                            <th class="px-2 py-2">
+                                <select name="filter_seller" 
+                                    class="w-full px-2 py-1 border border-gray-300 rounded text-sm focus:outline-none focus:border-blue-500"
+                                    onchange="document.getElementById('tableFilterForm').submit()">
+                                    <option value="">Жолооч...</option>
+                                    {% for seller in sellers %}
+                                        <option value="{{ seller }}" {% if request.GET.filter_seller == seller %}selected{% endif %}>{{ seller }}</option>
+                                    {% endfor %}
+                                </select>
+                            </th>
+                            <th class="px-2 py-2 text-right">
+                                <button type="button" onclick="window.location.href='{% url 'shop:delivery_report' %}'" 
+                                    class="text-xs text-blue-600 hover:text-blue-800 underline">Цэвэрлэх</button>
+                            </th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in daily_data %}
+                            <tr class="hover:bg-gray-50">
+                                <td class="px-6 py-4 text-gray-700">{{ forloop.counter }}</td>
+                                <td class="px-6 py-4 text-gray-900">{{ row.year|stringformat:"d" }}</td>
+                                <td class="px-6 py-4 text-gray-700">{{ row.month }}</td>
+                                <td class="px-6 py-4 text-gray-700">{{ row.day }}</td>
+                                <td class="px-6 py-4 text-gray-700 font-medium">{{ row.distributorname|default:"Тодорхойгүй" }}</td>
+                                <td class="px-6 py-4 text-right text-green-600 font-bold">{{ row.total_amount|floatformat:0|intcomma }}</td>
+                            </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="6" class="px-6 py-12 text-center text-gray-500">Өгөгдөл олдсонгүй</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                    <tfoot class="bg-blue-50 border-t-2 border-blue-200">
+                        <tr class="font-bold">
+                            <td colspan="5" class="px-6 py-4 text-right text-gray-900 uppercase">Нийлбэр:</td>
+                            <td class="px-6 py-4 text-right text-blue-600 text-lg">{{ stats.total_amount|default:0|floatformat:0|intcomma }}₮</td>
+                        </tr>
+                        <tr class="text-sm text-gray-600">
+                            <td colspan="6" class="px-6 py-2 text-right">
+                                Нийт захиалга: {{ stats.total_orders|default:0|intcomma }} | 
+                                Нийт жолооч: {{ stats.total_sellers|default:0|intcomma }}
+                            </td>
+                        </tr>
+                    </tfoot>
+                </table>
+                </form>
+            </div>
+        </div>
+
+        <!-- Total Records -->
+        <div class="mt-4 text-sm text-gray-600">
+            Нийт бичлэг: {{ total_records|intcomma }}
+        </div>
+    </main>
+</div>
+{% endblock %}

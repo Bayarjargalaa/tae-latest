@@ -1,0 +1,216 @@
+{
+  "name": "TAE AI Chat (Claude)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "ai-chat",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        240,
+        300
+      ],
+      "webhookId": "ai-chat"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.headers['x-webhook-secret'] }}",
+              "rightValue": "Ksyu9blIjzWpmJiNNjbo4-33zw4_RNjUbErka_5_5tA",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-secret",
+      "name": "Check Secret",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        460,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "http://host.docker.internal:8000/api/product-stock/",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "q",
+              "value": "={{ $('Webhook').item.json.body.message }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 8000
+        }
+      },
+      "id": "check-stock",
+      "name": "Check Stock",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        660,
+        220
+      ],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "anthropicApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            },
+            {
+              "name": "Connection",
+              "value": "close"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ (() => { const message = $('Webhook').item.json.body.message; const stockResults = $json.results || []; let stockContext; if (stockResults.length > 0) { stockContext = 'Барааны нөөцийн систем (эх сурвалж, найдвартай) дараах тохирох бараануудыг олсон:\\n' + stockResults.map(r => `- ${r.name}: ${r.in_stock ? 'НӨӨЦТЭЙ' : 'НӨӨЦГҮЙ'}`).join('\\n'); } else { stockContext = 'Барааны нөөцийн системээс энэ асуултад тохирох бараа олдсонгүй.'; } const systemPrompt = \"Чи бол Төгс Амин Эрдэнэ ХХК компанийн вэбсайт дээрх AI туслах. Энэ компани нь Европын (Итали, Франц, Герман, Испани, Грек гэх мэт) шилдэг брэндүүдийн хүнсний бүтээгдэхүүнийг Монгол улс руу импортолж, хувь хүн (B2C) болон ресторан/дэлгүүр зэрэг бизнес түншүүдэд (B2B) борлуулдаг. Чиний цорын ганц үүрэг бол ЗӨВХӨН энэ компани болон түүний бүтээгдэхүүний талаарх асуултад хариулах. Хэрэв хэрэглэгч компани эсвэл бүтээгдэхүүнтэй огт холбоогүй өөр сэдвээр асуувал, өөр ямар ч мэдээлэл өгөлгүй, зөвхөн дараах хариултыг эелдэгээр өг: 'Уучлаарай, би зөвхөн манай байгууллага болон бүтээгдэхүүний талаарх таны сонирхсон асуултад хариулах боломжтой.' Хэрэв хэрэглэгч тодорхой барааны нөөц/үлдэгдлийн талаар асуувал, доор өгөгдсөн Барааны нөөцийн систем-ийн мэдээллийг ҮНДЭСЛЭН тухайн бараа НӨӨЦТЭЙ эсвэл НӨӨЦГҮЙ гэдгийг л тодорхой хэлээрэй, тоо ширхэгийг хэзээ ч бүү дурьд, өөрөө таамаглаж бүү хариул. Хэрэв тохирох бараа олдоогүй бол уучлалт хүсээд тодорхой барааны нэрийг лавлаарай. Хэрэглэгч заримдаа Монгол үгээ Латин үсгээр галиглаж бичдэг (жишээ нь: 'sain bnu', 'unetei bhuu', 'ta yamar unaa hudaldj bgaa' гэх мэт) - ийм тохиолдолд бичсэн үгийн Монгол хэл дээрх утгыг ойлгож, хариултаа энгийн монгол (кирилл) хэлээр өгнө үү. Хариултаа товч, эелдэг, монгол хэлээр өгнө үү.\"; return JSON.stringify({ model: 'claude-sonnet-5', max_tokens: 1024, system: systemPrompt, messages: [ { role: 'user', content: stockContext + '\\n\\nХэрэглэгчийн асуулт: ' + message } ] }); })() }}",
+        "options": {}
+      },
+      "id": "claude-request",
+      "name": "Claude API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        880,
+        220
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 300,
+      "credentials": {
+        "anthropicApi": {
+          "id": "6Nb2p2dbji328t3t",
+          "name": "Anthropic account (TAE chat)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { reply: $json.content.find(c => c.type === 'text')?.text || '' } }}",
+        "options": {}
+      },
+      "id": "respond",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1100,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseCode": 401,
+        "responseBody": "={{ { error: \"Unauthorized\" } }}",
+        "options": {}
+      },
+      "id": "respond-unauthorized",
+      "name": "Respond Unauthorized",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        680,
+        400
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Check Secret",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Secret": {
+      "main": [
+        [
+          {
+            "node": "Check Stock",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Unauthorized",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Stock": {
+      "main": [
+        [
+          {
+            "node": "Claude API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude API": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  },
+  "meta": null
+}

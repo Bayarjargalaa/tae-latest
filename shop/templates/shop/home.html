@@ -1,0 +1,183 @@
+{% extends 'base.html' %}
+{% load product_filters %}
+{% block title %}ТАЭ - Европын Шилдэг Хүнс{% endblock %}
+
+{% block content %}
+<!-- Hero Section -->
+<section class="bg-gradient-to-r from-primary to-secondary text-white py-12 lg:py-20">
+    <div class="container mx-auto px-4 text-center">
+        <h1 class="text-2xl sm:text-3xl lg:text-5xl font-bold mb-3 lg:mb-4">Европын Шилдэг Хүнсний Бүтээгдэхүүн</h1>
+        <p class="text-sm sm:text-base lg:text-xl mb-6 lg:mb-8 opacity-95 max-w-3xl mx-auto">Голланд бяслаг, Францын дарс, Германы шоколад болон бусад чанартай хүнсийг танд хүргэнэ</p>
+        <a href="{% if user.is_authenticated %}/products/{% else %}/products/?jijig_min=true{% endif %}" class="inline-block bg-white text-primary px-6 lg:px-8 py-2 lg:py-3 rounded-full font-bold hover:bg-gray-100 transition transform hover:scale-105 text-sm lg:text-base">
+            Бүтээгдэхүүн үзэх →
+        </a>
+    </div>
+</section>
+
+<!-- Features Section -->
+<section class="py-8 lg:py-12 bg-white">
+    <div class="container mx-auto px-4">
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 lg:gap-8">
+            <div class="text-center">
+                <div class="text-3xl lg:text-5xl mb-2 lg:mb-4">🚚</div>
+                <h3 class="font-bold text-sm lg:text-lg mb-1 lg:mb-2">Хурдан Хүргэлт</h3>
+                <p class="text-xs lg:text-base text-gray-600">УБ хотод 24 цагийн дотор</p>
+            </div>
+            <div class="text-center">
+                <div class="text-3xl lg:text-5xl mb-2 lg:mb-4">✓</div>
+                <h3 class="font-bold text-sm lg:text-lg mb-1 lg:mb-2">Баталгаатай Чанар</h3>
+                <p class="text-xs lg:text-base text-gray-600">100% европын брэнд</p>
+            </div>
+            <div class="text-center">
+                <div class="text-3xl lg:text-5xl mb-2 lg:mb-4">💳</div>
+                <h3 class="font-bold text-sm lg:text-lg mb-1 lg:mb-2">Аюулгүй Төлбөр</h3>
+                <p class="text-xs lg:text-base text-gray-600">Бэлэн болон карт</p>
+            </div>
+            <div class="text-center">
+                <div class="text-3xl lg:text-5xl mb-2 lg:mb-4">📞</div>
+                <h3 class="font-bold text-sm lg:text-lg mb-1 lg:mb-2">24/7 Тусламж</h3>
+                <p class="text-xs lg:text-base text-gray-600">Үргэлж таны хажууд</p>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Products Section -->
+<section id="products" class="py-8 lg:py-16 bg-gray-50">
+    <div class="container mx-auto px-4">
+        <div class="flex justify-between items-center mb-4 lg:mb-8">
+            <h2 class="text-xl lg:text-3xl font-bold text-gray-900">Шинэ Бүтээгдэхүүн</h2>
+            <a href="{% if user.is_authenticated %}/products/{% else %}/products/?jijig_min=true{% endif %}" class="text-primary hover:text-green-700 font-medium text-sm lg:text-base">
+                Бүгдийг үзэх →
+            </a>
+        </div>
+
+        {% if products %}
+        <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+            {% for product in products %}
+            <div class="bg-white rounded-lg shadow-md hover:shadow-xl transition-all duration-300 transform hover:-translate-y-2 overflow-hidden">
+                <!-- Product Image -->
+                <a href="{% url 'shop:product_detail' product.id %}">
+                    <div class="h-48 bg-gray-50 overflow-hidden">
+                        <img src="{{ product|product_image_url }}" 
+                             alt="{{ product.name }}"
+                             class="w-full h-full object-contain hover:scale-110 transition-transform duration-300">
+                    </div>
+                </a>
+
+                <!-- Product Info -->
+                <div class="p-3 lg:p-4">
+                    <div class="text-[10px] lg:text-xs text-gray-500 uppercase mb-1 lg:mb-2">{{ product.itemcategoryname|default:"Бусад" }}</div>
+                    
+                    <!-- Монгол нэр эсвэл англи нэр -->
+                    <h3 class="font-bold text-sm lg:text-lg mb-1 lg:mb-2 line-clamp-2 h-10 lg:h-14">
+                        {% if product.extension and product.extension.name_mn %}
+                            {{ product.extension.name_mn }}
+                        {% else %}
+                            {{ product.name }}
+                        {% endif %}
+                    </h3>
+                    
+                    <!-- Брэнд болон үйлдвэрлэсэн улс -->
+                    <div class="text-xs lg:text-sm text-gray-600 mb-2 space-y-0.5 lg:space-y-1">
+                        {% if product.brandname %}
+                        <div class="truncate">🏷️ {{ product.brandname }}</div>
+                        {% endif %}
+                        {% if product.extension and product.extension.country_of_origin %}
+                        <div class="hidden lg:block">🌍 {{ product.extension.country_of_origin }}</div>
+                        {% endif %}
+                        {% if product.extension and product.extension.qty_per_box %}
+                        <div class="hidden lg:block">📦 {{ product.extension.qty_per_box }} ш/хайрцаг</div>
+                        {% endif %}
+                    </div>
+
+                    <div class="flex items-center justify-between mb-2 lg:mb-3">
+                        <div>
+                            <div class="text-lg lg:text-2xl font-bold text-primary">
+                                {{ product.saleprice|floatformat:0 }}₮
+                            </div>
+                            {% if product.measurename %}
+                            <div class="text-[10px] lg:text-xs text-gray-500">/ {{ product.measurename }}</div>
+                            {% endif %}
+                        </div>
+                        {% if product.activestatus == 'Y' %}
+                        <span class="bg-green-100 text-green-800 text-[10px] lg:text-xs px-2 py-1 rounded-full">Нөөцтэй</span>
+                        {% else %}
+                        <span class="bg-red-100 text-red-800 text-[10px] lg:text-xs px-2 py-1 rounded-full">Дууссан</span>
+                        {% endif %}
+                    </div>
+
+                    <button class="w-full bg-secondary text-white py-2 rounded-lg hover:bg-blue-700 transition font-medium text-xs lg:text-sm {% if product.activestatus != 'Y' %}opacity-50 cursor-not-allowed{% endif %}"
+                            {% if product.activestatus != 'Y' %}disabled{% endif %}>
+                        {% if product.activestatus == 'Y' %}
+                        🛒 Сагслах
+                        {% else %}
+                        Дууссан
+                        {% endif %}
+                    </button>
+                    
+                    {% if user.is_staff %}
+                    <a href="{% url 'shop:product_edit' product.id %}" 
+                       class="block text-center w-full mt-2 bg-gray-100 text-gray-700 py-2 rounded-lg hover:bg-gray-200 transition text-xs lg:text-sm">
+                        ✏️ Засах
+                    </a>
+                    {% endif %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="text-center py-12 lg:py-16">
+            <div class="text-4xl lg:text-6xl mb-3 lg:mb-4">📦</div>
+            <h3 class="text-xl lg:text-2xl font-bold text-gray-800 mb-2">Бүтээгдэхүүн байхгүй байна</h3>
+            <p class="text-sm lg:text-base text-gray-600">Удахгүй шинэ бүтээгдэхүүнүүд нэмэгдэх болно.</p>
+        </div>
+        {% endif %}
+    </div>
+</section>
+
+<!-- Categories Section -->
+{% if categories %}
+<section class="py-8 lg:py-16 bg-white">
+    <div class="container mx-auto px-4">
+        <h2 class="text-xl lg:text-3xl font-bold text-gray-900 mb-4 lg:mb-8">Ангилал</h2>
+        <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3 lg:gap-4">
+            {% for category in categories %}
+            <a href="/products/?category={{ category }}{% if not user.is_authenticated %}&jijig_min=true{% endif %}" 
+               class="bg-gray-50 hover:bg-primary hover:text-white border border-gray-200 rounded-lg p-4 lg:p-6 text-center transition-all duration-300 transform hover:scale-105">
+                <div class="text-2xl lg:text-4xl mb-1 lg:mb-2">📦</div>
+                <div class="font-medium text-xs lg:text-base truncate">{{ category }}</div>
+            </a>
+            {% endfor %}
+        </div>
+    </section>
+{% endif %}
+
+<!-- CTA Section -->
+<section class="py-8 lg:py-16 bg-gradient-to-r from-primary to-secondary text-white">
+    <div class="container mx-auto px-4 text-center">
+        <h2 class="text-xl lg:text-3xl font-bold mb-3 lg:mb-4">Хамгийн сүүлийн үеийн мэдээллийг авах уу?</h2>
+        <p class="text-sm lg:text-xl mb-6 lg:mb-8 opacity-95 max-w-2xl mx-auto">Имэйл хаягаа бүртгүүлээд урамшуулал, шинэ бүтээгдэхүүний мэдээлэл аваарай</p>
+        <form class="max-w-md mx-auto flex flex-col sm:flex-row gap-2">
+            <input type="email" placeholder="Имэйл хаяг" 
+                   class="flex-1 px-4 py-2 lg:py-3 rounded-full focus:outline-none focus:ring-2 focus:ring-white text-gray-900 text-sm lg:text-base">
+            <button class="bg-white text-primary px-6 lg:px-8 py-2 lg:py-3 rounded-full font-bold hover:bg-gray-100 transition text-sm lg:text-base whitespace-nowrap">
+                Бүртгүүлэх
+            </button>
+        </form>
+    </div>
+</section>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // Add to cart functionality
+    document.querySelectorAll('button[data-product]').forEach(button => {
+        button.addEventListener('click', function() {
+            if (!this.disabled) {
+                alert('Бүтээгдэхүүн сагсанд нэмэгдлээ!');
+            }
+        });
+    });
+</script>
+{% endblock %}

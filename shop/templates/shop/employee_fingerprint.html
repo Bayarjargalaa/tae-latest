@@ -1,0 +1,74 @@
+{% extends 'base.html' %}
+
+{% block title %}Ажилтны хурууны мэдээлэл - Euro Foods{% endblock %}
+
+{% block hide_mobile_menu %}hidden{% endblock %}
+
+{% block content %}
+<div class="flex min-h-screen bg-gray-50">
+    {% include 'shop/_sidebar.html' with active_page='employee_fingerprint' %}
+
+    <main class="flex-1 p-2 lg:p-8 lg:ml-0">
+        <div class="flex items-center justify-between mb-6">
+            <div>
+                <h1 class="text-2xl lg:text-3xl font-bold text-gray-900">👆 Ажилтны хурууны мэдээлэл</h1>
+                <p class="text-gray-600 mt-2">Идэвхтэй ажилчид болон тэдний хурууны хээ таних төхөөрөмж дээрх кодыг
+                    тохируулна. Энэ мэдээллийг Цаг бүртгэлийн тооцоо ашиглаж, төхөөрөмжийн бүртгэлийг ажилтантай холбоно.</p>
+            </div>
+            <a href="{% url 'shop:attendance_calc' %}" class="bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50 transition whitespace-nowrap">
+                ← Цаг бүртгэл рүү буцах
+            </a>
+        </div>
+
+        {% if messages %}
+        <div class="mb-6 space-y-2">
+            {% for message in messages %}
+            <div class="p-3 rounded-lg {% if message.tags == 'error' %}bg-red-100 text-red-800{% elif message.tags == 'warning' %}bg-yellow-100 text-yellow-800{% else %}bg-green-100 text-green-800{% endif %}">{{ message }}</div>
+            {% endfor %}
+        </div>
+        {% endif %}
+
+        <form method="post">
+            {% csrf_token %}
+            <div class="bg-white rounded-lg shadow p-6">
+                <div class="flex items-center justify-between mb-4">
+                    <h2 class="text-lg font-bold text-gray-900">Идэвхтэй ажилчид ({{ rows|length }})</h2>
+                    <button type="submit" class="bg-primary text-white px-6 py-2 rounded-lg hover:bg-green-700 transition whitespace-nowrap">
+                        💾 Хадгалах
+                    </button>
+                </div>
+
+                <div class="overflow-x-auto">
+                    <table class="min-w-full text-sm border border-gray-200">
+                        <thead>
+                            <tr class="bg-gray-100 text-left">
+                                <th class="px-4 py-2 font-semibold text-gray-700">Нэр</th>
+                                <th class="px-4 py-2 font-semibold text-gray-700">Албан тушаал</th>
+                                <th class="px-4 py-2 font-semibold text-gray-700">Ажилтны код</th>
+                                <th class="px-4 py-2 font-semibold text-gray-700 whitespace-nowrap">Хурууны код</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for row in rows %}
+                            <tr class="border-t">
+                                <td class="px-4 py-2 font-medium text-gray-900 whitespace-nowrap">
+                                    {{ row.name }}
+                                    <input type="hidden" name="employee_code" value="{{ row.employee_code }}">
+                                </td>
+                                <td class="px-4 py-2 text-gray-600 whitespace-nowrap">{{ row.positionname|default:'-' }}</td>
+                                <td class="px-4 py-2 text-gray-500 whitespace-nowrap">{{ row.employee_code }}</td>
+                                <td class="px-4 py-2">
+                                    <input type="text" name="device_user_id" value="{{ row.device_user_id }}" placeholder="-" class="border border-gray-300 rounded-lg px-3 py-1.5 w-32">
+                                </td>
+                            </tr>
+                            {% empty %}
+                            <tr><td colspan="4" class="px-4 py-4 text-center text-gray-500">Идэвхтэй ажилтан олдсонгүй.</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </form>
+    </main>
+</div>
+{% endblock %}

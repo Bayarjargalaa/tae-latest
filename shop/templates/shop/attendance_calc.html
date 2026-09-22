@@ -1,0 +1,302 @@
+{% extends 'base.html' %}
+
+{% block title %}Цаг бүртгэлийн тооцоо - Euro Foods{% endblock %}
+
+{% block hide_mobile_menu %}hidden{% endblock %}
+
+{% block extra_css %}
+<style>
+@media print {
+    #sidebar, #mobile-menu-button, #sidebar-overlay, header, footer, .no-print { display: none !important; }
+    main { margin: 0 !important; padding: 0 !important; }
+    body { background: white !important; }
+    .print-area { box-shadow: none !important; }
+    /* Хэвлэхэд browser анхдагчаар дэвсгэр өнгийг хасдаг тул амралтын өдрийн саарал
+       дэвсгэрийг харуулахын тулд хэвлэхэд өнгийг зайлшгүй хадгалахыг тулгана */
+    .attendance-row {
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+        color-adjust: exact;
+    }
+}
+.attendance-input {
+    width: 100%;
+    border: 1px solid transparent;
+    border-radius: 0.25rem;
+    padding: 2px 4px;
+    background: transparent;
+}
+.attendance-input:hover,
+.attendance-input:focus {
+    border-color: #d1d5db;
+    background: white;
+    outline: none;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="flex min-h-screen bg-gray-50">
+    {% include 'shop/_sidebar.html' with active_page='attendance_calc' %}
+
+    <main class="flex-1 p-2 lg:p-8 lg:ml-0">
+        <div class="flex items-center justify-between mb-6 no-print">
+            <div>
+                <h1 class="text-2xl lg:text-3xl font-bold text-gray-900">🕒 Цаг бүртгэлийн тооцоо</h1>
+                <p class="text-gray-600 mt-2">Төхөөрөмжийн ирц болон ажилтны жагсаалтыг нэгтгэсэн хугацааны тооцоо</p>
+            </div>
+            <div class="flex gap-2">
+                <form method="post" action="{% url 'shop:attendance_sync' %}">
+                    {% csrf_token %}
+                    <input type="hidden" name="date_from" value="{{ date_from|date:'Y-m-d' }}">
+                    <input type="hidden" name="date_to" value="{{ date_to|date:'Y-m-d' }}">
+                    <button type="submit" class="bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50 transition whitespace-nowrap">
+                        📥 Төхөөрөмжөөс татах
+                    </button>
+                </form>
+                <form method="post" action="{% url 'shop:attendance_sync_merchandiser' %}" enctype="multipart/form-data" class="flex items-center gap-2">
+                    {% csrf_token %}
+                    <input type="hidden" name="date_from" value="{{ date_from|date:'Y-m-d' }}">
+                    <input type="hidden" name="date_to" value="{{ date_to|date:'Y-m-d' }}">
+                    <input type="file" name="document_file" accept=".xlsx,.xls" required
+                           class="text-xs text-gray-600 border border-gray-300 rounded-lg px-2 py-1.5 max-w-[170px] file:mr-2 file:py-1 file:px-2 file:rounded file:border-0 file:bg-gray-100 file:text-xs">
+                    <button type="submit" class="bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50 transition whitespace-nowrap">
+                        🧑‍💼 Худалдааны төлөөлөгчийн цаг бүртгэл татах
+                    </button>
+                </form>
+                <a href="{% url 'shop:attendance_position_settings' %}" class="bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50 transition whitespace-nowrap">
+                    ⏰ Ажлын цагийн тохиргоо
+                </a>
+                <button onclick="window.print()" class="bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50 transition whitespace-nowrap">
+                    🖨 Хэвлэх
+                </button>
+            </div>
+        </div>
+
+        <form method="get" class="bg-white rounded-lg shadow p-4 mb-6 flex flex-wrap items-end gap-4 no-print">
+            <div>
+                <label class="block text-sm font-medium mb-1">Эхлэх огноо</label>
+                <input type="date" name="date_from" value="{{ date_from|date:'Y-m-d' }}" class="border border-gray-300 rounded-lg px-4 py-2">
+            </div>
+            <div>
+                <label class="block text-sm font-medium mb-1">Дуусах огноо</label>
+                <input type="date" name="date_to" value="{{ date_to|date:'Y-m-d' }}" class="border border-gray-300 rounded-lg px-4 py-2">
+            </div>
+            <button type="submit" class="bg-primary text-white px-6 py-2 rounded-lg hover:bg-green-700 transition">
+                Харах
+            </button>
+        </form>
+
+        {% if messages %}
+        <div class="mb-6 space-y-2 no-print">
+            {% for message in messages %}
+            <div class="p-3 rounded-lg {% if message.tags == 'error' %}bg-red-100 text-red-800{% elif message.tags == 'warning' %}bg-yellow-100 text-yellow-800{% else %}bg-green-100 text-green-800{% endif %}">{{ message }}</div>
+            {% endfor %}
+        </div>
+        {% endif %}
+
+        {% if error %}
+        <div class="bg-red-50 border border-red-200 text-red-700 rounded-lg p-4 mb-6">
+            {{ error }}
+            <a href="{% url 'shop:employee_fingerprint' %}" class="underline font-medium">Ажилтны хурууны мэдээлэл рүү очих →</a>
+        </div>
+        {% endif %}
+
+        <form method="post" action="{% url 'shop:attendance_save' %}" id="attendance-form">
+            {% csrf_token %}
+            <input type="hidden" name="date_from" value="{{ date_from|date:'Y-m-d' }}">
+            <input type="hidden" name="date_to" value="{{ date_to|date:'Y-m-d' }}">
+
+            <div class="print-area bg-white rounded-lg shadow p-6">
+                <div class="flex items-center justify-between mb-4">
+                    <div>
+                        <h2 class="text-lg font-bold text-gray-900">Цаг бүртгэлийн хүснэгт</h2>
+                        <p class="text-sm text-gray-500">{{ date_from }} - {{ date_to }} · Нүд дээр дарж засах боломжтой · зөвхөн засварласан мөр хадгалагдана</p>
+                    </div>
+                    <button type="submit" class="no-print bg-primary text-white px-6 py-2 rounded-lg hover:bg-green-700 transition whitespace-nowrap">
+                        💾 Засвар хийгээд хадгалах
+                    </button>
+                </div>
+
+                {% if not rows %}
+                <p class="text-gray-500">Сонгосон хугацаанд ирцийн бүртгэл алга байна.</p>
+                {% else %}
+                <div class="overflow-x-auto">
+                    <table class="min-w-full text-xs border border-gray-200">
+                        <thead>
+                            <tr class="bg-gray-100 text-left">
+                                <th class="px-3 py-2 font-semibold text-gray-700">Нэр</th>
+                                <th class="px-2 py-2 font-semibold text-gray-700 whitespace-nowrap">Огноо</th>
+                                <th class="px-2 py-2 font-semibold text-gray-700 whitespace-nowrap">Гариг</th>
+                                <th class="px-2 py-2 font-semibold text-gray-700 whitespace-nowrap">Ирсэн цаг</th>
+                                <th class="px-2 py-2 font-semibold text-gray-700 whitespace-nowrap">Тарсан цаг</th>
+                                <th class="px-2 py-2 font-semibold text-gray-700 text-right whitespace-nowrap">1-10 минут</th>
+                                <th class="px-2 py-2 font-semibold text-gray-700 text-right whitespace-nowrap">11-20 минут</th>
+                                <th class="px-2 py-2 font-semibold text-gray-700 text-right whitespace-nowrap">20-с дээш минут</th>
+                                <th class="px-3 py-2 font-semibold text-gray-900 text-right bg-gray-200 whitespace-nowrap">Нийт хоцорсон минут</th>
+                                <th class="px-2 py-2 font-semibold text-gray-700 whitespace-nowrap">Харилцагчийн нэр</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for row in rows %}
+                            <tr class="border-t attendance-row {% if row.is_saved %}bg-yellow-50{% elif row.weekday == 'Бямба' or row.weekday == 'Ням' %}bg-gray-100{% endif %}">
+                                <td class="px-3 py-1.5 font-medium text-gray-900 whitespace-nowrap">
+                                    {{ row.name }}
+                                    {% if row.is_saved %}<span class="text-[10px] text-yellow-700" title="Гараар засварлаж хадгалсан">✎</span>{% endif %}
+                                    <input type="hidden" name="employee_code" value="{{ row.employee_code }}">
+                                    <input type="hidden" name="device_user_id" value="{{ row.device_user_id }}">
+                                    <input type="hidden" name="name" value="{{ row.name }}">
+                                    <input type="hidden" name="weekday" value="{{ row.weekday }}">
+                                    <input type="hidden" class="rule-start" value="{{ row.rule_start }}">
+                                </td>
+                                <td class="px-2 py-1.5 whitespace-nowrap">
+                                    {{ row.date|date:'Y-m-d' }}
+                                    <input type="hidden" name="date" value="{{ row.date|date:'Y-m-d' }}">
+                                </td>
+                                <td class="px-2 py-1.5 whitespace-nowrap">{{ row.weekday }}</td>
+                                <td class="px-2 py-1.5">
+                                    <input type="text" name="arrived_time" value="{{ row.arrived_time }}" placeholder="-" maxlength="5" pattern="^([01]?\d|2[0-3]):[0-5]\d$" title="ЦЦ:ММ" class="attendance-input arrived-input">
+                                </td>
+                                <td class="px-2 py-1.5">
+                                    <input type="text" name="left_time" value="{{ row.left_time }}" placeholder="-" maxlength="5" pattern="^([01]?\d|2[0-3]):[0-5]\d$" title="ЦЦ:ММ" class="attendance-input left-input">
+                                </td>
+                                <td class="px-2 py-1.5 text-right">
+                                    <input type="number" min="0" name="late_1_10" value="{{ row.late_1_10 }}" class="attendance-input text-right late-input">
+                                </td>
+                                <td class="px-2 py-1.5 text-right">
+                                    <input type="number" min="0" name="late_11_20" value="{{ row.late_11_20 }}" class="attendance-input text-right late-input">
+                                </td>
+                                <td class="px-2 py-1.5 text-right">
+                                    <input type="number" min="0" name="late_20_plus" value="{{ row.late_20_plus }}" class="attendance-input text-right late-input">
+                                </td>
+                                <td class="px-3 py-1.5 text-right font-semibold bg-gray-50 total-late-cell">{{ row.total_late_minutes }}</td>
+                                <td class="px-2 py-1.5 min-w-[200px]">
+                                    <input type="text" name="customer_name" value="{{ row.customer_name }}" class="attendance-input">
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% endif %}
+            </div>
+        </form>
+    </main>
+</div>
+
+<script>
+// Хоцролтыг албан тушаалын дүрмээр тооцоолно (python compute_lateness()-тэй ижил логик):
+// - ruleStart өгөгдсөн бол (тогтмол эхлэх цагтай албан тушаал): ирсэн цаг тэр цагаас хойш байвал зөрүү
+// - ruleStart хоосон бол ('бусад'): ирсэн цагаас хойш 8 цаг (480 минут) ажиллаагүй бол дутсан минут
+//   (тарсан цаг тодорхойгүй бол тооцоолохгүй)
+function parseHM(str) {
+    const m = /^([0-2]?\d):([0-5]\d)$/.exec((str || '').trim());
+    if (!m) return null;
+    return parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
+}
+
+function bucketDelay(delay) {
+    delay = Math.round(delay);
+    if (delay <= 0) return [0, 0, 0];
+    if (delay <= 10) return [delay, 0, 0];
+    if (delay <= 20) return [10, delay - 10, 0];
+    return [10, 10, delay - 20];
+}
+
+function calcLateBuckets(ruleStart, arrivedStr, leftStr) {
+    const arrivedMinutes = parseHM(arrivedStr);
+    if (arrivedMinutes === null) {
+        return null;
+    }
+
+    const startMinutes = parseHM(ruleStart);
+    if (startMinutes !== null) {
+        return bucketDelay(arrivedMinutes - startMinutes);
+    }
+
+    // "Бусад" - 8 цагийн дүрэм: тарсан цаг мэдэгдэхгүй бол одоохондоо тооцоолж болохгүй
+    const leftMinutes = parseHM(leftStr);
+    if (leftMinutes === null) {
+        return null;
+    }
+    let worked = leftMinutes - arrivedMinutes;
+    if (worked < 0) worked += 24 * 60;
+    return bucketDelay(8 * 60 - worked);
+}
+
+document.addEventListener('DOMContentLoaded', function () {
+    document.querySelectorAll('.attendance-row').forEach(function (row) {
+        const lateInputs = row.querySelectorAll('.late-input');
+        const totalCell = row.querySelector('.total-late-cell');
+        const arrivedInput = row.querySelector('.arrived-input');
+        const leftInput = row.querySelector('.left-input');
+        const ruleStartInput = row.querySelector('.rule-start');
+
+        function recalcTotal() {
+            let total = 0;
+            lateInputs.forEach(function (input) {
+                total += parseInt(input.value, 10) || 0;
+            });
+            totalCell.textContent = total;
+        }
+
+        lateInputs.forEach(function (input) {
+            input.addEventListener('input', recalcTotal);
+        });
+
+        function recalcLateness() {
+            // Хоосон эсвэл буруу форматтай (тэмдэглээгүй "-") үед хоцролтын баганад хүчээр гар
+            // хүрэхгүй - зөвхөн шаардлагатай цаг(ууд) зөв орсон үед автоматаар тооцоолно
+            const buckets = calcLateBuckets(ruleStartInput.value, arrivedInput.value, leftInput.value);
+            if (!buckets) {
+                return;
+            }
+            lateInputs[0].value = buckets[0];
+            lateInputs[1].value = buckets[1];
+            lateInputs[2].value = buckets[2];
+            recalcTotal();
+        }
+
+        if (arrivedInput && ruleStartInput) {
+            arrivedInput.addEventListener('input', recalcLateness);
+            if (leftInput) {
+                leftInput.addEventListener('input', recalcLateness);
+            }
+        }
+
+        // Хэрэглэгч бодитоор хүрч засварласан мөрийг тэмдэглэнэ - хадгалахдаа зөвхөн эдгээр
+        // мөрийг илгээнэ (мөрийн тоо их үед POST талбарын хязгаараас (TooManyFieldsSent)
+        // давахгүй байх, мөн засаагүй мөрүүд AttendanceRecord болж царцахгүй, тооцооллын дүрэм
+        // өөрчлөгдвөл дахин шинэчлэгдсээр байх зорилготой)
+        row.querySelectorAll('.attendance-input').forEach(function (input) {
+            input.addEventListener('input', function () {
+                row.dataset.dirty = '1';
+                row.classList.add('outline', 'outline-2', 'outline-primary');
+            });
+        });
+    });
+
+    const saveForm = document.getElementById('attendance-form');
+    if (saveForm) {
+        saveForm.addEventListener('submit', function (e) {
+            let dirtyCount = 0;
+            document.querySelectorAll('.attendance-row').forEach(function (row) {
+                if (row.dataset.dirty === '1') {
+                    dirtyCount += 1;
+                    return;
+                }
+                // Хөндөгдөөгүй мөрийн бүх input-г идэвхгүй болгоно - disabled input нь
+                // хэлбэрийн (form) POST-д огт орохгүй тул зөвхөн засварласан мөрүүд илгээгдэнэ
+                row.querySelectorAll('input').forEach(function (input) {
+                    input.disabled = true;
+                });
+            });
+            if (dirtyCount === 0) {
+                e.preventDefault();
+                alert('Хадгалах засвар алга байна. Эхлээд өөрчлөх нүдэн дээрээ дарж утгаа шинэчилнэ үү.');
+            }
+        });
+    }
+});
+</script>
+{% endblock %}

@@ -1,0 +1,150 @@
+{% extends 'base.html' %}
+
+{% block title %}Цэсний эрх тохируулах - Euro Foods{% endblock %}
+
+{% block hide_mobile_menu %}hidden{% endblock %}
+
+{% block content %}
+<div class="flex min-h-screen bg-gray-50">
+    {% include 'shop/_sidebar.html' with active_page='menu_permission_config' %}
+
+    <main class="flex-1 p-2 lg:p-8 lg:ml-0">
+        <div class="mb-6">
+            <h1 class="text-2xl lg:text-3xl font-bold text-gray-900">🔐 Цэсний эрх тохируулах</h1>
+            <p class="text-gray-600 mt-2">
+                Албан тушаал сонгоод, түүнд харуулах цэсийг тэмдэглэнэ. Тохиргоо хийгдээгүй цэс default-аар харагдана.
+            </p>
+        </div>
+
+        {% if messages %}
+        <div class="mb-4">
+            {% for message in messages %}
+            <div class="p-3 rounded-lg bg-green-100 text-green-800 mb-2">{{ message }}</div>
+            {% endfor %}
+        </div>
+        {% endif %}
+
+        {% if not positions %}
+        <div class="bg-white rounded-lg shadow p-6">
+            <p class="text-gray-600">OpenDataEmployee хүснэгтэд бүртгэлтэй албан тушаал олдсонгүй.</p>
+        </div>
+        {% else %}
+        <div class="flex flex-col lg:flex-row gap-6 mb-8">
+            <!-- Албан тушаалын жагсаалт -->
+            <aside class="w-full lg:w-64 bg-white rounded-lg shadow p-3 h-fit">
+                <h2 class="text-xs font-semibold text-gray-400 uppercase tracking-wide px-2 pb-2">Албан тушаал</h2>
+                <nav class="space-y-1">
+                    {% for position in positions %}
+                    <a href="?position={{ position|urlencode }}"
+                       class="block px-3 py-2 rounded-lg text-sm transition {% if position == selected_position %}bg-primary text-white font-medium{% else %}text-gray-700 hover:bg-gray-100{% endif %}">
+                        {% if position in always_all_positions %}🔒 {% endif %}{{ position }}
+                    </a>
+                    {% endfor %}
+                </nav>
+            </aside>
+
+            <!-- Сонгосон албан тушаалын цэсний эрх -->
+            <div class="flex-1 bg-white rounded-lg shadow p-6">
+                <h2 class="text-lg font-bold text-gray-900 mb-4">"{{ selected_position }}" -ын харах цэсүүд</h2>
+
+                {% if is_always_all_position %}
+                <div class="p-3 rounded-lg bg-blue-50 text-blue-800 text-sm mb-4">
+                    🔒 Энэ албан тушаал шинээр нэмэгдэх цэсийг оролцуулаад бүх цэсийг автоматаар үргэлж харна. Тохиргоо шаардлагагүй.
+                </div>
+                {% endif %}
+
+                <form method="post">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="permissions">
+                    <input type="hidden" name="position" value="{{ selected_position }}">
+
+                    {% for group in permission_groups %}
+                    <div class="mb-5">
+                        <div class="flex items-center justify-between border-b pb-1 mb-2">
+                            <h3 class="text-sm font-semibold text-gray-500 uppercase tracking-wide">{{ group.label }}</h3>
+                            {% if not is_always_all_position %}
+                            <div class="text-xs space-x-2">
+                                <button type="button" class="text-primary hover:underline select-all" data-scope="group-{{ forloop.counter }}">Бүгдийг сонгох</button>
+                                <span class="text-gray-300">|</span>
+                                <button type="button" class="text-gray-500 hover:underline select-none" data-scope="group-{{ forloop.counter }}">Цуцлах</button>
+                            </div>
+                            {% endif %}
+                        </div>
+                        <div class="space-y-1" data-group="group-{{ forloop.counter }}">
+                            {% for row in group.rows %}
+                            <label class="flex items-center gap-3 px-2 py-2 rounded-lg {% if is_always_all_position %}opacity-60{% else %}hover:bg-gray-50 cursor-pointer{% endif %}">
+                                <input type="checkbox" name="{{ row.field_name }}" {% if row.is_visible %}checked{% endif %} {% if is_always_all_position %}disabled{% endif %}
+                                       class="w-5 h-5 accent-primary {% if not is_always_all_position %}cursor-pointer{% endif %}">
+                                <span>{{ row.icon }} {{ row.label }}</span>
+                            </label>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    {% endfor %}
+
+                    {% if not is_always_all_position %}
+                    <button type="submit" class="bg-primary text-white px-6 py-2 rounded-lg hover:bg-green-700 transition">
+                        Хадгалах
+                    </button>
+                    {% endif %}
+                </form>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Цэсний бүлэглэлт тохируулах -->
+        <div class="bg-white rounded-lg shadow p-6">
+            <h2 class="text-lg font-bold text-gray-900 mb-1">Цэсний бүлэглэлт</h2>
+            <p class="text-gray-600 text-sm mb-4">Цэс бүр sidebar-ийн аль бүлэгт харагдахыг сонгоно.</p>
+            <form method="post">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="groups">
+                <div class="overflow-x-auto">
+                    <table class="min-w-full text-sm">
+                        <thead>
+                            <tr class="bg-gray-100 text-left">
+                                <th class="px-4 py-2 font-semibold text-gray-700">Цэс</th>
+                                <th class="px-4 py-2 font-semibold text-gray-700">Бүлэг</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for row in group_rows %}
+                            <tr class="border-t">
+                                <td class="px-4 py-2 whitespace-nowrap">{{ row.icon }} {{ row.label }}</td>
+                                <td class="px-4 py-2">
+                                    <select name="{{ row.field_name }}" class="border border-gray-300 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-primary">
+                                        {% for group_key, group_label in group_choices %}
+                                        <option value="{{ group_key }}" {% if group_key == row.current_group_key %}selected{% endif %}>{{ group_label }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                <div class="mt-4">
+                    <button type="submit" class="bg-primary text-white px-6 py-2 rounded-lg hover:bg-green-700 transition">
+                        Бүлэглэлт хадгалах
+                    </button>
+                </div>
+            </form>
+        </div>
+    </main>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    document.querySelectorAll('.select-all, .select-none').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            const checked = btn.classList.contains('select-all');
+            const scope = document.querySelector('[data-group="' + btn.dataset.scope + '"]');
+            scope.querySelectorAll('input[type=checkbox]').forEach(function (cb) {
+                cb.checked = checked;
+            });
+        });
+    });
+});
+</script>
+{% endblock %}
+

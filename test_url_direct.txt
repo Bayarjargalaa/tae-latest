@@ -1,0 +1,13 @@
+"""
+Test direct URL access
+"""
+print("\n" + "="*60)
+print("TEST: Direct URL access")
+print("="*60)
+print("\nБраузераа нээж дараах URL-г оруулаарай:")
+print("\n📌 http://127.0.0.1:8016/dashboard/expense-transaction-detail/?year=2024&month=1&type=refund")
+print("\nХарах ёстой зүйлс:")
+print("  ✅ Шар box: 'Debug: Гүйлгээ олдсон = 149'")
+print("  ✅ Хүснэгт: 149 мөрийн буцаалтын гүйлгээнүүд")
+print("  ✅ Доод тал: 'НИЙТ ДҮН: 19,226,613₮'")
+print("\n" + "="*60 + "\n")

@@ -1,0 +1,209 @@
+{% load humanize %}
+{% load l10n %}
+<!-- Татан авалтын Нэгтгэл Tab - Харилцагч->Бараа->Он->Сар->Өдөр -->
+<div class="bg-white rounded-lg shadow p-3 lg:p-6 mb-4 lg:mb-6">
+    <div class="flex flex-col lg:flex-row justify-between items-start lg:items-center mb-3 lg:mb-4 gap-3">
+        <div>
+            <h2 class="text-lg lg:text-xl font-bold">Харилцагчаар Нэгтгэл (Татан авалт)</h2>
+            <p class="text-xs lg:text-sm text-gray-600 mt-1">🚚 Харилцагч → Бараа → Он → Сар → Өдөр</p>
+        </div>
+    </div>
+    
+    <!-- Pivot Table -->
+    <div class="overflow-x-auto">
+        <table class="w-full border-collapse text-xs lg:text-sm">
+            <thead class="bg-gray-50">
+                <tr>
+                    <th class="px-2 lg:px-4 py-2 lg:py-3 text-left text-xs font-medium text-gray-700 border">Харилцагч / Бараа / Он / Сар / Өдөр</th>
+                    <th class="px-2 lg:px-4 py-2 lg:py-3 text-right text-xs font-medium text-gray-700 border whitespace-nowrap">Тоо ширхэг</th>
+                    <th class="px-2 lg:px-4 py-2 lg:py-3 text-right text-xs font-medium text-gray-700 border whitespace-nowrap">Үнэ (валют)</th>
+                    <th class="px-2 lg:px-4 py-2 lg:py-3 text-right text-xs font-medium text-gray-700 border whitespace-nowrap">Дүн (валют)</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for vendor, vendor_data in pivot_data.items %}
+                <!-- 1. ХАРИЛЦАГЧ -->
+                <tr class="bg-blue-600 text-white hover:bg-blue-700 transition cursor-pointer" onclick="toggleVendor('{{ vendor|slugify }}');">
+                    <td class="px-2 lg:px-4 py-2 lg:py-3 font-bold border">
+                        <span id="icon-vendor-{{ vendor|slugify }}" style="display: inline-block; width: 20px; user-select: none;">►</span> {{ vendor }}
+                    </td>
+                    <td class="px-2 lg:px-4 py-2 lg:py-3 border font-bold text-right">{{ vendor_data.total_qty|floatformat:0|intcomma }}</td>
+                    <td class="px-2 lg:px-4 py-2 lg:py-3 border font-bold text-right whitespace-nowrap text-yellow-100">{{ vendor_data.total_price|floatformat:2|intcomma }}</td>
+                    <td class="px-2 lg:px-4 py-2 lg:py-3 border font-bold text-right whitespace-nowrap">{{ vendor_data.total_amount|floatformat:2|intcomma }}</td>
+                </tr>
+                
+                <!-- 2. БАРАА (нуугдсан) -->
+                {% for item, item_data in vendor_data.items.items %}
+                <tr id="item-{{ vendor|slugify }}-{{ item|slugify }}" class="hidden bg-gray-50 hover:bg-gray-100 transition cursor-pointer" onclick="event.stopPropagation(); toggleItem('{{ vendor|slugify }}', '{{ item|slugify }}');">
+                    <td class="px-2 lg:px-6 py-2 border text-gray-900 font-medium">
+                        <span id="icon-item-{{ vendor|slugify }}-{{ item|slugify }}" style="display: inline-block; width: 20px; user-select: none;">►</span> &nbsp;&nbsp;📦 {{ item }}
+                    </td>
+                    <td class="px-2 lg:px-4 py-2 border text-right text-gray-700">{{ item_data.total_qty|floatformat:0|intcomma }}</td>
+                    <td class="px-2 lg:px-4 py-2 border text-right text-blue-600 font-bold whitespace-nowrap">{{ item_data.total_price|floatformat:2|intcomma }}</td>
+                    <td class="px-2 lg:px-4 py-2 border text-right text-blue-600 font-bold whitespace-nowrap">{{ item_data.total_amount|floatformat:2|intcomma }}</td>
+                </tr>
+                
+                <!-- 3. ОН (нуугдсан) -->
+                {% for year, year_data in item_data.years.items %}
+                <tr id="year-{{ vendor|slugify }}-{{ item|slugify }}-{{ year|unlocalize }}" class="hidden bg-gray-100 hover:bg-gray-200 transition cursor-pointer" onclick="event.stopPropagation(); toggleYear('{{ vendor|slugify }}', '{{ item|slugify }}', '{{ year|unlocalize }}');">
+                    <td class="px-2 lg:px-8 py-2 border text-gray-800 font-medium">
+                        <span id="icon-year-{{ vendor|slugify }}-{{ item|slugify }}-{{ year|unlocalize }}" style="display: inline-block; width: 20px; user-select: none;">►</span> &nbsp;&nbsp;&nbsp;&nbsp;📅 {{ year|unlocalize }}
+                    </td>
+                    <td class="px-2 lg:px-4 py-2 border text-right text-gray-700">{{ year_data.total_qty|floatformat:0|intcomma }}</td>
+                    <td class="px-2 lg:px-4 py-2 border text-right text-gray-700 whitespace-nowrap">{{ year_data.total_price|floatformat:2|intcomma }}</td>
+                    <td class="px-2 lg:px-4 py-2 border text-right text-gray-700 whitespace-nowrap">{{ year_data.total_amount|floatformat:2|intcomma }}</td>
+                </tr>
+                
+                <!-- 4. САР (нуугдсан) -->
+                {% for month, month_data in year_data.months.items %}
+                <tr id="month-{{ vendor|slugify }}-{{ item|slugify }}-{{ year|unlocalize }}-{{ month }}" class="hidden bg-gray-200 hover:bg-gray-300 transition cursor-pointer" onclick="event.stopPropagation(); toggleMonth('{{ vendor|slugify }}', '{{ item|slugify }}', '{{ year|unlocalize }}', '{{ month }}');">
+                    <td class="px-2 lg:px-10 py-2 border text-gray-700">
+                        <span id="icon-month-{{ vendor|slugify }}-{{ item|slugify }}-{{ year|unlocalize }}-{{ month }}" style="display: inline-block; width: 20px; user-select: none;">►</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{{ month|unlocalize }} сар
+                    </td>
+                    <td class="px-2 lg:px-4 py-2 border text-right text-gray-600">{{ month_data.total_qty|floatformat:0|intcomma }}</td>
+                    <td class="px-2 lg:px-4 py-2 border text-right text-gray-600 whitespace-nowrap">{{ month_data.total_price|floatformat:2|intcomma }}</td>
+                    <td class="px-2 lg:px-4 py-2 border text-right text-gray-600 whitespace-nowrap">{{ month_data.total_amount|floatformat:2|intcomma }}</td>
+                </tr>
+                
+                <!-- 5. ӨДӨР (нуугдсан) -->
+                {% for day, day_data in month_data.days.items %}
+                <tr id="day-{{ vendor|slugify }}-{{ item|slugify }}-{{ year|unlocalize }}-{{ month }}-{{ day }}" class="hidden bg-white hover:bg-gray-50">
+                    <td class="px-2 lg:px-12 py-1 border text-gray-600 text-sm">
+                        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{{ day|unlocalize }} өдөр
+                    </td>
+                    <td class="px-2 lg:px-4 py-1 border text-right text-gray-500 text-sm">{{ day_data.qty|floatformat:0|intcomma }}</td>
+                    <td class="px-2 lg:px-4 py-1 border text-right text-gray-500 text-sm whitespace-nowrap">{{ day_data.price|floatformat:2|intcomma }}</td>
+                    <td class="px-2 lg:px-4 py-1 border text-right text-gray-500 text-sm whitespace-nowrap">{{ day_data.amount|floatformat:2|intcomma }}</td>
+                </tr>
+                {% endfor %}
+                {% endfor %}
+                {% endfor %}
+                {% endfor %}
+                
+                {% empty %}
+                <tr>
+                    <td colspan="4" class="px-2 lg:px-4 py-8 text-center text-gray-500">
+                        Өгөгдөл байхгүй
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+            {% if grand_total %}
+            <tfoot class="bg-blue-50 border-t-4 border-blue-500">
+                <tr>
+                    <td class="px-2 lg:px-4 py-3 lg:py-4 font-bold text-gray-900 text-sm lg:text-lg border">
+                        🏆 НИЙТ ДҮН
+                    </td>
+                    <td class="px-2 lg:px-4 py-3 lg:py-4 text-right font-bold text-green-600 text-sm lg:text-lg border">{{ grand_total.total_qty|floatformat:0|intcomma }}</td>
+                    <td class="px-2 lg:px-4 py-3 lg:py-4 text-right font-bold text-blue-700 text-sm lg:text-lg border whitespace-nowrap">{{ grand_total.total_price|floatformat:2|intcomma }}</td>
+                    <td class="px-2 lg:px-4 py-3 lg:py-4 text-right font-bold text-blue-700 text-sm lg:text-lg border whitespace-nowrap">{{ grand_total.total_amount|floatformat:2|intcomma }}</td>
+                </tr>
+            </tfoot>
+            {% endif %}
+        </table>
+    </div>
+</div>
+
+<!-- VERSION: 2026-02-12-20:00 - FORCE RELOAD -->
+<script>
+/* Cache Buster: v2.0 - Fixed 3-parameter toggle functions */
+
+// Toggle Харилцагч
+function toggleVendor(vendorId) {
+    const items = document.querySelectorAll('[id^="item-' + vendorId + '-"]');
+    const icon = document.getElementById('icon-vendor-' + vendorId);
+    
+    if (!icon) return;
+    
+    const isHidden = items.length > 0 && items[0].classList.contains('hidden');
+    
+    items.forEach(item => {
+        if (isHidden) {
+            item.classList.remove('hidden');
+        } else {
+            item.classList.add('hidden');
+            // Бараа хаахад доторх бүх зүйлийг хаах
+            const itemMatch = item.id.match(/item-(.+)/);
+            if (itemMatch) {
+                document.querySelectorAll('[id^="year-' + itemMatch[1] + '-"]').forEach(y => y.classList.add('hidden'));
+                document.querySelectorAll('[id^="month-' + itemMatch[1] + '-"]').forEach(m => m.classList.add('hidden'));
+                document.querySelectorAll('[id^="day-' + itemMatch[1] + '-"]').forEach(d => d.classList.add('hidden'));
+            }
+        }
+    });
+    
+    icon.textContent = isHidden ? '▼' : '►';
+}
+
+// Toggle Бараа
+function toggleItem(vendorId, itemId) {
+    const years = document.querySelectorAll('[id^="year-' + vendorId + '-' + itemId + '-"]');
+    const icon = document.getElementById('icon-item-' + vendorId + '-' + itemId);
+    
+    if (!icon) return;
+    
+    const isHidden = years.length > 0 && years[0].classList.contains('hidden');
+    
+    years.forEach(year => {
+        if (isHidden) {
+            year.classList.remove('hidden');
+        } else {
+            year.classList.add('hidden');
+            // Он хаахад доторх бүх зүйлийг хаах
+            const yearMatch = year.id.match(/year-(.+)/);
+            if (yearMatch) {
+                document.querySelectorAll('[id^="month-' + yearMatch[1] + '-"]').forEach(m => m.classList.add('hidden'));
+                document.querySelectorAll('[id^="day-' + yearMatch[1] + '-"]').forEach(d => d.classList.add('hidden'));
+            }
+        }
+    });
+    
+    icon.textContent = isHidden ? '▼' : '►';
+}
+
+// Toggle Он
+function toggleYear(vendorId, itemId, year) {
+    const selector = '[id^="month-' + vendorId + '-' + itemId + '-' + year + '-"]';
+    const months = document.querySelectorAll(selector);
+    const icon = document.getElementById('icon-year-' + vendorId + '-' + itemId + '-' + year);
+    
+    if (!icon) return;
+    
+    const isHidden = months.length > 0 && months[0].classList.contains('hidden');
+    
+    months.forEach(month => {
+        if (isHidden) {
+            month.classList.remove('hidden');
+        } else {
+            month.classList.add('hidden');
+            // Сар хаахад доторх өдрүүдийг хаах
+            const monthMatch = month.id.match(/month-(.+)/);
+            if (monthMatch) {
+                document.querySelectorAll('[id^="day-' + monthMatch[1] + '-"]').forEach(d => d.classList.add('hidden'));
+            }
+        }
+    });
+    
+    icon.textContent = isHidden ? '▼' : '►';
+}
+
+// Toggle Сар
+function toggleMonth(vendorId, itemId, year, month) {
+    const days = document.querySelectorAll('[id^="day-' + vendorId + '-' + itemId + '-' + year + '-' + month + '-"]');
+    const icon = document.getElementById('icon-month-' + vendorId + '-' + itemId + '-' + year + '-' + month);
+    
+    if (!icon) return;
+    
+    const isHidden = days.length > 0 && days[0].classList.contains('hidden');
+    
+    days.forEach(day => {
+        if (isHidden) {
+            day.classList.remove('hidden');
+        } else {
+            day.classList.add('hidden');
+        }
+    });
+    
+    icon.textContent = isHidden ? '▼' : '►';
+}
+</script>

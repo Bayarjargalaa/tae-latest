@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="mn">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pivot Table Toggle Test</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#2E7D32',
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="bg-gray-50 p-8">
+    <h1 class="text-2xl font-bold mb-4">Pivot Table Toggle Test</h1>
+    
+    <div class="bg-white rounded-lg shadow p-6">
+        <table class="w-full border-collapse">
+            <thead class="bg-gray-50">
+                <tr>
+                    <th class="px-4 py-3 text-left border">Он</th>
+                    <th class="px-4 py-3 text-left border">Сар</th>
+                    <th class="px-4 py-3 text-right border">Орлого</th>
+                </tr>
+            </thead>
+            <tbody>
+                <!-- 2024 он -->
+                <tr class="bg-primary text-white hover:bg-green-700 transition" style="cursor: pointer;" onclick="event.stopPropagation(); toggleYear('2024');">
+                    <td class="px-4 py-3 font-bold border">
+                        <span id="icon-2024" style="display: inline-block; width: 20px; user-select: none;">►</span> 2024
+                    </td>
+                    <td class="px-4 py-3 border font-medium">НИЙТ</td>
+                    <td class="px-4 py-3 border font-bold text-right">10,000,000₮</td>
+                </tr>
+                
+                <!-- 2024 сарууд -->
+                <tr id="months-2024" class="hidden">
+                    <td colspan="3" class="p-0">
+                        <table class="w-full">
+                            <tr class="hover:bg-gray-50 bg-gray-50">
+                                <td class="px-4 py-2 border text-gray-400 text-center" style="width: 33%;">▸</td>
+                                <td class="px-4 py-2 text-gray-700 border font-medium" style="width: 33%;">1 сар</td>
+                                <td class="px-4 py-2 text-right border text-gray-700" style="width: 34%;">1,000,000₮</td>
+                            </tr>
+                            <tr class="hover:bg-gray-50 bg-gray-50">
+                                <td class="px-4 py-2 border text-gray-400 text-center">▸</td>
+                                <td class="px-4 py-2 text-gray-700 border font-medium">2 сар</td>
+                                <td class="px-4 py-2 text-right border text-gray-700">2,000,000₮</td>
+                            </tr>
+                        </table>
+                    </td>
+                </tr>
+                
+                <!-- 2025 он -->
+                <tr class="bg-primary text-white hover:bg-green-700 transition" style="cursor: pointer;" onclick="event.stopPropagation(); toggleYear('2025');">
+                    <td class="px-4 py-3 font-bold border">
+                        <span id="icon-2025" style="display: inline-block; width: 20px; user-select: none;">►</span> 2025
+                    </td>
+                    <td class="px-4 py-3 border font-medium">НИЙТ</td>
+                    <td class="px-4 py-3 border font-bold text-right">20,000,000₮</td>
+                </tr>
+                
+                <!-- 2025 сарууд -->
+                <tr id="months-2025" class="hidden">
+                    <td colspan="3" class="p-0">
+                        <table class="w-full">
+                            <tr class="hover:bg-gray-50 bg-gray-50">
+                                <td class="px-4 py-2 border text-gray-400 text-center" style="width: 33%;">▸</td>
+                                <td class="px-4 py-2 text-gray-700 border font-medium" style="width: 33%;">1 сар</td>
+                                <td class="px-4 py-2 text-right border text-gray-700" style="width: 34%;">5,000,000₮</td>
+                            </tr>
+                        </table>
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+    
+    <div class="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+        <h2 class="font-bold mb-2">Тест заавар:</h2>
+        <ol class="list-decimal list-inside space-y-1 text-sm">
+            <li>Оны мөр дээр дарна (2024 эсвэл 2025)</li>
+            <li>Сарын дэлгэрэнгүй харагдах ёстой</li>
+            <li>Дахин дарвал хаагдах ёстой</li>
+            <li>Browser console (F12) дээр log харагдана</li>
+        </ol>
+    </div>
+    
+    <script>
+    // Pivot table toggle functionality
+    function toggleYear(yearId) {
+        console.log('toggleYear called with:', yearId);
+        const monthsRow = document.getElementById('months-' + yearId);
+        const icon = document.getElementById('icon-' + yearId);
+        
+        console.log('monthsRow:', monthsRow);
+        console.log('icon:', icon);
+        
+        if (!monthsRow || !icon) {
+            console.error('Elements not found for year:', yearId);
+            return;
+        }
+        
+        if (monthsRow.classList.contains('hidden')) {
+            monthsRow.classList.remove('hidden');
+            icon.textContent = '▼';
+            console.log('Showed months for year:', yearId);
+        } else {
+            monthsRow.classList.add('hidden');
+            icon.textContent = '►';
+            console.log('Hidden months for year:', yearId);
+        }
+    }
+    </script>
+</body>
+</html>

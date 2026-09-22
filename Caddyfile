@@ -1,0 +1,7 @@
+http://www.gotopa.com, http://gotopa.com {
+    reverse_proxy host.docker.internal:8002
+}
+
+:80 {
+    reverse_proxy web:8000
+}

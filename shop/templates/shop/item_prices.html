@@ -1,0 +1,134 @@
+{% extends 'base.html' %}
+{% load humanize %}
+
+{% block title %}Барааны үнэ - Euro Foods{% endblock %}
+
+{% block hide_mobile_menu %}hidden{% endblock %}
+
+{% block content %}
+<div class="flex min-h-screen bg-gray-50">
+    {% include 'shop/_sidebar.html' with active_page='item_prices' %}
+
+    <main class="flex-1 p-2 lg:p-8 lg:ml-0">
+        <div class="flex items-center justify-between mb-6">
+            <div>
+                <h1 class="text-2xl lg:text-3xl font-bold text-gray-900">💲 Барааны үнэ</h1>
+                <p class="text-gray-600 mt-2">Бараа тус бүрийн үнийн жагсаалт (суваг) тус бүрийн хамгийн сүүлийн огнооны үнэ</p>
+            </div>
+        </div>
+
+        <form method="get" class="bg-white rounded-lg shadow p-4 mb-6">
+            <div class="flex flex-wrap items-end gap-4 mb-4">
+                <div>
+                    <label class="block text-sm font-medium mb-1">Бараа хайх</label>
+                    <input type="text" name="q" value="{{ search_query }}" placeholder="Барааны нэрээр хайх..."
+                           class="border border-gray-300 rounded-lg px-4 py-2 w-64">
+                </div>
+                <div>
+                    <label class="flex items-center gap-2 text-sm font-medium mb-1 h-5">
+                        <input type="checkbox" name="stock_only" value="true" {% if stock_only %}checked{% endif %}
+                               class="w-4 h-4 accent-primary">
+                        Үлдэгдэлтэй бараа л харах
+                    </label>
+                </div>
+                <div>
+                    <label class="flex items-center gap-2 text-sm font-medium mb-1 h-5">
+                        <input type="checkbox" name="show_all" value="true" {% if show_all %}checked{% endif %}
+                               class="w-4 h-4 accent-primary">
+                        Бүгдийг нэг хуудсанд харуулах (хуудаслалтгүй)
+                    </label>
+                </div>
+                <div>
+                    <label class="flex items-center gap-2 text-sm font-medium mb-1 h-5">
+                        <input type="checkbox" name="below_base_only" value="true" {% if below_base_only %}checked{% endif %}
+                               class="w-4 h-4 accent-primary">
+                        Зөвхөн улаанаар ялгарсныг харах
+                    </label>
+                </div>
+                <button type="submit" class="bg-primary text-white px-6 py-2 rounded-lg hover:bg-green-700 transition">
+                    Шүүх
+                </button>
+                <a href="{% url 'shop:item_prices_export' %}?{{ querystring }}"
+                   class="bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50 transition whitespace-nowrap">
+                    📥 Excel рүү гаргах
+                </a>
+                <span class="text-sm text-gray-500 ml-auto">Нийт: {{ total_items }} бараа</span>
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium mb-2">Үнийн жагсаалт (сонгоогүй бол бүгд харагдана)</label>
+                <div class="flex flex-wrap gap-x-4 gap-y-2 max-h-32 overflow-y-auto border border-gray-200 rounded-lg p-3">
+                    {% for channel in all_channels %}
+                    <label class="flex items-center gap-1.5 text-sm whitespace-nowrap">
+                        <input type="checkbox" name="channel" value="{{ channel.pkid|stringformat:'d' }}"
+                               {% if channel.pkid|stringformat:'s' in selected_channel_pkids %}checked{% endif %}
+                               class="w-4 h-4 accent-primary">
+                        {{ channel.code }} - {{ channel.name }}
+                    </label>
+                    {% endfor %}
+                </div>
+            </div>
+        </form>
+
+        <div class="flex items-center gap-2 mb-2 text-xs text-gray-500">
+            <span class="inline-block w-3 h-3 bg-red-100 border border-red-300 rounded"></span>
+            Улаанаар тэмдэглэсэн үнэ нь тухайн барааны "001 - Үндсэн үнэ"-нээс доогуур байна
+        </div>
+
+        <div class="bg-white rounded-lg shadow overflow-x-auto">
+            <table class="min-w-full text-sm">
+                <thead>
+                    <tr class="bg-gray-100 text-left">
+                        <th class="px-4 py-3 font-semibold text-gray-700 sticky left-0 bg-gray-100 whitespace-nowrap align-bottom">Бараа</th>
+                        {% for channel in channels %}
+                        <th class="px-3 py-3 font-semibold text-gray-700 text-right whitespace-nowrap">
+                            <div>{{ channel.code }}</div>
+                            <div class="text-xs font-normal text-gray-400 normal-case">{{ channel.name }}</div>
+                        </th>
+                        {% endfor %}
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in rows %}
+                    <tr class="border-t">
+                        <td class="px-4 py-2 font-medium text-gray-900 sticky left-0 bg-white whitespace-nowrap">{{ row.item.name }}</td>
+                        {% for cell in row.cells %}
+                        <td class="px-3 py-2 text-right {% if cell.is_below_base %}bg-red-100 text-red-700 font-semibold{% endif %}"
+                            {% if cell.is_below_base %}title="Үндсэн үнэ ({{ row.base_price|floatformat:0|intcomma }}₮)-ээс доогуур"{% endif %}>
+                            {% if cell.value is not None %}{{ cell.value|floatformat:0|intcomma }}{% else %}-{% endif %}
+                        </td>
+                        {% endfor %}
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="{{ channels|length|add:1 }}" class="px-4 py-6 text-center text-gray-500">Үнийн мэдээлэл олдсонгүй.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        {% if page_obj.has_other_pages %}
+        <div class="bg-white rounded-lg shadow p-4 mt-4 flex justify-center">
+            <div class="flex gap-2 items-center">
+                {% if page_obj.has_previous %}
+                <a href="?page={{ page_obj.previous_page_number }}&{{ querystring }}"
+                   class="px-4 py-2 bg-primary text-white rounded-lg hover:bg-green-700 transition">
+                    ◀ Өмнөх
+                </a>
+                {% endif %}
+                <span class="px-4 py-2 text-gray-700 font-medium">
+                    Хуудас {{ page_obj.number }} / {{ page_obj.paginator.num_pages }}
+                </span>
+                {% if page_obj.has_next %}
+                <a href="?page={{ page_obj.next_page_number }}&{{ querystring }}"
+                   class="px-4 py-2 bg-primary text-white rounded-lg hover:bg-green-700 transition">
+                    Дараах ▶
+                </a>
+                {% endif %}
+            </div>
+        </div>
+        {% endif %}
+    </main>
+</div>
+{% endblock %}

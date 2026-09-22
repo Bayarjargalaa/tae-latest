@@ -1,0 +1,98 @@
+{% load humanize %}
+<!-- Харилцагчаар Tab -->
+<div class="bg-white rounded-lg shadow p-6 mb-6">
+    <h2 class="text-xl font-bold mb-4">Харилцагчийн Шинжилгээ</h2>
+    
+    <!-- Шүүлт -->
+    <form method="GET" class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+        <input type="hidden" name="tab" value="by_customer">
+        
+        <div>
+            <label class="block text-sm font-medium text-gray-700 mb-2">Огноо (эхлэх)</label>
+            <input type="date" name="date_from" value="{{ date_from }}" class="w-full border border-gray-300 rounded-lg px-4 py-2">
+        </div>
+        
+        <div>
+            <label class="block text-sm font-medium text-gray-700 mb-2">Огноо (дуусах)</label>
+            <input type="date" name="date_to" value="{{ date_to }}" class="w-full border border-gray-300 rounded-lg px-4 py-2">
+        </div>
+        
+        <div>
+            <label class="block text-sm font-medium text-gray-700 mb-2">Харилцагч сонгох</label>
+            <select id="customer-select-main" name="customer" class="w-full border border-gray-300 rounded-lg px-4 py-2">
+                <option value="">Бүх харилцагч</option>
+                {% for customer in customers %}
+                <option value="{{ customer }}" {% if selected_customer == customer %}selected{% endif %}>
+                    {{ customer }}
+                </option>
+                {% endfor %}
+            </select>
+        </div>
+        
+        <div>
+            <label class="block text-sm font-medium text-gray-700 mb-2">Бараа шүүх</label>
+            <select id="product-select-main" name="product" class="w-full border border-gray-300 rounded-lg px-4 py-2">
+                <option value="">Бүх бараа</option>
+                {% for product in products %}
+                <option value="{{ product.name }}" {% if selected_product == product.name %}selected{% endif %}>
+                    {{ product.name }}
+                </option>
+                {% endfor %}
+            </select>
+        </div>
+        
+        <div class="col-span-full flex gap-2">
+            <button type="submit" class="bg-primary text-white px-6 py-2 rounded-lg hover:bg-green-700 transition">
+                🔍 Хайх
+            </button>
+            <a href="?tab=by_customer" 
+               class="px-6 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition">
+                Цэвэрлэх
+            </a>
+        </div>
+    </form>
+    
+    <!-- Харилцагчийн жагсаалт -->
+    <div class="overflow-x-auto">
+        <table id="customerTable" class="w-full" data-sort-order="asc">
+            <thead class="bg-gray-50 border-b">
+                <tr>
+                    <th onclick="sortTable('customerTable', 0, false)" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100">Харилцагч</th>
+                    <th onclick="sortTable('customerTable', 1, true)" class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100">Нийт орлого</th>
+                    <th onclick="sortTable('customerTable', 2, true)" class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100">Захиалга</th>
+                    <th onclick="sortTable('customerTable', 3, true)" class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100">Тоо ширхэг</th>
+                    <th onclick="sortTable('customerTable', 4, true)" class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100">Бүтээгдэхүүн</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-200">
+                {% for item in customer_sales %}
+                <tr class="hover:bg-gray-50">
+                    <td class="px-6 py-4 text-sm text-gray-900 font-medium">{{ item.customername|truncatewords:8 }}</td>
+                    <td class="px-6 py-4 text-sm text-gray-900 text-right font-bold text-primary">{{ item.revenue|floatformat:0|intcomma }}₮</td>
+                    <td class="px-6 py-4 text-sm text-gray-600 text-right">{{ item.orders|intcomma }}</td>
+                    <td class="px-6 py-4 text-sm text-gray-600 text-right">{{ item.qty|floatformat:2|intcomma }}</td>
+                    <td class="px-6 py-4 text-sm text-gray-600 text-right">{{ item.products|intcomma }} төрөл</td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="5" class="px-6 py-8 text-center text-gray-500">
+                        🔍 Сонгосон шүүлтээр өгөгдөл олдсонгүй. Огноо эсвэл бусад шүүлтийг солиж үзнэ үү.
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+            {% if stats %}
+            <tfoot class="bg-yellow-50 border-t-4 border-yellow-500">
+                <tr>
+                    <td class="px-6 py-4 font-bold text-gray-900 text-base border">
+                        🏆 НИЙТ ДҮН
+                    </td>
+                    <td class="px-6 py-4 text-right font-bold text-primary text-base border">{{ stats.total_revenue|default:0|floatformat:0|intcomma }}₮</td>
+                    <td class="px-6 py-4 text-right font-bold text-blue-600 text-base border">{{ stats.total_orders|default:0|intcomma }}</td>
+                    <td class="px-6 py-4 text-right font-bold text-green-600 text-base border" colspan="2">{{ stats.total_qty|default:0|floatformat:0|intcomma }} ширхэг</td>
+                </tr>
+            </tfoot>
+            {% endif %}
+        </table>
+    </div>
+</div>
