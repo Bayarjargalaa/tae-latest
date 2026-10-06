@@ -30,6 +30,9 @@ MENU_GROUPS = [
         'label': 'Хувийн мэдээлэл',
         'items': [
             {'key': 'profile', 'label': 'Миний мэдээлэл', 'icon': '👤', 'url_name': 'shop:profile'},
+            {'key': 'my_attendance', 'label': 'Цагийн бүртгэл', 'icon': '🕒', 'url_name': 'shop:my_attendance'},
+            {'key': 'my_payroll', 'label': 'Цалингийн мэдээлэл', 'icon': '💰', 'url_name': 'shop:my_payroll'},
+            {'key': 'my_sales_bonus', 'label': 'Борлуулалтын нэмэгдэл', 'icon': '🎯', 'url_name': 'shop:my_sales_bonus'},
         ],
     },
     {
@@ -38,6 +41,7 @@ MENU_GROUPS = [
         'items': [
             {'key': 'inventory', 'label': 'Барааны үлдэгдэл', 'icon': '📦', 'url_name': 'shop:inventory_report'},
             {'key': 'item_prices', 'label': 'Барааны үнэ', 'icon': '💲', 'url_name': 'shop:item_prices'},
+            {'key': 'item_costs', 'label': 'Барааны өртөг', 'icon': '🧾', 'url_name': 'shop:item_costs'},
         ],
     },
     {
@@ -45,6 +49,7 @@ MENU_GROUPS = [
         'label': 'Борлуулалт',
         'items': [
             {'key': 'sales_report', 'label': 'Борлуулалтын тайлан', 'icon': '📊', 'url_name': 'shop:sales_report'},
+            {'key': 'sales_report_ht', 'label': 'Борлуулалтын тайлан ХТ-р', 'icon': '🧑‍💼', 'url_name': 'shop:sales_report_ht'},
         ],
     },
     {
@@ -59,6 +64,7 @@ MENU_GROUPS = [
         'label': 'Хангамж',
         'items': [
             {'key': 'purchase_report', 'label': 'Татан авалтын тайлан', 'icon': '🚚', 'url_name': 'shop:purchase_report'},
+            {'key': 'unloading', 'label': 'Ачаа буулгалт', 'icon': '🏗️', 'url_name': 'shop:unloading'},
             {'key': 'meal_list', 'label': 'Хоолны бүртгэл', 'icon': '🍲', 'url_name': 'shop:meal_list'},
             {'key': 'meal_attendance', 'label': 'Хоол идэх нэрс', 'icon': '📝', 'url_name': 'shop:meal_attendance_list'},
             {'key': 'meal_material_calc', 'label': 'Хоолны материалын тооцоо', 'icon': '🧮', 'url_name': 'shop:meal_material_calc'},
@@ -70,6 +76,8 @@ MENU_GROUPS = [
         'items': [
             {'key': 'expense_report', 'label': 'Зардлын тооцоолол сараар', 'icon': '💰', 'url_name': 'shop:expense_report'},
             {'key': 'expense_report_by_year', 'label': 'Зардлын тооцоолол жилээр', 'icon': '📈', 'url_name': 'shop:expense_report_by_year'},
+            {'key': 'receivable_report', 'label': 'Авлагын тайлан', 'icon': '📥', 'url_name': 'shop:receivable_report'},
+            {'key': 'payable_report', 'label': 'Өглөгийн тайлан', 'icon': '📤', 'url_name': 'shop:payable_report'},
         ],
     },
     {
@@ -77,6 +85,14 @@ MENU_GROUPS = [
         'label': 'Хүний нөөц',
         'items': [
             {'key': 'attendance_calc', 'label': 'Цаг бүртгэл', 'icon': '🕒', 'url_name': 'shop:attendance_calc'},
+            {'key': 'timesheet', 'label': 'Хоног бүртгэл', 'icon': '📅', 'url_name': 'shop:timesheet'},
+            {'key': 'payroll_card', 'label': 'Картын цалин бодолт', 'icon': '💳', 'url_name': 'shop:payroll_card'},
+            {'key': 'payroll_cash', 'label': 'Бэлэн цалин бодолт', 'icon': '💵', 'url_name': 'shop:payroll_cash'},
+            {'key': 'cash_bank_accounts', 'label': 'Бэлэн цалингийн данс', 'icon': '🏦', 'url_name': 'shop:cash_bank_accounts'},
+            {'key': 'payroll_report', 'label': 'Цалингийн тайлан', 'icon': '📊', 'url_name': 'shop:payroll_report'},
+            {'key': 'payroll_advance_card', 'label': 'Картын урьдчилгаа', 'icon': '💳', 'url_name': 'shop:payroll_advance_card'},
+            {'key': 'payroll_advance_cash', 'label': 'Бэлэн урьдчилгаа', 'icon': '💵', 'url_name': 'shop:payroll_advance_cash'},
+            {'key': 'sales_bonus', 'label': 'Борлуулалтын нэмэгдэл бодох', 'icon': '🎯', 'url_name': 'shop:sales_bonus'},
             {'key': 'employee_fingerprint', 'label': 'Ажилтны хурууны мэдээлэл', 'icon': '👆', 'url_name': 'shop:employee_fingerprint'},
         ],
     },

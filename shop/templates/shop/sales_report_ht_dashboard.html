@@ -1,0 +1,890 @@
+{% extends 'base.html' %}
+
+{% block title %}ХТ Dashboard - Euro Foods{% endblock %}
+
+{% block hide_mobile_menu %}hidden{% endblock %}
+
+{% block extra_css %}
+<style>
+    /* Графикийн өнгө, бэхний токенууд - ангиллын өнгөний дараалал validate_palette-аар шалгагдсан */
+    .viz-root {
+        --surface: #ffffff;
+        --ink: #111827;
+        --ink-2: #4b5563;
+        --muted: #6b7280;
+        --grid: #eeeeec;
+        --axis: #d1d5db;
+        --hairline: rgba(17, 24, 39, 0.08);
+        --series-1: #2a78d6;
+        --series-2: #eb6834;
+        --series-3: #1baf7a;
+        --series-4: #eda100;
+        --series-5: #e87ba4;
+        --series-6: #008300;
+        --series-7: #4a3aa7;
+        --series-8: #e34948;
+        --series-other: #a3a3a3;
+        --good-text: #006300;
+        --good-bg: #e8f5e9;
+        --bad-text: #b42323;
+        --bad-bg: #fdecec;
+        color: var(--ink);
+    }
+    .viz-card { background: var(--surface); border: 1px solid var(--hairline); border-radius: 1rem;
+                box-shadow: 0 1px 2px rgba(0,0,0,.04); }
+    .viz-card h3 { font-size: .95rem; font-weight: 600; color: var(--ink); }
+    .viz-sub { font-size: .75rem; color: var(--muted); }
+    .viz-icon-btn { font-size: .75rem; color: var(--ink-2); border: 1px solid var(--hairline); border-radius: .5rem;
+                    padding: .25rem .55rem; background: #fff; white-space: nowrap; }
+    .viz-icon-btn:hover { background: #f3f4f6; color: var(--ink); }
+
+    .seg { display: inline-flex; padding: 3px; gap: 2px; background: #f1f1ef; border-radius: .7rem; flex-wrap: wrap; }
+    .seg button { font-size: .8rem; padding: .35rem .8rem; border-radius: .55rem; color: var(--ink-2); font-weight: 500; }
+    .seg button:hover { color: var(--ink); }
+    .seg button[aria-pressed="true"] { background: #fff; color: var(--ink); box-shadow: 0 1px 2px rgba(0,0,0,.1); }
+
+    .kpi-value { font-size: clamp(1.15rem, 4.6vw, 1.65rem); line-height: 1.15; font-weight: 650; letter-spacing: -0.01em;
+                 overflow-wrap: anywhere; }
+    .delta { display: inline-flex; align-items: center; gap: .2rem; font-size: .72rem; font-weight: 600;
+             padding: .1rem .4rem; border-radius: 999px; }
+    .delta.up { color: var(--good-text); background: var(--good-bg); }
+    .delta.down { color: var(--bad-text); background: var(--bad-bg); }
+    .delta.flat { color: var(--ink-2); background: #f3f4f6; }
+
+    .bar-row { display: grid; grid-template-columns: minmax(0, 42%) 1fr auto; align-items: center; gap: .6rem;
+               padding: .3rem .35rem; border-radius: .5rem; cursor: default; }
+    .bar-row.clickable { cursor: pointer; }
+    /* Нарийн картад нэрийг бүтнээр нь харуулахын тулд нэр+утга дээр, баганыг доор нь */
+    .bar-row.stacked { grid-template-columns: 1fr auto; row-gap: .3rem; padding: .45rem .35rem; }
+    .bar-row.stacked .bar-label { white-space: normal; }
+    .bar-row.stacked .bar-track { grid-column: 1 / -1; grid-row: 2; }
+    .bar-row:hover, .bar-row:focus-visible { background: #f7f7f5; outline: none; }
+    .bar-label { font-size: .8rem; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .bar-rank { color: var(--muted); font-variant-numeric: tabular-nums; margin-right: .35rem; }
+    .bar-track { height: 12px; position: relative; }
+    .bar-fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 0 4px 4px 0; background: var(--series-1);
+                min-width: 2px; transition: width .35s ease; }
+    .bar-row:hover .bar-fill, .bar-row:focus-visible .bar-fill { filter: brightness(1.12); }
+    .bar-value { font-size: .78rem; color: var(--ink-2); font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+    .bar-share { color: var(--muted); margin-left: .3rem; }
+
+    .meter-track { height: 10px; border-radius: 999px; background: #efefec; overflow: hidden; }
+    .meter-fill { height: 100%; border-radius: 999px; background: var(--series-1); transition: width .35s ease; }
+
+    .col-chart { display: flex; align-items: flex-end; gap: 2px; height: 180px; padding-top: 1.2rem; }
+    .col-slot { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%;
+                border-radius: .4rem; }
+    .col-slot:hover, .col-slot:focus-visible { background: #f7f7f5; outline: none; }
+    .col-bar { width: 58%; max-width: 44px; border-radius: 4px 4px 0 0; background: var(--series-1); min-height: 2px;
+               transition: height .35s ease; }
+    .col-value { font-size: .72rem; color: var(--ink-2); margin-bottom: .25rem; font-variant-numeric: tabular-nums; }
+    .col-label { font-size: .72rem; color: var(--muted); margin-top: .35rem; }
+
+    .viz-table { width: 100%; font-size: .78rem; }
+    .viz-table th { text-align: right; font-weight: 600; color: var(--ink-2); padding: .35rem .5rem; border-bottom: 1px solid var(--axis);
+                    position: sticky; top: 0; background: #fff; }
+    .viz-table th:first-child, .viz-table td:first-child { text-align: left; }
+    .viz-table td { text-align: right; padding: .3rem .5rem; border-bottom: 1px solid var(--grid); font-variant-numeric: tabular-nums; }
+
+    .viz-tooltip { position: fixed; z-index: 60; pointer-events: none; background: #fff; border: 1px solid var(--hairline);
+                   border-radius: .6rem; box-shadow: 0 8px 24px rgba(0,0,0,.12); padding: .55rem .7rem; font-size: .78rem;
+                   min-width: 160px; max-width: 300px; opacity: 0; transition: opacity .1s; }
+    .viz-tooltip.show { opacity: 1; }
+    .viz-tooltip .tt-title { color: var(--muted); font-size: .72rem; margin-bottom: .3rem; }
+    .viz-tooltip .tt-row { display: flex; align-items: center; gap: .45rem; margin-top: .15rem; }
+    .viz-tooltip .tt-key { width: 12px; height: 2px; border-radius: 1px; flex: none; }
+    .viz-tooltip .tt-val { font-weight: 650; color: var(--ink); font-variant-numeric: tabular-nums; }
+    .viz-tooltip .tt-name { color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .viz-tooltip .tt-hint { color: var(--muted); font-size: .7rem; margin-top: .35rem; }
+
+    .legend { display: flex; flex-wrap: wrap; gap: .35rem 1rem; font-size: .75rem; color: var(--ink-2); }
+    .legend span { display: inline-flex; align-items: center; gap: .4rem; }
+    .legend i { width: 14px; height: 2px; border-radius: 1px; display: inline-block; }
+
+    .prefs-panel label { display: flex; align-items: center; gap: .5rem; font-size: .82rem; padding: .2rem 0; }
+
+    @media (prefers-reduced-motion: reduce) {
+        .bar-fill, .meter-fill, .col-bar { transition: none; }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="flex min-h-screen bg-gray-50">
+    {% include 'shop/_sidebar.html' with active_page='sales_report_ht' %}
+
+    <main class="flex-1 p-2 lg:p-8 lg:ml-0 min-w-0">
+        {% include 'shop/_sales_ht_filters.html' with view_mode='dashboard' %}
+
+        <div class="viz-root">
+            <!-- Харагдацын удирдлага: үзүүлэлт, топ N, хэсгүүдийн тохиргоо -->
+            <div class="flex flex-wrap items-center gap-3 mb-5">
+                <div class="seg" id="metric-seg" role="group" aria-label="Үзүүлэлт"></div>
+                <div class="seg" id="topn-seg" role="group" aria-label="Топ жагсаалтын тоо"></div>
+                <span class="viz-sub hidden md:inline" id="period-note"></span>
+                <div class="relative ml-auto">
+                    <button type="button" id="prefs-btn" class="viz-icon-btn" aria-expanded="false" aria-controls="prefs-panel">
+                        ⚙ Харуулах үзүүлэлт, хэсгүүд
+                    </button>
+                    <div id="prefs-panel" class="prefs-panel hidden absolute right-0 mt-2 z-40 w-[min(92vw,460px)] viz-card p-4">
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <p class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">KPI карт</p>
+                                <div id="prefs-kpis"></div>
+                            </div>
+                            <div>
+                                <p class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Хэсгүүд</p>
+                                <div id="prefs-sections"></div>
+                            </div>
+                        </div>
+                        <div class="flex justify-between items-center mt-3 pt-3 border-t border-gray-100">
+                            <button type="button" id="prefs-reset" class="text-xs text-gray-500 hover:text-gray-900">↺ Анхны тохиргоо</button>
+                            <button type="button" id="prefs-close" class="viz-icon-btn">Хаах</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="kpi-grid" class="grid grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-4 mb-5"></div>
+            <div id="sections" class="grid grid-cols-1 lg:grid-cols-12 gap-4"></div>
+            <div id="viz-tooltip" class="viz-tooltip" role="tooltip"></div>
+        </div>
+    </main>
+</div>
+
+{{ dashboard|json_script:"dash-data" }}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const D = JSON.parse(document.getElementById('dash-data').textContent);
+    const TABLE_URL = "{% url 'shop:sales_report_ht' %}";
+    const QUERY = new URLSearchParams(window.location.search);
+
+    // ---------- Үзүүлэлтүүд ----------
+    const METRICS = {
+        amount:    { label: 'Борлуулалт', money: true, additive: true },
+        profit:    { label: 'Бохир ашиг', money: true, additive: true },
+        qty:       { label: 'Тоо ширхэг', money: false, additive: true },
+        orders:    { label: 'Захиалга', money: false, additive: true },
+        customers: { label: 'Харилцагч', money: false, additive: false },
+    };
+    // Харилцагчийн хэмжээст "харилцагчийн тоо" утгагүй тул барааны нэр төрлөөр орлоно
+    const metricKey = (metric, dim) => (metric === 'customers' && dim === 'customer' ? 'items' : metric);
+    const metricLabel = (metric, dim) => (metric === 'customers' && dim === 'customer' ? 'Барааны нэр төрөл' : METRICS[metric].label);
+
+    const KPIS = {
+        amount:   { label: 'Борлуулалт', icon: '💰', money: true, value: (k) => k.amount, spark: (m) => m.amount },
+        profit:   { label: 'Бохир ашиг', icon: '📈', money: true, value: (k) => k.profit, spark: (m) => m.profit,
+                    sub: (k) => `Ашгийн хувь ${pct(k.net ? k.profit / k.net : 0)}` },
+        margin:   { label: 'Ашгийн хувь', icon: '％', percent: true, value: (k) => (k.net ? k.profit / k.net : 0),
+                    spark: (m) => (m.net ? m.profit / m.net : null) },
+        qty:      { label: 'Тоо ширхэг', icon: '📦', value: (k) => k.qty, spark: (m) => m.qty },
+        orders:   { label: 'Захиалга', icon: '🧾', value: (k) => k.orders, spark: (m) => m.orders },
+        aov:      { label: 'Дундаж захиалга', icon: '🛒', money: true, value: (k) => (k.orders ? k.amount / k.orders : 0),
+                    spark: (m) => (m.orders ? m.amount / m.orders : null) },
+        customers:{ label: 'Худалдан авсан харилцагч', icon: '👥', value: (k) => k.customers, spark: (m) => m.customers },
+        coverage: { label: 'Харилцагчийн хамрах хүрээ', icon: '🎯', percent: true, noDelta: true,
+                    value: () => (D.registered_total ? D.registered_buying / D.registered_total : 0),
+                    sub: () => `${fmtInt(D.registered_buying)} / ${fmtInt(D.registered_total)} бүртгэлтэй харилцагч` },
+        items:    { label: 'Барааны нэр төрөл', icon: '🏷️', value: (k) => k.items, spark: (m) => m.items },
+    };
+    const SECTIONS = {
+        trend:     { title: 'Сарын динамик', span: 'lg:col-span-8', render: renderTrend },
+        channel:   { title: 'Сувгаар', span: 'lg:col-span-4', render: (el, s) => renderRanking(el, s, 'channel', { all: true, share: true, drill: 'channel', stacked: true }) },
+        coverage:  { title: 'Харилцагчийн хамрах хүрээ (сувгаар)', span: 'lg:col-span-6', render: renderCoverage },
+        seller:    { title: 'Борлуулагчаар', span: 'lg:col-span-6', render: (el, s) => renderRanking(el, s, 'seller', { all: true, share: true }) },
+        items:     { title: 'Топ бараа', span: 'lg:col-span-6', render: (el, s) => renderRanking(el, s, 'item', { share: true, drill: 'item' }) },
+        customers: { title: 'Топ харилцагч', span: 'lg:col-span-6', render: (el, s) => renderRanking(el, s, 'customer', { share: true, drill: 'customer', concentration: true }) },
+        group:     { title: 'Харилцагчийн бүлгээр', span: 'lg:col-span-6', render: (el, s) => renderRanking(el, s, 'group', { all: true, share: true, drill: 'customer_group' }) },
+        weekday:   { title: 'Гарагаар', span: 'lg:col-span-6', render: renderWeekday },
+    };
+
+    // ---------- Тохиргоо (хэрэглэгч бүрийн хөтөчид хадгална) ----------
+    const PREFS_KEY = 'ht-dashboard-prefs-v1';
+    const DEFAULT_PREFS = {
+        metric: 'amount', topN: 10, split: false,
+        kpis: ['amount', 'profit', 'orders', 'customers', 'aov', 'coverage', 'qty', 'items'],
+        sections: ['trend', 'channel', 'coverage', 'seller', 'items', 'customers', 'group', 'weekday'],
+    };
+    function loadPrefs() {
+        try {
+            const saved = JSON.parse(localStorage.getItem(PREFS_KEY) || 'null');
+            if (saved && typeof saved === 'object') return { ...DEFAULT_PREFS, ...saved };
+        } catch (e) { /* хадгалах боломжгүй орчин */ }
+        return { ...DEFAULT_PREFS };
+    }
+    function savePrefs() {
+        try { localStorage.setItem(PREFS_KEY, JSON.stringify(prefs)); } catch (e) { /* ignore */ }
+    }
+    const prefs = loadPrefs();
+    if (!METRICS[prefs.metric]) prefs.metric = 'amount';
+
+    // ---------- Формат ----------
+    const intFmt = new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 });
+    const decFmt = new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 });
+    const fmtInt = (v) => intFmt.format(v || 0);
+    const pct = (v) => `${(v * 100).toFixed(1)}%`;
+    function compact(v, money) {
+        const a = Math.abs(v || 0);
+        let s;
+        if (a >= 1e9) s = `${(v / 1e9).toFixed(2)} тэрбум`;
+        else if (a >= 1e6) s = `${(v / 1e6).toFixed(1)} сая`;
+        else if (a >= 1e4) s = `${(v / 1e3).toFixed(1)} мянга`;
+        else s = decFmt.format(v || 0);
+        return money ? `${s}₮` : s;
+    }
+    const full = (v, money) => (money ? `${intFmt.format(v || 0)}₮` : decFmt.format(v || 0));
+
+    // Харьцуулах үеийн тайлбар
+    const COMPARE_VS = { prev: 'өмнөх үеэс', yoy: 'өнгөрсөн жилээс', custom: 'харьцуулсан үеэс' };
+    const compareRangeText = () => `${D.compare_from.replaceAll('-', '.')} – ${D.compare_to.replaceAll('-', '.')}`;
+    function changeText(value, base) {
+        if (!base) return value ? 'Шинэ' : '—';
+        const change = (value - base) / Math.abs(base);
+        return `${change > 0 ? '▲' : change < 0 ? '▼' : '■'} ${Math.abs(change * 100).toFixed(1)}%`;
+    }
+
+    // ---------- Tooltip (textContent-оор бүтээнэ) ----------
+    const tooltip = document.getElementById('viz-tooltip');
+    function showTooltip(evt, title, rows, hint) {
+        tooltip.replaceChildren();
+        const t = document.createElement('div');
+        t.className = 'tt-title'; t.textContent = title;
+        tooltip.appendChild(t);
+        rows.forEach((r) => {
+            const row = document.createElement('div'); row.className = 'tt-row';
+            if (r.color) { const k = document.createElement('span'); k.className = 'tt-key'; k.style.background = r.color; row.appendChild(k); }
+            const v = document.createElement('span'); v.className = 'tt-val'; v.textContent = r.value;
+            const n = document.createElement('span'); n.className = 'tt-name'; n.textContent = r.name;
+            row.append(v, n);
+            tooltip.appendChild(row);
+        });
+        if (hint) { const h = document.createElement('div'); h.className = 'tt-hint'; h.textContent = hint; tooltip.appendChild(h); }
+        let x, y;
+        if (evt && evt.clientX !== undefined && evt.type !== 'focus') { x = evt.clientX; y = evt.clientY; }
+        else { const r = (evt.currentTarget || evt.target).getBoundingClientRect(); x = r.left + r.width / 2; y = r.top; }
+        tooltip.classList.add('show');
+        const tw = tooltip.offsetWidth, th = tooltip.offsetHeight;
+        let left = x + 14, top = y + 14;
+        if (left + tw > window.innerWidth - 8) left = x - tw - 14;
+        if (top + th > window.innerHeight - 8) top = y - th - 14;
+        tooltip.style.left = `${Math.max(8, left)}px`;
+        tooltip.style.top = `${Math.max(8, top)}px`;
+    }
+    const hideTooltip = () => tooltip.classList.remove('show');
+
+    // Мөрийн бүх үзүүлэлтийг tooltip-д
+    function rowMetrics(row, dim) {
+        const out = [
+            { value: full(row.amount, true), name: 'Борлуулалт' },
+            { value: full(row.profit, true), name: `Бохир ашиг${row.net ? ` (${pct(row.profit / row.net)})` : ''}` },
+            { value: full(row.qty), name: 'Тоо ширхэг' },
+            { value: fmtInt(row.orders), name: 'Захиалга' },
+        ];
+        if (dim !== 'customer') out.push({ value: fmtInt(row.customers), name: 'Харилцагч' });
+        if (dim !== 'item') out.push({ value: fmtInt(row.items), name: 'Барааны нэр төрөл' });
+        return out;
+    }
+
+    function drillUrl(param, value) {
+        const q = new URLSearchParams(QUERY);
+        q.append(param, value);
+        if (param === 'customer') q.set('group_by', 'customer');
+        return `${TABLE_URL}?${q.toString()}`;
+    }
+
+    // ---------- Удирдлагууд ----------
+    function renderControls() {
+        const metricSeg = document.getElementById('metric-seg');
+        metricSeg.replaceChildren(...Object.entries(METRICS).map(([key, m]) => {
+            const b = document.createElement('button');
+            b.type = 'button'; b.textContent = m.label; b.setAttribute('aria-pressed', String(prefs.metric === key));
+            b.addEventListener('click', () => { prefs.metric = key; savePrefs(); renderAll(); });
+            return b;
+        }));
+        const topSeg = document.getElementById('topn-seg');
+        topSeg.replaceChildren(...[5, 10, 20].map((n) => {
+            const b = document.createElement('button');
+            b.type = 'button'; b.textContent = `Топ ${n}`; b.setAttribute('aria-pressed', String(prefs.topN === n));
+            b.addEventListener('click', () => { prefs.topN = n; savePrefs(); renderAll(); });
+            return b;
+        }));
+        document.getElementById('period-note').textContent = D.compare_kpi
+            ? `Харьцуулалт: ${D.compare_label.toLowerCase()} ${compareRangeText()}`
+            : 'Харьцуулалтгүй';
+
+        const makeChecks = (containerId, defs, listKey, labelOf) => {
+            const box = document.getElementById(containerId);
+            box.replaceChildren(...Object.keys(defs).map((key) => {
+                const label = document.createElement('label');
+                const input = document.createElement('input');
+                input.type = 'checkbox'; input.className = 'w-4 h-4 accent-primary';
+                input.checked = prefs[listKey].includes(key);
+                input.addEventListener('change', () => {
+                    // Анхны дарааллыг хадгална
+                    const set = new Set(prefs[listKey]);
+                    if (input.checked) set.add(key); else set.delete(key);
+                    prefs[listKey] = Object.keys(defs).filter((k) => set.has(k));
+                    savePrefs(); renderAll(false);
+                });
+                const text = document.createElement('span'); text.textContent = labelOf(defs[key]);
+                label.append(input, text);
+                return label;
+            }));
+        };
+        makeChecks('prefs-kpis', KPIS, 'kpis', (d) => `${d.icon} ${d.label}`);
+        makeChecks('prefs-sections', SECTIONS, 'sections', (d) => d.title);
+    }
+
+    const prefsBtn = document.getElementById('prefs-btn');
+    const prefsPanel = document.getElementById('prefs-panel');
+    const togglePrefs = (open) => {
+        prefsPanel.classList.toggle('hidden', !open);
+        prefsBtn.setAttribute('aria-expanded', String(open));
+    };
+    prefsBtn.addEventListener('click', () => togglePrefs(prefsPanel.classList.contains('hidden')));
+    document.getElementById('prefs-close').addEventListener('click', () => togglePrefs(false));
+    document.getElementById('prefs-reset').addEventListener('click', () => {
+        Object.assign(prefs, JSON.parse(JSON.stringify(DEFAULT_PREFS)));
+        savePrefs(); renderAll();
+    });
+    document.addEventListener('click', (e) => {
+        if (!prefsPanel.contains(e.target) && e.target !== prefsBtn) togglePrefs(false);
+    });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') togglePrefs(false); });
+
+    // ---------- KPI ----------
+    function sparkline(values) {
+        const pts = values.map((v, i) => [i, v]).filter(([, v]) => v !== null && v !== undefined && isFinite(v));
+        if (pts.length < 2) return null;
+        const w = 120, h = 32, pad = 3;
+        const min = Math.min(...pts.map((p) => p[1])), max = Math.max(...pts.map((p) => p[1]));
+        const span = max - min || 1, last = values.length - 1 || 1;
+        const xy = pts.map(([i, v]) => [pad + (i / last) * (w - pad * 2), h - pad - ((v - min) / span) * (h - pad * 2)]);
+        const svgNS = 'http://www.w3.org/2000/svg';
+        const svg = document.createElementNS(svgNS, 'svg');
+        svg.setAttribute('viewBox', `0 0 ${w} ${h}`); svg.setAttribute('preserveAspectRatio', 'none');
+        svg.setAttribute('class', 'w-full h-8 mt-2'); svg.setAttribute('aria-hidden', 'true');
+        const path = document.createElementNS(svgNS, 'path');
+        path.setAttribute('d', xy.map((p, i) => `${i ? 'L' : 'M'}${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(''));
+        path.setAttribute('fill', 'none'); path.setAttribute('stroke', 'var(--series-1)');
+        path.setAttribute('stroke-width', '2'); path.setAttribute('stroke-linejoin', 'round');
+        path.setAttribute('stroke-linecap', 'round'); path.setAttribute('vector-effect', 'non-scaling-stroke');
+        svg.appendChild(path);
+        return svg;
+    }
+
+    function renderKpis() {
+        const grid = document.getElementById('kpi-grid');
+        grid.replaceChildren();
+        grid.classList.toggle('hidden', !prefs.kpis.length);
+        prefs.kpis.forEach((key) => {
+            const def = KPIS[key];
+            const value = def.value(D.kpi);
+            const card = document.createElement('div');
+            card.className = 'viz-card p-3 lg:p-4 flex flex-col min-w-0';
+            const head = document.createElement('div');
+            head.className = 'flex items-center justify-between gap-2';
+            const label = document.createElement('span');
+            label.className = 'text-xs font-medium text-gray-500'; label.textContent = `${def.icon} ${def.label}`;
+            head.appendChild(label);
+            card.appendChild(head);
+
+            const v = document.createElement('div');
+            v.className = 'kpi-value mt-2';
+            v.textContent = def.percent ? pct(value) : compact(value, def.money);
+            v.title = def.percent ? pct(value) : full(value, def.money);
+            card.appendChild(v);
+
+            const meta = document.createElement('div');
+            meta.className = 'flex flex-wrap items-center gap-2 mt-1.5';
+            if (!def.noDelta && D.compare_kpi) {
+                const prev = def.value(D.compare_kpi);
+                const chip = document.createElement('span');
+                let text, cls;
+                if (def.percent) {
+                    const diff = (value - prev) * 100;
+                    cls = Math.abs(diff) < 0.05 ? 'flat' : diff > 0 ? 'up' : 'down';
+                    text = `${diff > 0 ? '▲' : diff < 0 ? '▼' : '■'} ${Math.abs(diff).toFixed(1)} пункт`;
+                } else if (!prev) {
+                    cls = 'flat'; text = value ? 'Шинэ' : '—';
+                } else {
+                    const change = (value - prev) / Math.abs(prev);
+                    cls = Math.abs(change) < 0.0005 ? 'flat' : change > 0 ? 'up' : 'down';
+                    text = `${change > 0 ? '▲' : change < 0 ? '▼' : '■'} ${Math.abs(change * 100).toFixed(1)}%`;
+                }
+                chip.className = `delta ${cls}`; chip.textContent = text;
+                chip.title = `${D.compare_label} (${D.compare_from} ~ ${D.compare_to}): ${def.percent ? pct(prev) : full(prev, def.money)}`;
+                const vs = document.createElement('span');
+                vs.className = 'text-xs text-gray-400'; vs.textContent = COMPARE_VS[D.compare_mode] || 'өмнөх үеэс';
+                // Харьцуулах үеийн хамрах хугацаа - бүх картад жигд харагдуулахын тулд үргэлж доорх мөрөнд жижгээр
+                const range = document.createElement('span');
+                range.className = 'w-full -mt-1 text-[10px] leading-tight text-gray-400 whitespace-nowrap tabular-nums';
+                range.textContent = compareRangeText();
+                meta.append(chip, vs, range);
+            }
+            if (def.sub) {
+                const sub = document.createElement('span');
+                sub.className = 'text-xs text-gray-500 w-full'; sub.textContent = def.sub(D.kpi);
+                meta.appendChild(sub);
+            }
+            card.appendChild(meta);
+            if (def.spark && D.months.length > 1) {
+                const svg = sparkline(D.months.map(def.spark));
+                if (svg) { card.appendChild(document.createElement('div')).className = 'flex-1'; card.appendChild(svg); }
+            }
+            grid.appendChild(card);
+        });
+    }
+
+    // ---------- Хэсгийн карт ----------
+    function makeCard(key) {
+        const def = SECTIONS[key];
+        const card = document.createElement('section');
+        card.className = `viz-card p-4 lg:p-5 min-w-0 ${def.span}`;
+        const head = document.createElement('div');
+        head.className = 'flex items-start justify-between gap-3 mb-3';
+        const titles = document.createElement('div');
+        const h = document.createElement('h3'); h.textContent = def.title;
+        const sub = document.createElement('p'); sub.className = 'viz-sub mt-0.5';
+        titles.append(h, sub);
+        const actions = document.createElement('div');
+        actions.className = 'flex items-center gap-2 flex-none';
+        const tableBtn = document.createElement('button');
+        tableBtn.type = 'button'; tableBtn.className = 'viz-icon-btn'; tableBtn.textContent = '▦ Хүснэгт';
+        tableBtn.setAttribute('aria-pressed', 'false');
+        actions.appendChild(tableBtn);
+        head.append(titles, actions);
+        const body = document.createElement('div');
+        card.append(head, body);
+        const state = { table: false, sub, actions, card };
+        tableBtn.addEventListener('click', () => {
+            state.table = !state.table;
+            tableBtn.setAttribute('aria-pressed', String(state.table));
+            tableBtn.textContent = state.table ? '📊 График' : '▦ Хүснэгт';
+            def.render(body, state);
+        });
+        def.render(body, state);
+        return card;
+    }
+
+    function emptyState(el, text) {
+        const p = document.createElement('p');
+        p.className = 'text-sm text-gray-400 py-10 text-center';
+        p.textContent = text || 'Шүүлтэд тохирох өгөгдөл алга.';
+        el.replaceChildren(p);
+    }
+
+    function renderTable(el, rows, dim, firstHeader) {
+        const wrap = document.createElement('div');
+        wrap.className = 'overflow-auto max-h-80';
+        const table = document.createElement('table');
+        table.className = 'viz-table';
+        const cols = [
+            [firstHeader, (r) => r.label],
+            ['Борлуулалт', (r) => full(r.amount, true)],
+            ['Бохир ашиг', (r) => full(r.profit, true)],
+            ['Тоо ширхэг', (r) => full(r.qty)],
+            ['Захиалга', (r) => fmtInt(r.orders)],
+        ];
+        if (dim !== 'customer') cols.push(['Харилцагч', (r) => fmtInt(r.customers)]);
+        if (dim !== 'item') cols.push(['Нэр төрөл', (r) => fmtInt(r.items)]);
+        const thead = table.createTHead().insertRow();
+        cols.forEach(([name]) => { const th = document.createElement('th'); th.textContent = name; thead.appendChild(th); });
+        const tbody = table.createTBody();
+        rows.forEach((r) => {
+            const tr = tbody.insertRow();
+            cols.forEach(([, get]) => { tr.insertCell().textContent = get(r); });
+        });
+        wrap.appendChild(table);
+        el.replaceChildren(wrap);
+    }
+
+    // ---------- Эрэмбэлсэн баганан график (хэвтээ) ----------
+    function renderRanking(el, state, dim, opts) {
+        const metric = prefs.metric;
+        const key = metricKey(metric, dim);
+        const additive = METRICS[metric].additive;
+        const money = METRICS[metric].money;
+        const all = [...(D[dim] || [])].sort((a, b) => b[key] - a[key]);
+        const rows = opts.all ? all : all.slice(0, prefs.topN);
+        const total = additive ? all.reduce((s, r) => s + r[key], 0) : 0;
+
+        let sub = `${metricLabel(metric, dim)} • ${opts.all ? `${all.length} мөр` : `Топ ${rows.length} / ${all.length}`}`;
+        if (opts.concentration && additive && total > 0 && rows.length) {
+            const topSum = rows.reduce((s, r) => s + r[key], 0);
+            sub += ` • Топ ${rows.length} нь нийтийн ${pct(topSum / total)}`;
+        }
+        state.sub.textContent = sub;
+
+        if (!rows.length) return emptyState(el);
+        const header = { channel: 'Суваг', seller: 'Борлуулагч', item: 'Бараа', customer: 'Харилцагч', group: 'Бүлэг' }[dim];
+        if (state.table) return renderTable(el, rows, dim, header);
+
+        const max = Math.max(...rows.map((r) => r[key]), 0) || 1;
+        const list = document.createElement('div');
+        list.className = 'space-y-0.5';
+        rows.forEach((r, i) => {
+            const row = document.createElement('div');
+            // Суваггүй / харилцагчгүй мөрийг (хоосон түлхүүр) хүснэгтээр шүүх боломжгүй
+            const canDrill = Boolean(opts.drill && r.key !== '' && r.key !== null);
+            row.className = `bar-row${canDrill ? ' clickable' : ''}${opts.stacked ? ' stacked' : ''}`;
+            row.tabIndex = 0;
+            const label = document.createElement('div'); label.className = 'bar-label';
+            const rank = document.createElement('span'); rank.className = 'bar-rank'; rank.textContent = `${i + 1}.`;
+            label.append(rank, document.createTextNode(r.label));
+            label.title = r.label;
+            const track = document.createElement('div'); track.className = 'bar-track';
+            const fill = document.createElement('div'); fill.className = 'bar-fill';
+            fill.style.width = `${Math.max(0, (r[key] / max) * 100)}%`;
+            track.appendChild(fill);
+            const val = document.createElement('div'); val.className = 'bar-value';
+            val.textContent = compact(r[key], money);
+            if (opts.share && additive && total > 0) {
+                const share = document.createElement('span'); share.className = 'bar-share';
+                share.textContent = pct(r[key] / total);
+                val.appendChild(share);
+            }
+            row.append(label, track, val);
+            const hint = canDrill ? 'Дарж хүснэгтээр дэлгэрэнгүй харах' : '';
+            const show = (e) => showTooltip(e, r.label, rowMetrics(r, dim), hint);
+            row.addEventListener('pointermove', show);
+            row.addEventListener('focus', show);
+            row.addEventListener('pointerleave', hideTooltip);
+            row.addEventListener('blur', hideTooltip);
+            if (canDrill) {
+                const go = () => { window.location.href = drillUrl(opts.drill, r.key); };
+                row.addEventListener('click', go);
+                row.addEventListener('keydown', (e) => { if (e.key === 'Enter') go(); });
+            }
+            list.appendChild(row);
+        });
+        el.replaceChildren(list);
+    }
+
+    // ---------- Хамрах хүрээ ----------
+    function renderCoverage(el, state) {
+        const rows = D.coverage;
+        const idle = D.registered_total - D.registered_buying;
+        state.sub.textContent = `Сувагт бүртгэлтэй харилцагчдаас энэ хугацаанд худалдан авалт хийсэн нь • нийт ${pct(D.registered_total ? D.registered_buying / D.registered_total : 0)}`;
+        if (!state.link) {
+            const q = new URLSearchParams(QUERY);
+            q.set('sales_mode', 'without'); q.set('group_by', 'customer');
+            const a = document.createElement('a');
+            a.href = `${TABLE_URL}?${q.toString()}`;
+            a.className = 'viz-icon-btn';
+            a.textContent = `Борлуулалтгүй ${fmtInt(idle)} →`;
+            a.title = 'Бүртгэлтэй ч энэ хугацаанд борлуулалтгүй харилцагчдыг хүснэгтээр харах';
+            state.actions.prepend(a);
+            state.link = a;
+        }
+        if (!rows.length) return emptyState(el, 'Бүртгэлтэй харилцагч алга.');
+        if (state.table) {
+            const wrap = document.createElement('div'); wrap.className = 'overflow-auto max-h-80';
+            const table = document.createElement('table'); table.className = 'viz-table';
+            const head = table.createTHead().insertRow();
+            ['Суваг', 'Бүртгэлтэй', 'Худалдан авсан', 'Борлуулалтгүй', 'Хамрах хүрээ'].forEach((t) => {
+                const th = document.createElement('th'); th.textContent = t; head.appendChild(th);
+            });
+            const tbody = table.createTBody();
+            rows.forEach((r) => {
+                const tr = tbody.insertRow();
+                [r.label, fmtInt(r.registered), fmtInt(r.buying), fmtInt(r.registered - r.buying),
+                 pct(r.registered ? r.buying / r.registered : 0)].forEach((t) => { tr.insertCell().textContent = t; });
+            });
+            wrap.appendChild(table);
+            return el.replaceChildren(wrap);
+        }
+        const list = document.createElement('div');
+        list.className = 'space-y-3';
+        rows.forEach((r) => {
+            const ratio = r.registered ? r.buying / r.registered : 0;
+            const item = document.createElement('div');
+            item.tabIndex = 0; item.className = 'rounded-lg px-1 py-0.5 focus:outline-none focus-visible:bg-gray-50';
+            const top = document.createElement('div');
+            top.className = 'flex items-baseline justify-between gap-3 mb-1';
+            const name = document.createElement('span'); name.className = 'text-sm truncate'; name.textContent = r.label;
+            const nums = document.createElement('span'); nums.className = 'text-xs text-gray-500 whitespace-nowrap';
+            const strong = document.createElement('strong'); strong.className = 'text-gray-900 text-sm'; strong.textContent = pct(ratio);
+            nums.append(`${fmtInt(r.buying)} / ${fmtInt(r.registered)}  `, strong);
+            top.append(name, nums);
+            const track = document.createElement('div'); track.className = 'meter-track';
+            const fill = document.createElement('div'); fill.className = 'meter-fill'; fill.style.width = `${ratio * 100}%`;
+            track.appendChild(fill);
+            item.append(top, track);
+            const show = (e) => showTooltip(e, r.label, [
+                { value: fmtInt(r.registered), name: 'Бүртгэлтэй харилцагч' },
+                { value: fmtInt(r.buying), name: 'Худалдан авалт хийсэн' },
+                { value: fmtInt(r.registered - r.buying), name: 'Борлуулалтгүй' },
+            ]);
+            item.addEventListener('pointermove', show); item.addEventListener('focus', show);
+            item.addEventListener('pointerleave', hideTooltip); item.addEventListener('blur', hideTooltip);
+            list.appendChild(item);
+        });
+        el.replaceChildren(list);
+    }
+
+    // ---------- Гарагаар (босоо багана) ----------
+    function renderWeekday(el, state) {
+        const metric = prefs.metric, money = METRICS[metric].money;
+        const labels = ['Даваа', 'Мягмар', 'Лхагва', 'Пүрэв', 'Баасан', 'Бямба', 'Ням'];
+        const byDay = Object.fromEntries(D.weekday.map((r) => [r.key, r]));
+        const empty = { amount: 0, net: 0, profit: 0, qty: 0, orders: 0, customers: 0, items: 0 };
+        const rows = labels.map((label, i) => ({ ...empty, ...(byDay[i + 1] || {}), key: i + 1, label }));
+        state.sub.textContent = `${METRICS[metric].label} • долоо хоногийн гараг бүрээр`;
+        if (!D.weekday.length) return emptyState(el);
+        if (state.table) return renderTable(el, rows, 'weekday', 'Гараг');
+        const max = Math.max(...rows.map((r) => r[metric]), 0) || 1;
+        const chart = document.createElement('div');
+        chart.className = 'col-chart';
+        rows.forEach((r) => {
+            const slot = document.createElement('div');
+            slot.className = 'col-slot'; slot.tabIndex = 0;
+            const v = document.createElement('div'); v.className = 'col-value'; v.textContent = r[metric] ? compact(r[metric], money) : '';
+            const bar = document.createElement('div'); bar.className = 'col-bar';
+            bar.style.height = `${Math.max(0, (r[metric] / max) * 78)}%`;
+            const l = document.createElement('div'); l.className = 'col-label'; l.textContent = r.label;
+            slot.append(v, bar, l);
+            const show = (e) => showTooltip(e, r.label, rowMetrics(r, 'weekday'));
+            slot.addEventListener('pointermove', show); slot.addEventListener('focus', show);
+            slot.addEventListener('pointerleave', hideTooltip); slot.addEventListener('blur', hideTooltip);
+            chart.appendChild(slot);
+        });
+        el.replaceChildren(chart);
+    }
+
+    // ---------- Сарын динамик (шугаман график, crosshair) ----------
+    const SERIES_VARS = ['--series-1', '--series-2', '--series-3', '--series-4', '--series-5', '--series-6', '--series-7', '--series-8'];
+    const cssVar = (name) => getComputedStyle(document.querySelector('.viz-root')).getPropertyValue(name).trim();
+
+    function trendSeries(metric) {
+        if (!prefs.split || Object.keys(D.month_channel).length < 2) {
+            return [{ key: 'total', label: METRICS[metric].label, color: cssVar('--series-1'), values: D.months.map((m) => m[metric]) }];
+        }
+        // Өнгө нь сувгийн кодын дарааллаар (эрэмбээс үл хамаарна); 8-аас олон бол бага дүнтэйг "Бусад" болгоно
+        const codes = Object.keys(D.month_channel).sort();
+        const totals = codes.map((c) => [c, D.month_channel[c].reduce((s, m) => s + (m.amount || 0), 0)]);
+        const keep = new Set(codes.length > 8 ? totals.sort((a, b) => b[1] - a[1]).slice(0, 7).map((t) => t[0]) : codes);
+        // Харагдах сувгуудад кодын дарааллаар давхцахгүй өнгө (хамгийн ихдээ 8)
+        const shown = codes.filter((c) => keep.has(c));
+        const series = shown.map((c, i) => ({
+            key: c, label: `${c} ${D.channel_names[c] || ''}`.trim(),
+            color: cssVar(SERIES_VARS[i]),
+            values: D.month_channel[c].map((m) => m[metric]),
+        }));
+        const rest = codes.filter((c) => !keep.has(c));
+        if (rest.length && METRICS[metric].additive) {
+            series.push({ key: 'other', label: `Бусад (${rest.length})`, color: cssVar('--series-other'),
+                values: D.months.map((_, i) => rest.reduce((s, c) => s + (D.month_channel[c][i][metric] || 0), 0)) });
+        }
+        return series;
+    }
+
+    function niceTicks(max) {
+        if (max <= 0) return [0, 1];
+        const raw = max / 4, mag = Math.pow(10, Math.floor(Math.log10(raw)));
+        const step = [1, 2, 2.5, 5, 10].map((m) => m * mag).find((s) => s >= raw);
+        const ticks = [];
+        for (let v = 0; v <= max + step * 0.001; v += step) ticks.push(v);
+        if (ticks[ticks.length - 1] < max) ticks.push(ticks[ticks.length - 1] + step);
+        return ticks;
+    }
+
+    function monthLabel(key, multiYear) {
+        const [y, m] = key.split('-');
+        return multiYear ? `${y.slice(2)}.${m}` : `${Number(m)}-р сар`;
+    }
+
+    function renderTrend(el, state) {
+        const metric = prefs.metric, money = METRICS[metric].money;
+        if (!state.splitBtn) {
+            const b = document.createElement('button');
+            b.type = 'button'; b.className = 'viz-icon-btn';
+            b.addEventListener('click', () => { prefs.split = !prefs.split; savePrefs(); renderTrend(el, state); });
+            state.actions.prepend(b);
+            state.splitBtn = b;
+        }
+        const canSplit = Object.keys(D.month_channel).length > 1;
+        state.splitBtn.classList.toggle('hidden', !canSplit);
+        state.splitBtn.textContent = prefs.split ? '∑ Нийтээр' : '⫶ Сувгаар задлах';
+        state.splitBtn.setAttribute('aria-pressed', String(prefs.split));
+
+        const mainSeries = trendSeries(metric);
+        // Харьцуулах үеийн шугам (саарал) - зөвхөн нийтээр харах үед; сарууд дарааллаараа тулгагдана
+        const cmp = mainSeries.length === 1 && D.compare_months.length ? {
+            key: 'compare', compare: true, color: cssVar('--series-other'),
+            label: `${D.compare_label} (${compareRangeText()})`,
+            values: D.months.map((_, i) => (D.compare_months[i] ? D.compare_months[i][metric] : null)),
+            monthKeys: D.months.map((_, i) => (D.compare_months[i] ? D.compare_months[i].key : '')),
+        } : null;
+        const series = cmp ? [cmp, ...mainSeries] : mainSeries;  // харьцуулах шугамыг доор нь зурна
+        state.sub.textContent = `${METRICS[metric].label} • сар бүрээр${mainSeries.length > 1 ? ', сувгаар' : ''}${cmp ? ', харьцуулалттай' : ''}`;
+        if (!D.months.length || series.every((s) => s.values.every((v) => !v))) return emptyState(el);
+        if (state.table) {
+            const wrap = document.createElement('div'); wrap.className = 'overflow-auto max-h-80';
+            const table = document.createElement('table'); table.className = 'viz-table';
+            const head = table.createTHead().insertRow();
+            const headers = ['Сар', ...mainSeries.map((s) => s.label)];
+            if (cmp) headers.push('Харьцуулах сар', 'Харьцуулах үе', 'Өөрчлөлт');
+            headers.forEach((t) => { const th = document.createElement('th'); th.textContent = t; head.appendChild(th); });
+            const tbody = table.createTBody();
+            D.months.forEach((mm, i) => {
+                const tr = tbody.insertRow();
+                tr.insertCell().textContent = mm.key;
+                mainSeries.forEach((s) => { tr.insertCell().textContent = full(s.values[i], money); });
+                if (cmp) {
+                    const base = cmp.values[i];
+                    tr.insertCell().textContent = cmp.monthKeys[i] || '—';
+                    tr.insertCell().textContent = base === null ? '—' : full(base, money);
+                    tr.insertCell().textContent = base === null ? '—' : changeText(mainSeries[0].values[i], base);
+                }
+            });
+            wrap.appendChild(table);
+            return el.replaceChildren(wrap);
+        }
+
+        const container = document.createElement('div');
+        if (series.length > 1) {
+            const legend = document.createElement('div'); legend.className = 'legend mb-2';
+            [...series].sort((a, b) => Boolean(a.compare) - Boolean(b.compare)).forEach((s) => {
+                const item = document.createElement('span');
+                const key = document.createElement('i'); key.style.background = s.color;
+                item.append(key, document.createTextNode(s.label));
+                legend.appendChild(item);
+            });
+            container.appendChild(legend);
+        }
+        const plot = document.createElement('div');
+        plot.className = 'relative';
+        container.appendChild(plot);
+        el.replaceChildren(container);
+
+        const draw = () => {
+            const width = Math.max(plot.clientWidth, 240), height = 260;
+            const directLabels = mainSeries.length === 1;
+            const n = D.months.length;
+            const allValues = series.flatMap((s) => s.values).filter((v) => v !== null);
+            const minV = Math.min(0, ...allValues);
+            const ticks = niceTicks(Math.max(...allValues, 0));
+            // Тэнхлэг/төгсгөлийн шошгын уртаас хамааруулж зай гаргана (~6.5px нэг тэмдэгт, 11-12px фонт)
+            const textWidth = (t) => t.length * 6.5;
+            const endLabel = directLabels ? compact(mainSeries[0].values[n - 1], money) : '';
+            const m = {
+                top: 18, bottom: 28,
+                left: Math.max(48, Math.max(...ticks.map((t) => textWidth(compact(t, false)))) + 14),
+                right: directLabels ? Math.max(32, textWidth(endLabel) + 16) : 32,
+            };
+            const w = width - m.left - m.right, h = height - m.top - m.bottom;
+            const maxV = ticks[ticks.length - 1];
+            const x = (i) => m.left + (n === 1 ? w / 2 : (i / (n - 1)) * w);
+            const y = (v) => m.top + h - ((v - minV) / (maxV - minV || 1)) * h;
+            const multiYear = new Set(D.months.map((mm) => mm.key.slice(0, 4))).size > 1;
+            const every = Math.ceil(n / Math.max(2, Math.floor(w / (multiYear ? 44 : 54))));
+
+            const svgNS = 'http://www.w3.org/2000/svg';
+            const svg = document.createElementNS(svgNS, 'svg');
+            svg.setAttribute('width', width); svg.setAttribute('height', height);
+            svg.setAttribute('role', 'img');
+            svg.setAttribute('aria-label', `${METRICS[metric].label} сар бүрээр`);
+            const el_ = (tag, attrs, text) => {
+                const node = document.createElementNS(svgNS, tag);
+                Object.entries(attrs).forEach(([k, v]) => node.setAttribute(k, v));
+                if (text !== undefined) node.textContent = text;
+                svg.appendChild(node);
+                return node;
+            };
+            ticks.forEach((t) => {
+                el_('line', { x1: m.left, x2: m.left + w, y1: y(t), y2: y(t), stroke: t === 0 ? cssVar('--axis') : cssVar('--grid'), 'stroke-width': 1 });
+                el_('text', { x: m.left - 8, y: y(t) + 4, 'text-anchor': 'end', 'font-size': 11, fill: cssVar('--muted'),
+                              style: 'font-variant-numeric: tabular-nums' }, compact(t, false));
+            });
+            D.months.forEach((mm, i) => {
+                if (i % every && i !== n - 1) return;
+                el_('text', { x: x(i), y: height - 8, 'text-anchor': 'middle', 'font-size': 11, fill: cssVar('--muted') }, monthLabel(mm.key, multiYear));
+            });
+            series.forEach((s) => {
+                if (n === 1) {
+                    if (s.values[0] !== null) el_('circle', { cx: x(0), cy: y(s.values[0]), r: 4, fill: s.color });
+                    return;
+                }
+                // Утгагүй (null) сар дээр шугамыг тасална
+                let d = '', pen = 'M';
+                s.values.forEach((v, i) => {
+                    if (v === null) { pen = 'M'; return; }
+                    d += `${pen}${x(i).toFixed(1)},${y(v).toFixed(1)}`; pen = 'L';
+                });
+                el_('path', { d, fill: 'none', stroke: s.color, 'stroke-width': 2, 'stroke-linejoin': 'round', 'stroke-linecap': 'round' });
+            });
+            if (directLabels) {
+                const s = mainSeries[0], last = s.values[n - 1];
+                el_('circle', { cx: x(n - 1), cy: y(last), r: 4, fill: s.color, stroke: '#fff', 'stroke-width': 2 });
+                el_('text', { x: x(n - 1) + 8, y: y(last) + 4, 'font-size': 12, 'font-weight': 600, fill: cssVar('--ink') }, compact(last, money));
+            }
+
+            // Crosshair давхарга: хамгийн ойрын сар руу snap хийнэ
+            const guide = el_('line', { y1: m.top, y2: m.top + h, stroke: cssVar('--axis'), 'stroke-width': 1, visibility: 'hidden' });
+            const dots = series.map((s) => el_('circle', { r: 4, fill: s.color, stroke: '#fff', 'stroke-width': 2, visibility: 'hidden' }));
+            const hit = el_('rect', { x: m.left - 10, y: m.top, width: w + 20, height: h, fill: 'transparent', tabindex: 0 });
+            let focusIndex = n - 1;
+            const showAt = (i, evt) => {
+                focusIndex = i;
+                guide.setAttribute('x1', x(i)); guide.setAttribute('x2', x(i)); guide.setAttribute('visibility', 'visible');
+                dots.forEach((d, si) => {
+                    const v = series[si].values[i];
+                    d.setAttribute('cx', x(i)); d.setAttribute('cy', v === null ? 0 : y(v));
+                    d.setAttribute('visibility', v === null ? 'hidden' : 'visible');
+                });
+                const rows = mainSeries.map((s) => ({ color: s.color, value: full(s.values[i], money), name: s.label, raw: s.values[i] }))
+                    .sort((a, b) => b.raw - a.raw);
+                if (mainSeries.length > 1 && METRICS[metric].additive) {
+                    rows.push({ value: full(mainSeries.reduce((sum, s) => sum + s.values[i], 0), money), name: 'Нийт' });
+                }
+                if (cmp && cmp.values[i] !== null) {
+                    rows.push({ color: cmp.color, value: full(cmp.values[i], money), name: `${D.compare_label} · ${cmp.monthKeys[i]}` });
+                    rows.push({ value: changeText(mainSeries[0].values[i], cmp.values[i]), name: 'өөрчлөлт' });
+                }
+                const r = svg.getBoundingClientRect();
+                const fake = evt && evt.clientX !== undefined ? evt : { clientX: r.left + x(i), clientY: r.top + m.top + 10, type: 'key' };
+                showTooltip(fake, D.months[i].key, rows);
+            };
+            const hide = () => { guide.setAttribute('visibility', 'hidden'); dots.forEach((d) => d.setAttribute('visibility', 'hidden')); hideTooltip(); };
+            hit.addEventListener('pointermove', (evt) => {
+                const r = svg.getBoundingClientRect();
+                const px = evt.clientX - r.left;
+                const i = n === 1 ? 0 : Math.max(0, Math.min(n - 1, Math.round(((px - m.left) / w) * (n - 1))));
+                showAt(i, evt);
+            });
+            hit.addEventListener('pointerleave', hide);
+            hit.addEventListener('focus', () => showAt(focusIndex));
+            hit.addEventListener('blur', hide);
+            hit.addEventListener('keydown', (e) => {
+                if (e.key === 'ArrowRight') { showAt(Math.min(n - 1, focusIndex + 1)); e.preventDefault(); }
+                if (e.key === 'ArrowLeft') { showAt(Math.max(0, focusIndex - 1)); e.preventDefault(); }
+            });
+            plot.replaceChildren(svg);
+        };
+        draw();
+        if (state.observer) state.observer.disconnect();
+        let lastWidth = plot.clientWidth;
+        state.observer = new ResizeObserver(() => {
+            if (Math.abs(plot.clientWidth - lastWidth) > 4) { lastWidth = plot.clientWidth; draw(); }
+        });
+        state.observer.observe(plot);
+    }
+
+    // ---------- Бүгдийг зурах ----------
+    function renderAll(withControls = true) {
+        if (withControls) renderControls();
+        renderKpis();
+        const sections = document.getElementById('sections');
+        sections.replaceChildren(...prefs.sections.map(makeCard));
+        if (!prefs.sections.length && !prefs.kpis.length) {
+            emptyState(sections, 'Харуулах хэсэг сонгоогүй байна. "⚙ Харуулах үзүүлэлт, хэсгүүд"-ээс сонгоно уу.');
+        }
+    }
+    renderAll();
+});
+</script>
+{% endblock %}

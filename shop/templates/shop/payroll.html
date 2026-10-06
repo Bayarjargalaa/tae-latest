@@ -1,0 +1,328 @@
+{% extends 'base.html' %}
+
+{% block title %}{{ title }} - Euro Foods{% endblock %}
+
+{% block hide_mobile_menu %}hidden{% endblock %}
+
+{% block extra_css %}
+<style>
+.payroll-table th { white-space: normal; line-height: 1.2; vertical-align: bottom; }
+.payroll-table td, .payroll-table th { border: 1px solid #e5e7eb; }
+.payroll-table td { white-space: nowrap; }
+.pr-input {
+    width: 6.5rem;
+    border: 1px solid #d1d5db;
+    border-radius: 0.25rem;
+    padding: 2px 4px;
+    text-align: right;
+}
+.print-value { display: none; }
+/* Гараар дарж бичсэн автомат утга (Бямбын нэмэгдэл, унааны мөнгө) */
+.pr-input.pr-override { background: #fff8e6; border-color: #f2d48a; }
+/* Дэлгэц дээр: хүснэгт өөрийн хайрцагтаа хоёр чиглэлд гүйж, толгой нь дээд захдаа, №/нэр зүүн захдаа тогтоно.
+   border-collapse: separate - sticky нүдний хүрээ гүйлгэхэд алга болохгүй байхын тулд (баруун/доод хүрээгээр) */
+@media screen {
+    /* Сайтын тогтмол дээд цэс (~116px) болон доод зайны доор багтахаар - хуудсыг доош нь гүйлгэсэн ч толгой харагдана */
+    .pr-scroll { max-height: calc(100vh - 11rem); overflow: auto; overscroll-behavior: contain; scroll-margin-top: 8rem; }
+    .payroll-table { border-collapse: separate; border-spacing: 0; }
+    .payroll-table td, .payroll-table th { border: 0; border-right: 1px solid #e5e7eb; border-bottom: 1px solid #e5e7eb; }
+    .payroll-table thead { position: sticky; top: 0; z-index: 3; }
+    .payroll-table thead th { background: #f3f4f6; }
+    .payroll-table .pr-sticky-no { position: sticky; left: 0; z-index: 1; width: 2.5rem; min-width: 2.5rem; max-width: 2.5rem; background: #fff; }
+    .payroll-table .pr-sticky-name { position: sticky; left: 2.5rem; z-index: 1; min-width: 10rem; background: #fff; box-shadow: inset -2px 0 0 #d1d5db; }
+    .payroll-table thead .pr-sticky-no, .payroll-table thead .pr-sticky-name { z-index: 4; background: #f3f4f6; }
+    .payroll-table tfoot td { background: #f3f4f6; }
+    .payroll-table .pr-sticky-foot { position: sticky; left: 0; z-index: 2; box-shadow: inset -2px 0 0 #d1d5db; }
+}
+/* Утсан дээр тогтмол №/нэрийн багана нарийн байж, тоон баганууд харагдах зайтай */
+@media screen and (max-width: 639px) {
+    .payroll-table .pr-sticky-no { width: 1.75rem; min-width: 1.75rem; max-width: 1.75rem; }
+    .payroll-table .pr-sticky-name { left: 1.75rem; min-width: 7rem; max-width: 8.5rem; white-space: normal; }
+    .pr-scroll { max-height: calc(100vh - 9rem); }
+}
+{% include 'shop/_print_fit_css.html' %}
+@media print {
+    @page { size: A4 landscape; margin: 6mm; }
+    #sidebar, #sidebar-open-button, #sidebar-overlay, header, footer, .no-print, .print-area, #ai-chat-widget { display: none !important; }
+    main { margin: 0 !important; padding: 0 !important; }
+    body { background: white !important; }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+{% load l10n product_filters %}
+<div class="flex min-h-screen bg-gray-50">
+    {% include 'shop/_sidebar.html' with active_page=active_page %}
+
+    <main class="flex-1 p-2 lg:p-8 lg:ml-0 min-w-0">
+        <div class="flex flex-wrap items-center justify-between gap-2 mb-6 no-print">
+            <div>
+                <h1 class="text-2xl lg:text-3xl font-bold text-gray-900">{% if is_card %}💳{% else %}💵{% endif %} {{ title }}</h1>
+                <p class="text-gray-600 mt-2">Хоног бүртгэлийн хоног, цагаар цалинг бодно{% if not is_card %} · бэлэн цалингаас татварын суутгал хийхгүй{% endif %}</p>
+            </div>
+            <div class="flex gap-2">
+                <a href="{% url 'shop:payroll_settings' %}" class="bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50 transition whitespace-nowrap">⚙️ Цалингийн тохиргоо</a>
+                <a href="{% url 'shop:timesheet' %}?year={{ year|unlocalize }}&month={{ month }}" class="bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50 transition whitespace-nowrap">📅 Хоног бүртгэл</a>
+                <button type="button" onclick="window.print()" class="bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50 transition whitespace-nowrap">🖨 Хэвлэх</button>
+                <a href="{% if is_card %}{% url 'shop:payroll_card_export' %}{% else %}{% url 'shop:payroll_cash_export' %}{% endif %}?year={{ year|unlocalize }}&month={{ month }}" class="bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50 transition whitespace-nowrap">⬇ Excel</a>
+            </div>
+        </div>
+
+        <form method="get" class="bg-white rounded-lg shadow p-4 mb-6 flex flex-wrap items-end gap-3 no-print">
+            <a href="?year={{ prev_month.year|unlocalize }}&month={{ prev_month.month }}" class="bg-white border border-gray-300 text-gray-700 px-3 py-2 rounded-lg hover:bg-gray-50 transition" title="Өмнөх сар">←</a>
+            <div>
+                <label for="pr-year" class="block text-sm font-medium mb-1">Он</label>
+                <select id="pr-year" name="year" class="border border-gray-300 rounded-lg px-3 py-2">
+                    {% for y in years %}<option value="{{ y|unlocalize }}" {% if y == year %}selected{% endif %}>{{ y|unlocalize }}</option>{% endfor %}
+                </select>
+            </div>
+            <div>
+                <label for="pr-month" class="block text-sm font-medium mb-1">Сар</label>
+                <select id="pr-month" name="month" class="border border-gray-300 rounded-lg px-3 py-2">
+                    {% for num, label in months %}<option value="{{ num }}" {% if num == month %}selected{% endif %}>{{ label }}</option>{% endfor %}
+                </select>
+            </div>
+            <a href="?year={{ next_month.year|unlocalize }}&month={{ next_month.month }}" class="bg-white border border-gray-300 text-gray-700 px-3 py-2 rounded-lg hover:bg-gray-50 transition" title="Дараагийн сар">→</a>
+            <button type="submit" class="bg-primary text-white px-6 py-2 rounded-lg hover:bg-green-700 transition">Харах</button>
+        </form>
+
+        {% if close %}
+        <div class="bg-gray-100 border border-gray-300 rounded-lg p-4 mb-6 flex flex-wrap items-center justify-between gap-3 no-print">
+            <div class="text-sm text-gray-700">
+                <b class="text-gray-900">🔒 Энэ сар хаагдсан</b> - {{ close.closed_at|date:'Y-m-d H:i' }}{% if close.closed_by %}, {{ close.closed_by.get_full_name|default:close.closed_by.username }}{% endif %}.
+                Хаасан үеийн бодолтоор харагдаж, засварлах боломжгүй. Тайлан, хувийн мэдээлэлд энэ бодолт орно.
+            </div>
+            <form method="post" onsubmit="return confirm('Сарыг дахин нээх үү? Цалин одоогийн мэдээллээр (үндсэн цалин, ажилчид) дахин бодогдоно.')">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="reopen_month">
+                <input type="hidden" name="year" value="{{ year|unlocalize }}"><input type="hidden" name="month" value="{{ month }}">
+                <button type="submit" class="bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50 transition whitespace-nowrap">🔓 Дахин нээх</button>
+            </form>
+        </div>
+        {% else %}
+        <div class="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6 flex flex-wrap items-center justify-between gap-3 no-print">
+            <div class="text-sm text-blue-900">
+                <b>Сар нээлттэй</b> - цалин ажилтны одоогийн мэдээллээр бодогдож байна. Бодолт эцэслэгдсэний дараа сарыг хаавал
+                цалингийн тайлан, ажилтны хувийн мэдээлэлд энэ дүнгээр баталгаажиж, дараа нь цалин / ажилтан өөрчлөгдсөн ч хэвээр үлдэнэ.
+            </div>
+            <form method="post" onsubmit="return confirm('{{ month_label }}-ын {{ title|lower }}ыг хаах уу? Хаасны дараа засварлах боломжгүй (дахин нээж болно).')">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="close_month">
+                <input type="hidden" name="year" value="{{ year|unlocalize }}"><input type="hidden" name="month" value="{{ month }}">
+                <button type="submit" class="bg-primary text-white px-4 py-2 rounded-lg hover:bg-green-700 transition whitespace-nowrap">🔒 Сар хаах</button>
+            </form>
+        </div>
+        {% endif %}
+
+        {% if not close %}
+        <form method="post" class="bg-white rounded-lg shadow p-4 mb-6 flex flex-wrap items-center justify-between gap-3 no-print"
+              onsubmit="return confirm('Сарын эцсийн авлагын үлдэгдлийг суутгалын баганад бичих үү? Эдгээр баганад гараар оруулсан дүн солигдоно.')">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="pull_receivables">
+            <input type="hidden" name="year" value="{{ year|unlocalize }}"><input type="hidden" name="month" value="{{ month }}">
+            <div class="text-sm text-gray-600">
+                <b class="text-gray-900">Ажилчдын авлага</b> - сарын эцсийн үлдэгдлээр ({% if is_card %}карт, хосолсон{% else %}зөвхөн бэлэн{% endif %} ажилчид):
+                {% for account, field, label in receivable_accounts %}<span class="whitespace-nowrap">{{ account }} {{ label }} → {% for f, l, m in deduction_columns %}{% if f == field %}{{ l }}{% endif %}{% endfor %}</span>{% if not forloop.last %}; {% endif %}{% endfor %}
+            </div>
+            <button type="submit" class="bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50 transition whitespace-nowrap">📥 Авлага татах</button>
+        </form>
+        {% endif %}
+
+        {% if messages %}
+        <div class="mb-6 space-y-2 no-print">
+            {% for message in messages %}
+            <div class="p-3 rounded-lg {% if message.tags == 'error' %}bg-red-100 text-red-800{% elif message.tags == 'warning' %}bg-yellow-100 text-yellow-800{% else %}bg-green-100 text-green-800{% endif %}">{{ message }}</div>
+            {% endfor %}
+        </div>
+        {% endif %}
+
+        <form method="post" class="print-area bg-white rounded-lg shadow p-4 lg:p-6">
+            {% csrf_token %}
+            <input type="hidden" name="year" value="{{ year|unlocalize }}">
+            <input type="hidden" name="month" value="{{ month }}">
+            <div class="flex flex-wrap items-center justify-between gap-2 mb-4">
+                <div>
+                    <h2 class="text-lg font-bold text-gray-900">{{ month_label }} - {{ title|lower }}</h2>
+                    <p class="text-sm text-gray-500 no-print">Нэмэгдэл, суутгал, ХЧТА-г хүснэгтэд бичээд хадгалахад бусад багана дахин бодогдоно.
+                        Удаан жилийн нэмэгдэл, Эрсдэлийн сан, Хуримтлал, Хадгаламж ажилтны мэдээллээс, Бямбад ажилласан нэмэгдэл цалингийн тохиргооны хувиар автоматаар; ээлжийн ажилтны үндсэн цалин = нэг гарын мөнгө x ажилласан хоног.</p>
+                </div>
+                {% if not close %}<button type="submit" class="no-print bg-primary text-white px-6 py-2 rounded-lg hover:bg-green-700 transition whitespace-nowrap">💾 Хадгалаад бодох</button>{% endif %}
+            </div>
+
+            {% if not rows %}
+            <p class="text-gray-500">Энэ хуудсанд харагдах ажилтан алга. <a href="{% url 'shop:payroll_settings' %}" class="text-primary underline no-print">Цалингийн тохиргоо</a> хуудаснаас ажилчдын олгох хэлбэрийг ({% if is_card %}Карт эсвэл Хосолсон{% else %}Бэлэн эсвэл Хосолсон{% endif %}) тохируулна уу.</p>
+            {% else %}
+            <div class="overflow-x-auto pr-scroll">
+                <table class="payroll-table min-w-full text-xs">
+                    <colgroup>
+                        <col class="pr-col-no"><col class="pr-col-name"><col class="pr-col-pos">
+                        <col class="pr-col-money"><col class="pr-col-money"><col class="pr-col-money">
+                        <col class="pr-col-small"><col class="pr-col-small"><col class="pr-col-small"><col class="pr-col-small"><col class="pr-col-small">
+                        <col class="pr-col-money">
+                        {% for field, label in earning_fields %}<col class="pr-col-money">{% endfor %}
+                        <col class="pr-col-money">
+                        <col class="pr-col-money">
+                        {% if is_card %}
+                        <col class="pr-col-small"><col class="pr-col-small"><col class="pr-col-money"><col class="pr-col-small"><col class="pr-col-money">
+                        <col class="pr-col-money"><col class="pr-col-money"><col class="pr-col-money"><col class="pr-col-money">
+                        {% endif %}
+                        {% for field, label, is_manual in deduction_columns %}<col class="pr-col-money">{% endfor %}
+                        {% for field, label in benefit_fields %}<col class="pr-col-money">{% endfor %}
+                        <col class="pr-col-money"><col class="pr-col-money"><col class="pr-col-money">
+                    </colgroup>
+                    <thead>
+                        <tr class="bg-gray-100 text-center">
+                            <th class="pr-col-no pr-sticky-no px-2 py-2" rowspan="2">№</th>
+                            <th class="pr-col-name pr-sticky-name px-2 py-2 text-left" rowspan="2">Ажилчдын нэрс</th>
+                            <th class="pr-col-pos px-2 py-2 text-left" rowspan="2">Албан тушаал</th>
+                            <th class="pr-col-money pr-v px-2 py-2" rowspan="2">Үндсэн цалин</th>
+                            <th class="pr-col-money pr-v px-2 py-2" rowspan="2">Удаан жилийн нэмэгдэл</th>
+                            <th class="pr-col-money pr-v px-2 py-2" rowspan="2">Нийт цалин</th>
+                            <th class="pr-col-small pr-v px-2 py-2" rowspan="2">Ажиллавал зохих хоног</th>
+                            <th class="pr-col-small pr-v px-2 py-2" rowspan="2">Ажиллавал зохих цаг</th>
+                            <th class="pr-col-small pr-v px-2 py-2" rowspan="2">Ажилласан хоног</th>
+                            <th class="pr-col-small pr-v px-2 py-2" rowspan="2">Ажилласан цаг</th>
+                            <th class="pr-col-small pr-v px-2 py-2" rowspan="2">Бямбад ажилласан цаг</th>
+                            <th class="pr-col-money pr-v px-2 py-2" rowspan="2">Бямбад ажилласан нэмэгдэл</th>
+                            {% for field, label in earning_fields %}
+                            <th class="pr-col-money pr-v px-2 py-2" rowspan="2">{{ label }}</th>
+                            {% endfor %}
+                            <th class="pr-col-money pr-v px-2 py-2" rowspan="2">Унааны мөнгө</th>
+                            <th class="pr-col-money pr-v px-2 py-2" rowspan="2">Бодогдсон нийт цалин</th>
+                            {% if is_card %}
+                            <th class="px-2 py-1" colspan="3">НДШ Ажилтан</th>
+                            <th class="px-2 py-1" colspan="2">НДШ Байгууллага</th>
+                            <th class="pr-col-money pr-v px-2 py-2" rowspan="2">ХХОАТ тооцох дүн</th>
+                            <th class="pr-col-money pr-v px-2 py-2" rowspan="2">Хөнгөлөлт шатлалаар</th>
+                            <th class="pr-col-money pr-v px-2 py-2" rowspan="2">ХХОАТ</th>
+                            <th class="pr-col-money pr-v px-2 py-2" rowspan="2">Нийт татварын суутгал</th>
+                            {% endif %}
+                            {% for field, label, is_manual in deduction_columns %}
+                            <th class="pr-col-money pr-v px-2 py-2" rowspan="2">{{ label }}</th>
+                            {% endfor %}
+                            {% for field, label in benefit_fields %}
+                            <th class="pr-col-money pr-v px-2 py-2" rowspan="2">{{ label }}</th>
+                            {% endfor %}
+                            <th class="pr-col-money pr-v px-2 py-2" rowspan="2">Гарт олгох</th>
+                            <th class="pr-col-money pr-v px-2 py-2" rowspan="2">Хадгаламж</th>
+                            <th class="pr-col-money pr-v px-2 py-2" rowspan="2">{% if is_card %}Картанд орох{% else %}Бэлнээр олгох{% endif %}</th>
+                        </tr>
+                        {% if is_card %}
+                        <tr class="bg-gray-100 text-center">
+                            <th class="pr-col-small px-2 py-1">Код</th>
+                            <th class="pr-col-small px-2 py-1">%</th>
+                            <th class="pr-col-money px-2 py-1">Дүн</th>
+                            <th class="pr-col-small px-2 py-1">%</th>
+                            <th class="pr-col-money px-2 py-1">Дүн</th>
+                        </tr>
+                        {% endif %}
+                    </thead>
+                    <tbody>
+                        {% for row in rows %}
+                        <tr class="text-right">
+                            <td class="pr-sticky-no px-2 py-1.5 text-center">{{ forloop.counter }}</td>
+                            <td class="pr-sticky-name pr-text px-2 py-1.5 text-left font-medium text-gray-900">
+                                {{ row.name }}
+                                <input type="hidden" name="employee_code" value="{{ row.employee_code }}">
+                            </td>
+                            <td class="pr-text px-2 py-1.5 text-left text-gray-600">
+                                {{ row.positionname|default:'-' }}
+                                {% if row.is_shift %}<span class="pr-shift-pay text-gray-400 whitespace-nowrap" title="Нэг гарын мөнгө">· {{ row.shift_pay|floatformat:'-2g' }}/гар</span>{% endif %}
+                            </td>
+                            <td class="px-2 py-1.5" {% if row.is_shift %}title="Нэг гарын мөнгө {{ row.shift_pay|floatformat:'-2g' }} x {{ row.worked_days|floatformat:'-1g' }} хоног"{% endif %}>{{ row.base_salary|floatformat:'-2g' }}</td>
+                            <td class="px-2 py-1.5">{{ row.seniority_bonus|floatformat:'-2g' }}</td>
+                            <td class="px-2 py-1.5">{{ row.nominal_salary|floatformat:'-2g' }}</td>
+                            <td class="px-2 py-1.5">{{ row.required_days|floatformat:'-1g' }}</td>
+                            <td class="px-2 py-1.5">{{ row.required_hours|floatformat:'-1g' }}</td>
+                            <td class="px-2 py-1.5">{{ row.worked_days|floatformat:'-1g' }}</td>
+                            <td class="px-2 py-1.5">{{ row.worked_hours|floatformat:'-1g' }}</td>
+                            <td class="px-2 py-1.5">{{ row.saturday_hours|floatformat:'-1g' }}</td>
+                            {% if is_card %}<td class="px-2 py-1.5" title="Бямбын нэмэгдэл {{ row.saturday_bonus_percent|floatformat:'-2' }}%">{{ row.saturday_bonus|floatformat:'-2g' }}</td>
+                            {% else %}{% include 'shop/_payroll_override.html' with name='saturday_bonus_override' value=row.saturday_bonus_override auto=row.saturday_bonus_auto shown=row.saturday_bonus hint='Бямбын нэмэгдэл' %}{% endif %}
+                            {% for field, label in earning_fields %}{% include 'shop/_payroll_input.html' %}{% endfor %}
+                            {% if is_card %}<td class="px-2 py-1.5" title="{{ row.worked_days|floatformat:'-1g' }} хоног x {{ setting.transport_per_day|floatformat:'-2' }}₮">{{ row.transport|floatformat:'-2g' }}</td>
+                            {% else %}{% include 'shop/_payroll_override.html' with name='transport_override' value=row.transport_override auto=row.transport_auto shown=row.transport hint='Унааны мөнгө' %}{% endif %}
+                            <td class="px-2 py-1.5 font-semibold">{{ row.gross|floatformat:'-2g' }}</td>
+                            {% if is_card %}
+                            <td class="px-2 py-1.5 text-center">{{ row.ndsh_code|default:'' }}</td>
+                            <td class="px-2 py-1.5">{{ row.ndsh_employee_rate|floatformat:'-2' }}</td>
+                            <td class="px-2 py-1.5">{{ row.ndsh_employee|floatformat:'-2g' }}</td>
+                            <td class="px-2 py-1.5">{{ row.ndsh_employer_rate|floatformat:'-2' }}</td>
+                            <td class="px-2 py-1.5">{{ row.ndsh_employer|floatformat:'-2g' }}</td>
+                            <td class="px-2 py-1.5">{{ row.taxable|floatformat:'-2g' }}</td>
+                            <td class="px-2 py-1.5">{{ row.credit|floatformat:'-2g' }}</td>
+                            <td class="px-2 py-1.5">{{ row.pit|floatformat:'-2g' }}</td>
+                            <td class="px-2 py-1.5 font-semibold">{{ row.total_tax|floatformat:'-2g' }}</td>
+                            {% endif %}
+                            {% for field, label, is_manual in deduction_columns %}{% if is_manual %}{% include 'shop/_payroll_input.html' %}{% else %}<td class="px-2 py-1.5" title="Ажилтны мэдээллээс">{{ row|get_item:field|floatformat:'-2g' }}</td>{% endif %}{% endfor %}
+                            {% for field, label in benefit_fields %}{% include 'shop/_payroll_input.html' %}{% endfor %}
+                            <td class="px-2 py-1.5 font-semibold">{{ row.net_pay|floatformat:'-2g' }}</td>
+                            <td class="px-2 py-1.5" title="Ажилтны мэдээллээс (D5)">{{ row.deposit|floatformat:'-2g' }}</td>
+                            <td class="px-2 py-1.5 font-semibold">{{ row.payout|floatformat:'-2g' }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                    <tfoot>
+                        <tr class="bg-gray-100 font-semibold text-right">
+                            <td class="pr-sticky-foot px-2 py-2 text-left" colspan="2">Нийт</td>
+                            <td class="px-2 py-2"></td>
+                            <td class="px-2 py-2">{{ totals.base_salary|floatformat:'-2g' }}</td>
+                            <td class="px-2 py-2">{{ totals.seniority_bonus|floatformat:'-2g' }}</td>
+                            <td class="px-2 py-2">{{ totals.nominal_salary|floatformat:'-2g' }}</td>
+                            <td class="px-2 py-2">{{ totals.required_days|floatformat:'-1g' }}</td>
+                            <td class="px-2 py-2">{{ totals.required_hours|floatformat:'-1g' }}</td>
+                            <td class="px-2 py-2">{{ totals.worked_days|floatformat:'-1g' }}</td>
+                            <td class="px-2 py-2">{{ totals.worked_hours|floatformat:'-1g' }}</td>
+                            <td class="px-2 py-2">{{ totals.saturday_hours|floatformat:'-1g' }}</td>
+                            <td class="px-2 py-2">{{ totals.saturday_bonus|floatformat:'-2g' }}</td>
+                            {% for field, label in earning_fields %}<td class="px-2 py-2">{% include 'shop/_payroll_total.html' %}</td>{% endfor %}
+                            <td class="px-2 py-2">{{ totals.transport|floatformat:'-2g' }}</td>
+                            <td class="px-2 py-2">{{ totals.gross|floatformat:'-2g' }}</td>
+                            {% if is_card %}
+                            <td></td><td></td>
+                            <td class="px-2 py-2">{{ totals.ndsh_employee|floatformat:'-2g' }}</td>
+                            <td></td>
+                            <td class="px-2 py-2">{{ totals.ndsh_employer|floatformat:'-2g' }}</td>
+                            <td class="px-2 py-2">{{ totals.taxable|floatformat:'-2g' }}</td>
+                            <td class="px-2 py-2">{{ totals.credit|floatformat:'-2g' }}</td>
+                            <td class="px-2 py-2">{{ totals.pit|floatformat:'-2g' }}</td>
+                            <td class="px-2 py-2">{{ totals.total_tax|floatformat:'-2g' }}</td>
+                            {% endif %}
+                            {% for field, label, is_manual in deduction_columns %}<td class="px-2 py-2">{% include 'shop/_payroll_total.html' %}</td>{% endfor %}
+                            {% for field, label in benefit_fields %}<td class="px-2 py-2">{% include 'shop/_payroll_total.html' %}</td>{% endfor %}
+                            <td class="px-2 py-2">{{ totals.net_pay|floatformat:'-2g' }}</td>
+                            <td class="px-2 py-2">{{ totals.deposit|floatformat:'-2g' }}</td>
+                            <td class="px-2 py-2">{{ totals.payout|floatformat:'-2g' }}</td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+            {% endif %}
+        </form>
+        {% if rows %}{% include 'shop/_payroll_print.html' %}{% endif %}
+    </main>
+</div>
+{% include 'shop/_print_fit_js.html' %}
+<script>
+// Гар нүднүүдийг мянгачилж харуулна: бичих үед таслалгүй, гарахад 1,041,165 хэлбэрээр; хадгалахад таслалыг хасна
+(function () {
+    const fmt = (v) => {
+        const n = Number(String(v).replace(/,/g, ''));
+        if (!String(v).trim() || !isFinite(n)) return String(v).trim();
+        const r = Math.round(n * 100) / 100;
+        return r.toLocaleString('en-US', { minimumFractionDigits: Number.isInteger(r) ? 0 : 2, maximumFractionDigits: 2 });
+    };
+    document.querySelectorAll('.pr-input').forEach((input) => {
+        input.addEventListener('focus', () => { input.value = input.value.replace(/,/g, ''); input.select(); });
+        input.addEventListener('blur', () => {
+            input.value = fmt(input.value);
+            if (input.dataset.auto !== undefined) input.classList.toggle('pr-override', input.value.trim() !== '');
+        });
+    });
+    document.querySelectorAll('form').forEach((form) => form.addEventListener('submit', () => {
+        form.querySelectorAll('.pr-input').forEach((input) => { input.value = input.value.replace(/,/g, ''); });
+    }));
+})();
+</script>
+{% endblock %}

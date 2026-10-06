@@ -7,7 +7,7 @@
 {% block extra_css %}
 <style>
 @media print {
-    #sidebar, #mobile-menu-button, #sidebar-overlay, header, footer, .no-print { display: none !important; }
+    #sidebar, #sidebar-open-button, #sidebar-overlay, header, footer, .no-print { display: none !important; }
     main { margin: 0 !important; padding: 0 !important; }
     body { background: white !important; }
     .print-area { box-shadow: none !important; }
@@ -18,7 +18,51 @@
         print-color-adjust: exact;
         color-adjust: exact;
     }
+    @page { margin: 10mm; }
+    /* Хэвлэхэд хурууны код, ажилтны код хэрэггүй */
+    .print-hide { display: none !important; }
+    /* Хэвлэхэд бусад багана агуулгынхаа өргөнөөр бүтэн харагдана (тогтмол өргөнгүй, мөр шилжихгүй),
+       харин Харилцагчийн нэр нарийн баганад эхний ~50 тэмдэгтээрээ л харагдана */
+    .attendance-table { table-layout: auto !important; width: 100% !important; min-width: 0 !important; font-size: 10px; }
+    .attendance-table th, .attendance-table td { width: auto !important; padding: 2px 4px !important; }
+    .attendance-table td { white-space: nowrap; overflow-wrap: normal; }
+    .attendance-table .col-customer { width: 11rem !important; }
+    .attendance-table td.customer-cell { white-space: normal; }
+    /* Input доторх утга тасардаг тул хэвлэхэд бүх засвар хийх нүдийг энгийн текстээр харуулна */
+    .attendance-input { display: none !important; }
+    .print-value { display: inline !important; }
 }
+.print-value { display: none; }
+/* Багана бүрт тогтмол өргөн өгнө (Харилцагчийн нэрээс бусад) */
+.attendance-table { table-layout: fixed; width: 100%; min-width: 1100px; }
+/* Дэлгэц дээр: хүснэгт өөрийн хайрцагтаа (сайтын тогтмол дээд цэсний доор багтахаар) гүйж, баганын толгой
+   дээд захдаа тогтоно. Хүрээ нь sticky толгойтой хамт гүйдэггүй тул доод хүрээг сүүдрээр зурна */
+@media screen {
+    .att-scroll { max-height: calc(100vh - 11rem); overflow: auto; overscroll-behavior: contain; scroll-margin-top: 8rem; }
+    .attendance-table thead { position: sticky; top: 0; z-index: 3; }
+    .attendance-table thead th { background: #f3f4f6; box-shadow: inset 0 -1px 0 #d1d5db; }
+}
+.attendance-table th { white-space: normal; line-height: 1.2; vertical-align: bottom; }
+.attendance-table .col-select { width: 3.5rem; }
+.attendance-table .col-code { width: 3.75rem; }
+.attendance-table .col-name { width: 9.5rem; }
+.attendance-table .col-date { width: 5.5rem; }
+.attendance-table .col-weekday { width: 4rem; }
+.attendance-table .col-time { width: 3.75rem; }
+.attendance-table .col-late { width: 3.75rem; }
+.attendance-table .col-total { width: 4.5rem; }
+.attendance-table .col-position { width: 8rem; }
+/* Ажиллаагүй өдөр (ажиллавал зохих боловч цаг бүртгэлгүй) - "Ажиллаагүй өдрийг харуулах" чекээр л харагдана */
+.missing-row, .missing-total { display: none; }
+.missing-on .missing-row { display: table-row; background: #fee2e2; color: #b91c1c; }
+.missing-on .missing-total { display: inline; }
+.missing-row.filtered-out { display: none !important; }
+/* Үндсэн албан тушаалаасаа өөр албан тушаалд шилжин ажилласан өдөр */
+.position-input.position-changed { background: #ffedd5; border-color: #fdba74; font-weight: 600; }
+/* Харилцагчийн нэрийн баганад өргөн өгөхгүй - дэлгэц дээр бусад баганаас үлдсэн бүх зайг (дэлгэцийн төгсгөл хүртэл) эзэлнэ */
+.attendance-table td { overflow-wrap: anywhere; }
+/* Дэлгэц дээр харилцагчийн нэрийг бүтнээр нь (мөр шилжүүлж) харуулна - өндөр нь агуулгаараа томорно */
+.customer-input { display: block; resize: none; overflow: hidden; white-space: pre-wrap; line-height: 1.25; }
 .attendance-input {
     width: 100%;
     border: 1px solid transparent;
@@ -39,13 +83,13 @@
 <div class="flex min-h-screen bg-gray-50">
     {% include 'shop/_sidebar.html' with active_page='attendance_calc' %}
 
-    <main class="flex-1 p-2 lg:p-8 lg:ml-0">
-        <div class="flex items-center justify-between mb-6 no-print">
+    <main class="flex-1 p-2 lg:p-8 lg:ml-0 min-w-0">
+        <div class="flex flex-wrap items-center justify-between gap-2 mb-6 no-print">
             <div>
                 <h1 class="text-2xl lg:text-3xl font-bold text-gray-900">🕒 Цаг бүртгэлийн тооцоо</h1>
                 <p class="text-gray-600 mt-2">Төхөөрөмжийн ирц болон ажилтны жагсаалтыг нэгтгэсэн хугацааны тооцоо</p>
             </div>
-            <div class="flex gap-2">
+            <div class="flex flex-wrap gap-2">
                 <form method="post" action="{% url 'shop:attendance_sync' %}">
                     {% csrf_token %}
                     <input type="hidden" name="date_from" value="{{ date_from|date:'Y-m-d' }}">
@@ -67,6 +111,10 @@
                 <a href="{% url 'shop:attendance_position_settings' %}" class="bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50 transition whitespace-nowrap">
                     ⏰ Ажлын цагийн тохиргоо
                 </a>
+                <a id="export-link" href="{% url 'shop:attendance_export' %}?date_from={{ date_from|date:'Y-m-d' }}&date_to={{ date_to|date:'Y-m-d' }}&q={{ name_query|urlencode }}" title="Хадгалсан утгаар татна - хадгалаагүй засвар орохгүй"
+                   class="bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50 transition whitespace-nowrap">
+                    📥 Excel
+                </a>
                 <button onclick="window.print()" class="bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50 transition whitespace-nowrap">
                     🖨 Хэвлэх
                 </button>
@@ -82,9 +130,27 @@
                 <label class="block text-sm font-medium mb-1">Дуусах огноо</label>
                 <input type="date" name="date_to" value="{{ date_to|date:'Y-m-d' }}" class="border border-gray-300 rounded-lg px-4 py-2">
             </div>
+            <div>
+                <label for="filter-name" class="block text-sm font-medium mb-1">Ажилтны нэр</label>
+                <input type="search" id="filter-name" name="q" value="{{ name_query }}" placeholder="Нэр эсвэл код бичих..." autocomplete="off"
+                       class="border border-gray-300 rounded-lg px-4 py-2 w-56">
+            </div>
+            <div title="Ажилтны нас (регистрийн дугаараас тооцсон өнөөдрийн нас). Жиш: 60-аас дээш бол зөвхөн доод хязгаарт 60">
+                <label for="filter-age-min" class="block text-sm font-medium mb-1">Нас</label>
+                <div class="flex items-center gap-1">
+                    <input type="number" id="filter-age-min" name="age_min" min="0" max="120" value="{{ age_min|default_if_none:'' }}" placeholder="-аас" class="border border-gray-300 rounded-lg px-2 py-2 w-20">
+                    <span class="text-gray-400">–</span>
+                    <input type="number" id="filter-age-max" name="age_max" min="0" max="120" value="{{ age_max|default_if_none:'' }}" placeholder="хүртэл" class="border border-gray-300 rounded-lg px-2 py-2 w-20">
+                </div>
+            </div>
             <button type="submit" class="bg-primary text-white px-6 py-2 rounded-lg hover:bg-green-700 transition">
                 Харах
             </button>
+            <span id="filter-count" class="text-sm text-gray-500 py-2"></span>
+            <label class="flex items-center gap-2 text-sm py-2 cursor-pointer select-none" title="Ажиллавал зохих (ажлын өдөр, Бямбад ажилладаг бол Бямба) боловч цаг бүртгэлгүй өдрүүдийг улаанаар харуулна. Ээлжийн болон цаг бүртгүүлдэггүй албан тушаалд хамаарахгүй.">
+                <input type="checkbox" id="show-missing" {% if show_missing %}checked{% endif %}>
+                Ажиллаагүй өдрийг харуулах <span class="text-gray-500">({{ missing_count }})</span>
+            </label>
         </form>
 
         {% if messages %}
@@ -102,52 +168,216 @@
         </div>
         {% endif %}
 
+        <details class="bg-white rounded-lg shadow mb-6 no-print" {% if not rows %}open{% endif %}>
+            <summary class="px-4 py-3 cursor-pointer font-semibold text-gray-900 select-none">➕ Мөр нэмэх <span class="font-normal text-sm text-gray-500">- хуруу дарахаа мартсан гэх мэт бүртгэлгүй өдөр</span></summary>
+            <div class="px-4 pb-4">
+                <p class="text-xs text-gray-500 mb-3">1) Ажилтан(ууд), өдрүүдээ сонгоод „Жагсаалтад оруулах" дарна. 2) Доорх жагсаалтад мөр бүрийн албан тушаал, цагийг шаардлагатай бол засна. 3) „Бүгдийг нэмэх" дарна.
+                    Хоцролтыг мөрийн албан тушаалын дүрмээр тооцно; өөр албан тушаалд шилжин ажилласан өдрийг Хоног бүртгэлд тусдаа мөрөөр гаргана. Тухайн өдөр мөр аль хэдийн байхад өөр албан тушаал сонгосон бол албан тушаал хавсарч ажилласан нэмэлт мөр болж нэмэгдэнэ; ижил албан тушаалаар мөр байвал алгасна.</p>
+                <div class="flex flex-wrap items-start gap-4">
+                    <div class="w-72">
+                        <div class="flex items-center justify-between mb-1">
+                            <span class="text-sm font-medium">Ажилтан <span id="gen-emp-count" class="text-gray-500 font-normal"></span></span>
+                            <button type="button" id="gen-emp-clear" class="text-xs text-gray-500 underline">Сонголт арилгах</button>
+                        </div>
+                        <input type="search" id="gen-emp-search" placeholder="Нэрээр хайх..." autocomplete="off" class="border border-gray-300 rounded-lg px-3 py-1.5 w-full mb-1 text-sm">
+                        <div id="gen-emp-list" class="border border-gray-300 rounded-lg h-48 overflow-y-auto text-sm">
+                            {% for e in employees %}
+                            <label class="gen-emp flex items-center gap-2 px-2 py-1 hover:bg-gray-50 cursor-pointer" data-filter-text="{{ e.name }} {{ e.id }}">
+                                <input type="checkbox" value="{{ e.id }}" data-name="{{ e.name }}" data-position="{{ e.positionname|default:'' }}">
+                                <span>{{ e.name }}{% if e.positionname %} <span class="text-gray-400">({{ e.positionname }})</span>{% endif %}</span>
+                            </label>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    <div class="space-y-2">
+                        <div class="flex items-end justify-between gap-2">
+                            <div>
+                                <label for="gen-month" class="block text-sm font-medium mb-1">Сар</label>
+                                <input type="month" id="gen-month" value="{{ date_from|date:'Y-m' }}" class="border border-gray-300 rounded-lg px-3 py-1.5">
+                            </div>
+                            <div class="text-xs text-gray-500 text-right">
+                                <span id="gen-day-count"></span><br>
+                                <button type="button" id="gen-days-clear" class="underline">Өдөр арилгах</button>
+                            </div>
+                        </div>
+                        <div>
+                            <span class="block text-sm font-medium mb-1">Өдрүүд <span class="font-normal text-gray-500">- дарж сонгоно</span></span>
+                            <div id="gen-calendar" class="grid grid-cols-7 gap-1 text-center text-sm w-72"></div>
+                        </div>
+                        <div>
+                            <label for="gen-position" class="block text-sm font-medium mb-1">Албан тушаал</label>
+                            <select id="gen-position" class="border border-gray-300 rounded-lg px-3 py-1.5 max-w-[16rem]">
+                                <option value="">- Ажилтан бүрийн үндсэн -</option>
+                                {% for p in positions %}<option value="{{ p }}">{{ p }}</option>{% endfor %}
+                            </select>
+                        </div>
+                    </div>
+                    <div class="space-y-2">
+                        <div class="flex items-end gap-2">
+                            <div>
+                                <label for="gen-arrived" class="block text-sm font-medium mb-1">Ирсэн цаг</label>
+                                <input type="time" id="gen-arrived" class="border border-gray-300 rounded-lg px-3 py-1.5">
+                            </div>
+                            <div>
+                                <label for="gen-left" class="block text-sm font-medium mb-1">Тарсан цаг</label>
+                                <input type="time" id="gen-left" class="border border-gray-300 rounded-lg px-3 py-1.5">
+                            </div>
+                        </div>
+                        <div>
+                            <label for="gen-customer" class="block text-sm font-medium mb-1">Харилцагчийн нэр</label>
+                            <input type="text" id="gen-customer" maxlength="1000" class="border border-gray-300 rounded-lg px-3 py-1.5 w-64">
+                        </div>
+                        <button type="button" id="gen-build" class="bg-white border border-primary text-primary px-4 py-2 rounded-lg hover:bg-green-50 transition whitespace-nowrap">↓ Жагсаалтад оруулах</button>
+                    </div>
+                </div>
+
+                <form method="post" action="{% url 'shop:attendance_add' %}" id="add-rows-form" class="mt-4" hidden>
+                    {% csrf_token %}
+                    <input type="hidden" name="date_from" value="{{ date_from|date:'Y-m-d' }}">
+                    <input type="hidden" name="date_to" value="{{ date_to|date:'Y-m-d' }}">
+                    <div class="flex items-center justify-between mb-2">
+                        <span class="text-sm font-semibold">Нэмэх мөрүүд (<span id="add-rows-count">0</span>)</span>
+                        <div class="flex gap-2">
+                            <button type="button" id="add-rows-clear" class="text-sm text-gray-600 underline">Жагсаалт цэвэрлэх</button>
+                            <button type="submit" class="bg-primary text-white px-6 py-2 rounded-lg hover:bg-green-700 transition whitespace-nowrap">➕ Бүгдийг нэмэх</button>
+                        </div>
+                    </div>
+                    <div class="overflow-x-auto max-h-96 overflow-y-auto border border-gray-200 rounded">
+                        <table class="min-w-full text-sm">
+                            <thead class="bg-gray-100 text-left sticky top-0">
+                                <tr>
+                                    <th class="px-2 py-1.5">Ажилтан</th>
+                                    <th class="px-2 py-1.5">Огноо</th>
+                                    <th class="px-2 py-1.5">Албан тушаал</th>
+                                    <th class="px-2 py-1.5">Ирсэн</th>
+                                    <th class="px-2 py-1.5">Тарсан</th>
+                                    <th class="px-2 py-1.5">Харилцагчийн нэр</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody id="add-rows-body"></tbody>
+                        </table>
+                    </div>
+                </form>
+                <template id="add-row-template">
+                    <tr class="border-t">
+                        <td class="px-2 py-1 whitespace-nowrap"><span class="row-name"></span><input type="hidden" name="employee_code"></td>
+                        <td class="px-2 py-1 whitespace-nowrap"><span class="row-date"></span><input type="hidden" name="date"></td>
+                        <td class="px-2 py-1">
+                            <select name="position_name" class="border border-gray-300 rounded px-2 py-1 max-w-[14rem]">
+                                <option value="">- Үндсэн -</option>
+                                {% for p in positions %}<option value="{{ p }}">{{ p }}</option>{% endfor %}
+                            </select>
+                        </td>
+                        <td class="px-2 py-1"><input type="time" name="arrived_time" required class="border border-gray-300 rounded px-2 py-1"></td>
+                        <td class="px-2 py-1"><input type="time" name="left_time" class="border border-gray-300 rounded px-2 py-1"></td>
+                        <td class="px-2 py-1"><input type="text" name="customer_name" maxlength="1000" class="border border-gray-300 rounded px-2 py-1 w-56"></td>
+                        <td class="px-2 py-1"><button type="button" class="row-remove text-red-600 font-bold" title="Жагсаалтаас хасах">✕</button></td>
+                    </tr>
+                </template>
+            </div>
+        </details>
+
         <form method="post" action="{% url 'shop:attendance_save' %}" id="attendance-form">
             {% csrf_token %}
             <input type="hidden" name="date_from" value="{{ date_from|date:'Y-m-d' }}">
             <input type="hidden" name="date_to" value="{{ date_to|date:'Y-m-d' }}">
 
-            <div class="print-area bg-white rounded-lg shadow p-6">
+            <div id="attendance-card" class="print-area bg-white rounded-lg shadow p-6{% if show_missing %} missing-on{% endif %}">
                 <div class="flex items-center justify-between mb-4">
                     <div>
                         <h2 class="text-lg font-bold text-gray-900">Цаг бүртгэлийн хүснэгт</h2>
-                        <p class="text-sm text-gray-500">{{ date_from }} - {{ date_to }} · Нүд дээр дарж засах боломжтой · зөвхөн засварласан мөр хадгалагдана</p>
+                        <p class="text-sm text-gray-500">{{ date_from }} - {{ date_to }}<span class="no-print"> · Нүд дээр дарж засах боломжтой · зөвхөн засварласан мөр хадгалагдана</span></p>
                     </div>
-                    <button type="submit" class="no-print bg-primary text-white px-6 py-2 rounded-lg hover:bg-green-700 transition whitespace-nowrap">
-                        💾 Засвар хийгээд хадгалах
-                    </button>
+                    <div class="flex gap-2 no-print">
+                        <button type="button" id="bulk-delete-btn" style="display:none;" onclick="bulkDeleteSelected()"
+                                class="bg-white border border-red-300 text-red-600 px-4 py-2 rounded-lg hover:bg-red-50 transition whitespace-nowrap">
+                            ↺ Сонгосныг автомат руу буцаах (<span id="selected-count">0</span>)
+                        </button>
+                        <button type="submit" class="bg-primary text-white px-6 py-2 rounded-lg hover:bg-green-700 transition whitespace-nowrap">
+                            💾 Засвар хийгээд хадгалах
+                        </button>
+                    </div>
                 </div>
 
-                {% if not rows %}
+                {% if not table_rows %}
                 <p class="text-gray-500">Сонгосон хугацаанд ирцийн бүртгэл алга байна.</p>
                 {% else %}
-                <div class="overflow-x-auto">
-                    <table class="min-w-full text-xs border border-gray-200">
+                <div class="overflow-x-auto att-scroll">
+                    <table class="attendance-table text-xs border border-gray-200">
                         <thead>
                             <tr class="bg-gray-100 text-left">
-                                <th class="px-3 py-2 font-semibold text-gray-700">Нэр</th>
-                                <th class="px-2 py-2 font-semibold text-gray-700 whitespace-nowrap">Огноо</th>
-                                <th class="px-2 py-2 font-semibold text-gray-700 whitespace-nowrap">Гариг</th>
-                                <th class="px-2 py-2 font-semibold text-gray-700 whitespace-nowrap">Ирсэн цаг</th>
-                                <th class="px-2 py-2 font-semibold text-gray-700 whitespace-nowrap">Тарсан цаг</th>
-                                <th class="px-2 py-2 font-semibold text-gray-700 text-right whitespace-nowrap">1-10 минут</th>
-                                <th class="px-2 py-2 font-semibold text-gray-700 text-right whitespace-nowrap">11-20 минут</th>
-                                <th class="px-2 py-2 font-semibold text-gray-700 text-right whitespace-nowrap">20-с дээш минут</th>
-                                <th class="px-3 py-2 font-semibold text-gray-900 text-right bg-gray-200 whitespace-nowrap">Нийт хоцорсон минут</th>
-                                <th class="px-2 py-2 font-semibold text-gray-700 whitespace-nowrap">Харилцагчийн нэр</th>
+                                <th class="col-select px-2 py-2 no-print">
+                                    <input type="checkbox" id="select-all-saved" onclick="toggleSelectAll(this)" title="Хадгалсан мөрүүдийг бүгдийг сонгох">
+                                </th>
+                                <th class="col-code print-hide px-2 py-2 font-semibold text-gray-700">Хурууны код</th>
+                                <th class="col-code print-hide px-2 py-2 font-semibold text-gray-700">Ажилтны код</th>
+                                <th class="col-name px-2 py-2 font-semibold text-gray-700">Нэр</th>
+                                <th class="col-position print-hide px-2 py-2 font-semibold text-gray-700">Албан тушаал</th>
+                                <th class="col-date px-2 py-2 font-semibold text-gray-700">Огноо</th>
+                                <th class="col-weekday px-2 py-2 font-semibold text-gray-700">Гариг</th>
+                                <th class="col-time px-2 py-2 font-semibold text-gray-700">Ирсэн цаг</th>
+                                <th class="col-time px-2 py-2 font-semibold text-gray-700">Тарсан цаг</th>
+                                <th class="col-late px-2 py-2 font-semibold text-gray-700 text-right">1-10 минут</th>
+                                <th class="col-late px-2 py-2 font-semibold text-gray-700 text-right">11-20 минут</th>
+                                <th class="col-late px-2 py-2 font-semibold text-gray-700 text-right">20-с дээш минут</th>
+                                <th class="col-total px-2 py-2 font-semibold text-gray-900 text-right bg-gray-200">Нийт хоцорсон минут</th>
+                                <th class="col-customer px-2 py-2 font-semibold text-gray-700">Харилцагчийн нэр</th>
                             </tr>
                         </thead>
                         <tbody>
-                            {% for row in rows %}
-                            <tr class="border-t attendance-row {% if row.is_saved %}bg-yellow-50{% elif row.weekday == 'Бямба' or row.weekday == 'Ням' %}bg-gray-100{% endif %}">
-                                <td class="px-3 py-1.5 font-medium text-gray-900 whitespace-nowrap">
+                            {% for row in table_rows %}
+                            {% if row.is_missing %}
+                            <tr class="border-t missing-row" data-filter-text="{{ row.name }} {{ row.employee_code }}" data-age="{{ row.age|default_if_none:'' }}">
+                                <td class="no-print"></td>
+                                <td class="print-hide px-2 py-1.5 text-gray-400">-</td>
+                                <td class="print-hide px-2 py-1.5 text-gray-500">{{ row.employee_code }}</td>
+                                <td class="px-2 py-1.5 font-medium">{{ row.name }}</td>
+                                <td class="print-hide px-2 py-1.5 text-gray-500">{{ row.position_name|default:'-' }}</td>
+                                <td class="px-2 py-1.5 whitespace-nowrap">{{ row.date|date:'Y-m-d' }}</td>
+                                <td class="px-2 py-1.5 whitespace-nowrap">{{ row.weekday }}</td>
+                                <td colspan="7" class="px-2 py-1.5 font-semibold">✗ Ажиллаагүй <span class="font-normal text-[11px] no-print">(цаг бүртгэлгүй ажлын өдөр)</span></td>
+                            </tr>
+                            {% else %}
+                            <tr class="border-t attendance-row {% if row.is_saved %}bg-yellow-50{% elif row.weekday == 'Бямба' or row.weekday == 'Ням' %}bg-gray-100{% endif %}"
+                                data-filter-text="{{ row.name }} {{ row.employee_code }}" data-age="{{ row.age|default_if_none:'' }}">
+                                <td class="px-2 py-1.5 no-print">
+                                    {% if row.is_saved and not row.is_additional %}
+                                    <input type="checkbox" class="row-select" data-employee-code="{{ row.employee_code }}" data-date="{{ row.date|date:'Y-m-d' }}">
+                                    {% endif %}
+                                    <button type="button" class="text-red-600 hover:text-red-800 font-bold ml-1" title="Мөрийг устгах"
+                                            data-employee-code="{{ row.employee_code }}" data-date="{{ row.date|date:'Y-m-d' }}" data-name="{{ row.name }}"
+                                            data-record-id="{{ row.record_id }}"
+                                            onclick="hideAttendanceRow(this)">✕</button>
+                                </td>
+                                <td class="print-hide px-2 py-1.5 text-gray-500">{{ row.device_user_id|default:'-' }}</td>
+                                <td class="print-hide px-2 py-1.5 text-gray-500">{{ row.employee_code|default:'-' }}</td>
+                                <td class="px-2 py-1.5 font-medium text-gray-900">
                                     {{ row.name }}
-                                    {% if row.is_saved %}<span class="text-[10px] text-yellow-700" title="Гараар засварлаж хадгалсан">✎</span>{% endif %}
+                                    {% if row.is_additional %}
+                                    <span class="text-[10px] font-normal text-orange-700 bg-orange-100 rounded px-1" title="Тухайн өдөр албан тушаал хавсарч ажилласан нэмэлт мөр">+ хавсарсан</span>
+                                    {% elif row.is_saved %}
+                                    <span class="text-[10px] text-yellow-700" title="Гараар засварлаж хадгалсан">✎</span>
+                                    <button type="button" class="no-print text-[11px] text-gray-500 hover:text-gray-800 ml-1"
+                                            title="Засварыг цуцалж, автомат тооцоолол руу буцаах"
+                                            data-employee-code="{{ row.employee_code }}" data-date="{{ row.date|date:'Y-m-d' }}"
+                                            onclick="deleteAttendanceRecord(this)">↺</button>
+                                    {% endif %}
+                                    <input type="hidden" name="record_id" value="{{ row.record_id }}">
                                     <input type="hidden" name="employee_code" value="{{ row.employee_code }}">
                                     <input type="hidden" name="device_user_id" value="{{ row.device_user_id }}">
                                     <input type="hidden" name="name" value="{{ row.name }}">
                                     <input type="hidden" name="weekday" value="{{ row.weekday }}">
                                     <input type="hidden" class="rule-start" value="{{ row.rule_start }}">
+                                    <input type="hidden" class="rule-end" value="{{ row.rule_end }}">
+                                </td>
+                                <td class="print-hide px-2 py-1.5">
+                                    <select name="position_name" data-default="{{ row.default_position }}" title="{% if row.default_position %}Үндсэн албан тушаал: {{ row.default_position }}{% endif %}"
+                                            class="attendance-input position-input{% if row.position_name != row.default_position %} position-changed{% endif %}">
+                                        {% if not row.default_position %}<option value="">-</option>{% endif %}
+                                        {% if row.position_name and row.position_name not in positions %}<option value="{{ row.position_name }}" selected>{{ row.position_name }}</option>{% endif %}
+                                        {% for p in positions %}<option value="{{ p }}" {% if p == row.position_name %}selected{% endif %}>{{ p }}</option>{% endfor %}
+                                    </select>
                                 </td>
                                 <td class="px-2 py-1.5 whitespace-nowrap">
                                     {{ row.date|date:'Y-m-d' }}
@@ -169,26 +399,184 @@
                                 <td class="px-2 py-1.5 text-right">
                                     <input type="number" min="0" name="late_20_plus" value="{{ row.late_20_plus }}" class="attendance-input text-right late-input">
                                 </td>
-                                <td class="px-3 py-1.5 text-right font-semibold bg-gray-50 total-late-cell">{{ row.total_late_minutes }}</td>
-                                <td class="px-2 py-1.5 min-w-[200px]">
-                                    <input type="text" name="customer_name" value="{{ row.customer_name }}" class="attendance-input">
+                                <td class="px-2 py-1.5 text-right font-semibold bg-gray-50 total-late-cell">{{ row.total_late_minutes }}</td>
+                                <td class="px-2 py-1.5 customer-cell">
+                                    <textarea name="customer_name" rows="1" class="attendance-input customer-input">{{ row.customer_name }}</textarea>
                                 </td>
                             </tr>
+                            {% endif %}
                             {% endfor %}
                         </tbody>
                     </table>
                 </div>
+                <p class="mt-2 text-sm text-gray-600">Нийт: <strong id="rows-total">{{ rows|length }}</strong> мөр<span class="missing-total no-print"> · ажиллаагүй <strong id="missing-total">{{ missing_count }}</strong> өдөр</span></p>
                 {% endif %}
             </div>
         </form>
+
+        {% if deleted_records %}
+        <details class="bg-white rounded-lg shadow mt-6 no-print">
+            <summary class="px-4 py-3 cursor-pointer font-semibold text-gray-900 select-none">🗑 Устгасан мөрүүд ({{ deleted_records|length }})</summary>
+            <div class="px-4 pb-4 overflow-x-auto">
+                <table class="min-w-full text-sm border border-gray-200">
+                    <thead>
+                        <tr class="bg-gray-100 text-left">
+                            <th class="px-3 py-2 font-semibold text-gray-700">Нэр</th>
+                            <th class="px-3 py-2 font-semibold text-gray-700">Огноо</th>
+                            <th class="px-3 py-2 font-semibold text-gray-700">Устгасан</th>
+                            <th class="px-3 py-2"></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for rec in deleted_records %}
+                        <tr class="border-t deleted-row" data-filter-text="{{ rec.name|default:'' }} {{ rec.employee_code }}" data-age="{{ rec.age|default_if_none:'' }}">
+                            <td class="px-3 py-2">{{ rec.name|default:rec.employee_code }}</td>
+                            <td class="px-3 py-2 whitespace-nowrap">{{ rec.date|date:'Y-m-d' }} {{ rec.weekday }}</td>
+                            <td class="px-3 py-2 text-gray-500 whitespace-nowrap">{{ rec.updated_by.username|default:'-' }} · {{ rec.updated_at|date:'Y-m-d H:i' }}</td>
+                            <td class="px-3 py-2 text-right">
+                                <button type="button" class="text-primary underline"
+                                        data-employee-code="{{ rec.employee_code }}" data-date="{{ rec.date|date:'Y-m-d' }}"
+                                        onclick="restoreAttendanceRow(this)">↺ Сэргээх</button>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </details>
+        {% endif %}
     </main>
 </div>
 
+{{ position_start_times|json_script:"position-start-times" }}
 <script>
+// Хадгалсан (AttendanceRecord) мөрийг устгаж, дахин төхөөрөмж/мерчандайзерийн түүхий өгөгдөл дээр
+// суурилсан автомат тооцоолол руу буцаана
+function postAttendanceAction(url, btn, formData, errorText) {
+    const csrfToken = document.querySelector('#attendance-form [name=csrfmiddlewaretoken]').value;
+    btn.disabled = true;
+    fetch(url, {
+        method: 'POST',
+        headers: { 'X-CSRFToken': csrfToken },
+        body: formData,
+    }).then(function (resp) {
+        if (resp.ok) {
+            window.location.reload();
+        } else {
+            btn.disabled = false;
+            alert(errorText);
+        }
+    }).catch(function () {
+        btn.disabled = false;
+        alert(errorText);
+    });
+}
+
+// Мөрийг хүснэгтээс устгана (төхөөрөмжийн түүхий бүртгэл хэвээр, доорх "Устгасан мөрүүд"-ээс сэргээнэ)
+function hideAttendanceRow(btn) {
+    if (!confirm(btn.dataset.name + ' - ' + btn.dataset.date + ' өдрийн мөрийг устгах уу?')) {
+        return;
+    }
+    const formData = new FormData();
+    formData.append('employee_code', btn.dataset.employeeCode);
+    formData.append('date', btn.dataset.date);
+    formData.append('name', btn.dataset.name);
+    // Хавсарсан албан тушаалын нэмэлт мөрийг шууд устгана (сэргээх түүхий бүртгэлгүй)
+    formData.append('record_id', btn.dataset.recordId || '');
+    postAttendanceAction('{% url "shop:attendance_hide" %}', btn, formData, 'Устгахад алдаа гарлаа.');
+}
+
+// Устгасан мөрийг сэргээнэ - тэмдэглэгээг арилгаж, автомат тооцоолол руу буцаана
+function restoreAttendanceRow(btn) {
+    const formData = new FormData();
+    formData.append('employee_code', btn.dataset.employeeCode);
+    formData.append('date', btn.dataset.date);
+    postAttendanceAction('{% url "shop:attendance_delete" %}', btn, formData, 'Сэргээхэд алдаа гарлаа.');
+}
+
+function deleteAttendanceRecord(btn) {
+    if (!confirm('Засварыг цуцалж, автомат тооцоолол руу буцаах уу?')) {
+        return;
+    }
+    const csrfToken = document.querySelector('#attendance-form [name=csrfmiddlewaretoken]').value;
+    const formData = new FormData();
+    formData.append('employee_code', btn.dataset.employeeCode);
+    formData.append('date', btn.dataset.date);
+
+    btn.disabled = true;
+    fetch('{% url "shop:attendance_delete" %}', {
+        method: 'POST',
+        headers: { 'X-CSRFToken': csrfToken },
+        body: formData,
+    }).then(function (resp) {
+        if (resp.ok) {
+            window.location.reload();
+        } else {
+            btn.disabled = false;
+            alert('Устгахад алдаа гарлаа.');
+        }
+    }).catch(function () {
+        btn.disabled = false;
+        alert('Устгахад алдаа гарлаа.');
+    });
+}
+
+// Сонгосон хадгалсан (AttendanceRecord) мөрүүдийг нэг дор устгаж, автомат тооцоолол руу буцаана
+function updateBulkDeleteButton() {
+    const checked = document.querySelectorAll('.row-select:checked');
+    const btn = document.getElementById('bulk-delete-btn');
+    const countSpan = document.getElementById('selected-count');
+    if (!btn || !countSpan) return;
+    countSpan.textContent = checked.length;
+    btn.style.display = checked.length > 0 ? 'inline-block' : 'none';
+}
+
+function toggleSelectAll(headerCheckbox) {
+    document.querySelectorAll('.row-select').forEach(function (cb) {
+        // Нэрийн шүүлтээр нуугдсан мөрийг сонгохгүй
+        cb.checked = headerCheckbox.checked && !cb.closest('tr').hidden;
+    });
+    updateBulkDeleteButton();
+}
+
+function bulkDeleteSelected() {
+    const checked = document.querySelectorAll('.row-select:checked');
+    if (checked.length === 0) return;
+    if (!confirm('Сонгосон ' + checked.length + ' мөрийг устгаж, автомат тооцоолол руу буцаах уу?')) {
+        return;
+    }
+    const csrfToken = document.querySelector('#attendance-form [name=csrfmiddlewaretoken]').value;
+    const formData = new FormData();
+    checked.forEach(function (cb) {
+        formData.append('employee_code', cb.dataset.employeeCode);
+        formData.append('date', cb.dataset.date);
+    });
+
+    const btn = document.getElementById('bulk-delete-btn');
+    btn.disabled = true;
+    fetch('{% url "shop:attendance_bulk_delete" %}', {
+        method: 'POST',
+        headers: { 'X-CSRFToken': csrfToken },
+        body: formData,
+    }).then(function (resp) {
+        if (resp.ok) {
+            window.location.reload();
+        } else {
+            btn.disabled = false;
+            alert('Устгахад алдаа гарлаа.');
+        }
+    }).catch(function () {
+        btn.disabled = false;
+        alert('Устгахад алдаа гарлаа.');
+    });
+}
+
 // Хоцролтыг албан тушаалын дүрмээр тооцоолно (python compute_lateness()-тэй ижил логик):
 // - ruleStart өгөгдсөн бол (тогтмол эхлэх цагтай албан тушаал): ирсэн цаг тэр цагаас хойш байвал зөрүү
-// - ruleStart хоосон бол ('бусад'): ирсэн цагаас хойш 8 цаг (480 минут) ажиллаагүй бол дутсан минут
+// - ruleStart хоосон бол ('бусад'): ирсэн цагаас хойш 9 цаг (8 цаг ажил + 1 цаг цай, 540 минут) байгаагүй бол дутсан минут
 //   (тарсан цаг тодорхойгүй бол тооцоолохгүй)
+// - ruleEnd өгөгдсөн бол (Бямба гарагт 8 цагийн дүрэмтэй ажилтан): тэр цагаас хойш үлдсэн минутаар
+//   хоцролтоо нөхнө
 function parseHM(str) {
     const m = /^([0-2]?\d):([0-5]\d)$/.exec((str || '').trim());
     if (!m) return null;
@@ -203,7 +591,18 @@ function bucketDelay(delay) {
     return [10, 10, delay - 20];
 }
 
-function calcLateBuckets(ruleStart, arrivedStr, leftStr) {
+// Албан тушаал -> ажил эхлэх цаг ('ЦЦ:ММ', 8 цагийн дүрэмтэй бол хоосон) - python rule_start_str/rule_end_str-тэй ижил
+const POSITION_START_TIMES = JSON.parse(document.getElementById('position-start-times').textContent);
+
+function positionRule(positionName, weekday) {
+    const start = POSITION_START_TIMES[positionName] || '';
+    if (weekday === 'Бямба') {
+        return { start: '09:00', end: start ? '' : '15:00' };
+    }
+    return { start: start, end: '' };
+}
+
+function calcLateBuckets(ruleStart, arrivedStr, leftStr, ruleEnd) {
     const arrivedMinutes = parseHM(arrivedStr);
     if (arrivedMinutes === null) {
         return null;
@@ -211,7 +610,13 @@ function calcLateBuckets(ruleStart, arrivedStr, leftStr) {
 
     const startMinutes = parseHM(ruleStart);
     if (startMinutes !== null) {
-        return bucketDelay(arrivedMinutes - startMinutes);
+        let delay = arrivedMinutes - startMinutes;
+        const endMinutes = parseHM(ruleEnd);
+        const leftForOvertime = parseHM(leftStr);
+        if (endMinutes !== null && leftForOvertime !== null) {
+            delay -= Math.max(0, leftForOvertime - endMinutes);
+        }
+        return bucketDelay(delay);
     }
 
     // "Бусад" - 8 цагийн дүрэм: тарсан цаг мэдэгдэхгүй бол одоохондоо тооцоолж болохгүй
@@ -221,7 +626,7 @@ function calcLateBuckets(ruleStart, arrivedStr, leftStr) {
     }
     let worked = leftMinutes - arrivedMinutes;
     if (worked < 0) worked += 24 * 60;
-    return bucketDelay(8 * 60 - worked);
+    return bucketDelay(9 * 60 - worked);
 }
 
 document.addEventListener('DOMContentLoaded', function () {
@@ -231,6 +636,7 @@ document.addEventListener('DOMContentLoaded', function () {
         const arrivedInput = row.querySelector('.arrived-input');
         const leftInput = row.querySelector('.left-input');
         const ruleStartInput = row.querySelector('.rule-start');
+        const ruleEndInput = row.querySelector('.rule-end');
 
         function recalcTotal() {
             let total = 0;
@@ -247,7 +653,7 @@ document.addEventListener('DOMContentLoaded', function () {
         function recalcLateness() {
             // Хоосон эсвэл буруу форматтай (тэмдэглээгүй "-") үед хоцролтын баганад хүчээр гар
             // хүрэхгүй - зөвхөн шаардлагатай цаг(ууд) зөв орсон үед автоматаар тооцоолно
-            const buckets = calcLateBuckets(ruleStartInput.value, arrivedInput.value, leftInput.value);
+            const buckets = calcLateBuckets(ruleStartInput.value, arrivedInput.value, leftInput.value, ruleEndInput ? ruleEndInput.value : '');
             if (!buckets) {
                 return;
             }
@@ -255,6 +661,19 @@ document.addEventListener('DOMContentLoaded', function () {
             lateInputs[1].value = buckets[1];
             lateInputs[2].value = buckets[2];
             recalcTotal();
+        }
+
+        // Өөр албан тушаалд шилжин ажилласан бол хоцролтыг тэр албан тушаалын дүрмээр дахин тооцно
+        const positionInput = row.querySelector('.position-input');
+        if (positionInput) {
+            positionInput.addEventListener('change', function () {
+                const weekday = row.querySelector('input[name=weekday]').value;
+                const rule = positionRule(positionInput.value, weekday);
+                ruleStartInput.value = rule.start;
+                if (ruleEndInput) ruleEndInput.value = rule.end;
+                positionInput.classList.toggle('position-changed', positionInput.value !== positionInput.dataset.default);
+                recalcLateness();
+            });
         }
 
         if (arrivedInput && ruleStartInput) {
@@ -274,7 +693,51 @@ document.addEventListener('DOMContentLoaded', function () {
                 row.classList.add('outline', 'outline-2', 'outline-primary');
             });
         });
+
+        // Хэвлэхэд input-уудын оронд харагдах энгийн текст (утгыг нь хэвлэхийн өмнө syncPrintValues бөглөнө)
+        row.querySelectorAll('.attendance-input').forEach(function (input) {
+            const span = document.createElement('span');
+            span.className = 'print-value';
+            input.after(span);
+        });
+
+        // Харилцагчийн нэр: textarea-г агуулгынх нь өндөрт тааруулна.
+        // Нэг мөрийн утга тул Enter дарахад шинэ мөр оруулахгүй
+        const customerInput = row.querySelector('.customer-input');
+        if (customerInput) {
+            const autosize = function () {
+                customerInput.style.height = 'auto';
+                customerInput.style.height = customerInput.scrollHeight + 'px';
+            };
+            customerInput.addEventListener('keydown', function (e) {
+                if (e.key === 'Enter') e.preventDefault();
+            });
+            customerInput.addEventListener('input', function () {
+                if (customerInput.value.includes('\n')) {
+                    customerInput.value = customerInput.value.replace(/\s*\n\s*/g, ' ');
+                }
+                autosize();
+            });
+            autosize();
+        }
     });
+
+    // Хоцролтын минутыг скрипт өөрөө бөглөдөг тул хэвлэх бүрийн өмнө бүх утгыг дахин авна.
+    // Харилцагчийн нэрийг нарийн баганад багтаахаар эхний 50 тэмдэгтээр таслана
+    const CUSTOMER_PRINT_LIMIT = 50;
+    function syncPrintValues() {
+        document.querySelectorAll('.attendance-input').forEach(function (input) {
+            const span = input.nextElementSibling;
+            if (!span || !span.classList.contains('print-value')) return;
+            let value = input.value.trim();
+            if (input.classList.contains('customer-input') && value.length > CUSTOMER_PRINT_LIMIT) {
+                value = value.slice(0, CUSTOMER_PRINT_LIMIT).trimEnd() + '…';
+            }
+            span.textContent = value || (input.placeholder || '');
+        });
+    }
+    window.addEventListener('beforeprint', syncPrintValues);
+    syncPrintValues();
 
     const saveForm = document.getElementById('attendance-form');
     if (saveForm) {
@@ -287,7 +750,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 }
                 // Хөндөгдөөгүй мөрийн бүх input-г идэвхгүй болгоно - disabled input нь
                 // хэлбэрийн (form) POST-д огт орохгүй тул зөвхөн засварласан мөрүүд илгээгдэнэ
-                row.querySelectorAll('input').forEach(function (input) {
+                row.querySelectorAll('input, textarea, select').forEach(function (input) {
                     input.disabled = true;
                 });
             });
@@ -295,6 +758,244 @@ document.addEventListener('DOMContentLoaded', function () {
                 e.preventDefault();
                 alert('Хадгалах засвар алга байна. Эхлээд өөрчлөх нүдэн дээрээ дарж утгаа шинэчилнэ үү.');
             }
+        });
+    }
+
+    document.querySelectorAll('.row-select').forEach(function (cb) {
+        cb.addEventListener('change', updateBulkDeleteButton);
+    });
+
+    // Нэр, насаар шүүх: бичих бүрт мөрүүдийг шууд шүүнэ (нэр эсвэл ажилтны код, том жижиг үсэг ялгахгүй;
+    // нас - регистрээс тооцсон, хязгаар өгсөн үед нас тодорхойгүй ажилтан харагдахгүй).
+    // Утгыг session-д хадгална (refresh, засварын дараа хэвээр) - сервер рүү бичих бүрт биш, түр зогсоход
+    const filterInput = document.getElementById('filter-name');
+    const ageMinInput = document.getElementById('filter-age-min');
+    const ageMaxInput = document.getElementById('filter-age-max');
+    if (filterInput) {
+        const filterCount = document.getElementById('filter-count');
+        const exportLink = document.getElementById('export-link');
+        let saveTimer = null;
+
+        function readAge(input) {
+            const n = parseInt(input ? input.value : '', 10);
+            return isNaN(n) ? null : n;
+        }
+
+        function applyNameFilter() {
+            const needle = filterInput.value.trim().toLowerCase();
+            const ageMin = readAge(ageMinInput);
+            const ageMax = readAge(ageMaxInput);
+            const active = !!needle || ageMin !== null || ageMax !== null;
+
+            function matches(row) {
+                if (needle && !row.dataset.filterText.toLowerCase().includes(needle)) return false;
+                if (ageMin === null && ageMax === null) return true;
+                const age = parseInt(row.dataset.age, 10);
+                if (isNaN(age)) return false;
+                return (ageMin === null || age >= ageMin) && (ageMax === null || age <= ageMax);
+            }
+
+            let shown = 0;
+            const rows = document.querySelectorAll('.attendance-row');
+            rows.forEach(function (row) {
+                const match = matches(row);
+                row.hidden = !match;
+                if (match) shown += 1;
+            });
+            document.querySelectorAll('.deleted-row').forEach(function (row) {
+                row.hidden = !matches(row);
+            });
+            // Ажиллаагүй өдрийн мөрүүд CSS-ээр (display: table-row) харагддаг тул hidden биш класс ашиглана
+            let missingShown = 0;
+            document.querySelectorAll('.missing-row').forEach(function (row) {
+                const match = matches(row);
+                row.classList.toggle('filtered-out', !match);
+                if (match) missingShown += 1;
+            });
+            const missingTotal = document.getElementById('missing-total');
+            if (missingTotal) missingTotal.textContent = missingShown;
+            filterCount.textContent = active ? shown + ' / ' + rows.length + ' мөр' : '';
+            // Хүснэгтийн доорх нийт мөрийн тоо - шүүсэн үед харагдаж буй мөрийн тоо
+            const rowsTotal = document.getElementById('rows-total');
+            if (rowsTotal) rowsTotal.textContent = active ? shown + ' / ' + rows.length : rows.length;
+            if (exportLink) {
+                const url = new URL(exportLink.href);
+                url.searchParams.set('q', filterInput.value.trim());
+                url.searchParams.set('age_min', ageMin === null ? '' : ageMin);
+                url.searchParams.set('age_max', ageMax === null ? '' : ageMax);
+                exportLink.href = url.toString();
+            }
+        }
+
+        function onFilterInput() {
+            applyNameFilter();
+            clearTimeout(saveTimer);
+            saveTimer = setTimeout(function () {
+                const params = new URLSearchParams({
+                    q: filterInput.value.trim(),
+                    age_min: ageMinInput ? ageMinInput.value.trim() : '',
+                    age_max: ageMaxInput ? ageMaxInput.value.trim() : '',
+                });
+                fetch('{% url "shop:attendance_filter_save" %}?' + params.toString());
+            }, 400);
+        }
+
+        [filterInput, ageMinInput, ageMaxInput].filter(Boolean).forEach(function (input) {
+            input.addEventListener('input', onFilterInput);
+        });
+        applyNameFilter();
+    }
+
+    // Ажиллаагүй өдрийг харуулах: асаах/унтраахыг session-д хадгална (refresh, засварын дараа хэвээр)
+    const showMissing = document.getElementById('show-missing');
+    const attendanceCard = document.getElementById('attendance-card');
+    if (showMissing && attendanceCard) {
+        showMissing.addEventListener('change', function () {
+            attendanceCard.classList.toggle('missing-on', showMissing.checked);
+            fetch('{% url "shop:attendance_filter_save" %}?missing=' + (showMissing.checked ? '1' : ''));
+        });
+    }
+
+    // Олноор мөр нэмэх: сонгосон ажилтан x огнооны муж (сонгосон гаригууд)-аар нэмэх мөрүүдийн жагсаалт үүсгэнэ,
+    // мөр бүрийн албан тушаал/цагийг жагсаалтад нь засаад нэг дор илгээнэ
+    const genBuild = document.getElementById('gen-build');
+    if (genBuild) {
+        const empChecks = Array.from(document.querySelectorAll('#gen-emp-list input[type=checkbox]'));
+        const empCount = document.getElementById('gen-emp-count');
+        const addForm = document.getElementById('add-rows-form');
+        const addBody = document.getElementById('add-rows-body');
+        const addCount = document.getElementById('add-rows-count');
+        const rowTemplate = document.getElementById('add-row-template');
+        const WEEKDAYS = ['Ням', 'Даваа', 'Мягмар', 'Лхагва', 'Пүрэв', 'Баасан', 'Бямба'];
+
+        function updateEmpCount() {
+            const n = empChecks.filter(function (cb) { return cb.checked; }).length;
+            empCount.textContent = n ? '(' + n + ' сонгосон)' : '';
+        }
+        empChecks.forEach(function (cb) { cb.addEventListener('change', updateEmpCount); });
+        document.getElementById('gen-emp-clear').addEventListener('click', function () {
+            empChecks.forEach(function (cb) { cb.checked = false; });
+            updateEmpCount();
+        });
+        document.getElementById('gen-emp-search').addEventListener('input', function (e) {
+            const needle = e.target.value.trim().toLowerCase();
+            // hidden атрибутыг Tailwind-ийн .flex дарж харуулсаар байдаг тул display-г шууд тохируулна
+            document.querySelectorAll('#gen-emp-list .gen-emp').forEach(function (label) {
+                const match = !needle || label.dataset.filterText.toLowerCase().includes(needle);
+                label.style.display = match ? '' : 'none';
+            });
+        });
+
+        function updateAddRows() {
+            const n = addBody.children.length;
+            addCount.textContent = n;
+            addForm.hidden = n === 0;
+        }
+
+        function existingKeys() {
+            const keys = new Set();
+            addBody.querySelectorAll('tr').forEach(function (tr) {
+                // Албан тушаал хавсарч ажилласан бол нэг ажилтан, нэг өдөрт өөр албан тушаалаар мөр нэмж болно
+                keys.add(tr.querySelector('[name=employee_code]').value + '|' + tr.querySelector('[name=date]').value
+                    + '|' + tr.querySelector('[name=position_name]').value);
+            });
+            return keys;
+        }
+
+        // Сонгосон сарын хуанли (Даваагаас эхэлсэн 7 багана) - өдөр дээр дарж сонгоно
+        const monthInput = document.getElementById('gen-month');
+        const calendar = document.getElementById('gen-calendar');
+        const dayCount = document.getElementById('gen-day-count');
+
+        function updateDayCount() {
+            const n = calendar.querySelectorAll('input:checked').length;
+            dayCount.textContent = n ? n + ' өдөр сонгосон' : '';
+        }
+
+        function renderCalendar() {
+            calendar.innerHTML = '';
+            ['Да', 'Мя', 'Лх', 'Пү', 'Ба', 'Бя', 'Ня'].forEach(function (h, i) {
+                const head = document.createElement('div');
+                head.className = 'font-semibold py-0.5 ' + (i >= 5 ? 'text-red-600' : 'text-gray-600');
+                head.textContent = h;
+                calendar.appendChild(head);
+            });
+            const parts = (monthInput.value || '').split('-');
+            if (parts.length !== 2) { updateDayCount(); return; }
+            const year = Number(parts[0]);
+            const month = Number(parts[1]) - 1;
+            const daysInMonth = new Date(year, month + 1, 0).getDate();
+            const offset = (new Date(year, month, 1).getDay() + 6) % 7;  // Даваа = 0
+            for (let i = 0; i < offset; i++) calendar.appendChild(document.createElement('div'));
+            for (let day = 1; day <= daysInMonth; day++) {
+                const d = new Date(year, month, day);
+                const weekend = d.getDay() === 0 || d.getDay() === 6;
+                const label = document.createElement('label');
+                label.className = 'gen-day border rounded py-1 cursor-pointer select-none ' + (weekend ? 'bg-gray-50 text-gray-500' : 'bg-white');
+                const cb = document.createElement('input');
+                cb.type = 'checkbox';
+                cb.className = 'sr-only';
+                cb.value = year + '-' + String(month + 1).padStart(2, '0') + '-' + String(day).padStart(2, '0');
+                cb.dataset.weekday = WEEKDAYS[d.getDay()];
+                cb.addEventListener('change', function () {
+                    label.classList.toggle('bg-primary', cb.checked);
+                    label.classList.toggle('text-white', cb.checked);
+                    label.classList.toggle('border-primary', cb.checked);
+                    updateDayCount();
+                });
+                label.appendChild(cb);
+                label.appendChild(document.createTextNode(day));
+                calendar.appendChild(label);
+            }
+            updateDayCount();
+        }
+        monthInput.addEventListener('change', renderCalendar);
+        document.getElementById('gen-days-clear').addEventListener('click', function () {
+            calendar.querySelectorAll('input:checked').forEach(function (cb) {
+                cb.checked = false;
+                cb.dispatchEvent(new Event('change'));
+            });
+        });
+        renderCalendar();
+
+        genBuild.addEventListener('click', function () {
+            const employees = empChecks.filter(function (cb) { return cb.checked; });
+            const dates = Array.from(calendar.querySelectorAll('input:checked')).map(function (cb) {
+                return { iso: cb.value, weekday: cb.dataset.weekday };
+            });
+            if (!employees.length) { alert('Ажилтан сонгоно уу.'); return; }
+            if (!dates.length) { alert('Хуанлиас өдрүүдээ сонгоно уу.'); return; }
+            if (employees.length * dates.length > 500 && !confirm(employees.length * dates.length + ' мөр үүснэ. Үргэлжлүүлэх үү?')) return;
+
+            const position = document.getElementById('gen-position').value;
+            const arrived = document.getElementById('gen-arrived').value;
+            const left = document.getElementById('gen-left').value;
+            const customer = document.getElementById('gen-customer').value;
+            const keys = existingKeys();
+            employees.forEach(function (cb) {
+                dates.forEach(function (d) {
+                    if (keys.has(cb.value + '|' + d.iso + '|' + position)) return;  // жагсаалтад аль хэдийн байгаа
+                    const tr = rowTemplate.content.firstElementChild.cloneNode(true);
+                    tr.querySelector('.row-name').textContent = cb.dataset.name;
+                    tr.querySelector('[name=employee_code]').value = cb.value;
+                    tr.querySelector('.row-date').textContent = d.iso + ' ' + d.weekday;
+                    tr.querySelector('[name=date]').value = d.iso;
+                    const posSelect = tr.querySelector('[name=position_name]');
+                    posSelect.options[0].textContent = '- Үндсэн' + (cb.dataset.position ? ' (' + cb.dataset.position + ')' : '') + ' -';
+                    posSelect.value = position;
+                    tr.querySelector('[name=arrived_time]').value = arrived;
+                    tr.querySelector('[name=left_time]').value = left;
+                    tr.querySelector('[name=customer_name]').value = customer;
+                    tr.querySelector('.row-remove').addEventListener('click', function () { tr.remove(); updateAddRows(); });
+                    addBody.appendChild(tr);
+                });
+            });
+            updateAddRows();
+        });
+
+        document.getElementById('add-rows-clear').addEventListener('click', function () {
+            addBody.innerHTML = '';
+            updateAddRows();
         });
     }
 });

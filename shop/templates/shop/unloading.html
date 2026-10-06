@@ -1,0 +1,388 @@
+{% extends 'base.html' %}
+
+{% block title %}Ачаа буулгалт - Euro Foods{% endblock %}
+
+{% block hide_mobile_menu %}hidden{% endblock %}
+
+{% block extra_css %}
+<style>
+    .ul-table { width: 100%; border-collapse: collapse; font-size: .85rem; }
+    .ul-table th { text-align: left; font-size: .72rem; font-weight: 600; color: #4b5563; text-transform: uppercase; letter-spacing: .03em;
+                   background: #fafaf9; padding: .55rem .75rem; border-bottom: 1px solid #e7e5e4; white-space: nowrap; }
+    .ul-table td { padding: .55rem .75rem; border-bottom: 1px solid #f1f1ef; vertical-align: top; }
+    .ul-table .r { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .doc-row { cursor: pointer; }
+    .doc-row:hover td { background: #f8fafc; }
+    .doc-row.open td { background: #eef4fc; }
+    .chip { display: inline-block; font-size: .7rem; padding: .05rem .5rem; border-radius: 999px; background: #f3f4f6; color: #4b5563; margin: 0 .2rem .2rem 0; white-space: nowrap; }
+    .chip b { font-weight: 600; color: #1f2937; }
+    .status-no { color: #8a5a00; background: #fff4d6; }
+    .field { border: 1px solid #e5e7eb; border-radius: .5rem; padding: .4rem .6rem; font-size: .85rem; width: 100%; background: #fff; }
+    .field:focus { outline: 2px solid rgba(42,120,214,.3); border-color: #2a78d6; }
+    .lbl { display: block; font-size: .7rem; font-weight: 600; color: #6b7280; text-transform: uppercase; letter-spacing: .03em; margin-bottom: .25rem; }
+    .w-rows td { padding: .3rem .35rem; border-bottom: 0; vertical-align: middle; }
+    .w-rows .choices, .ul-settings .choices { margin-bottom: 0; }
+    .w-rows .choices__inner, .ul-settings .choices__inner { min-height: 34px; padding: 3px 8px; border-radius: .5rem; background: #fff; font-size: .82rem; }
+    .w-rows .choices__list--single, .ul-settings .choices__list--single { padding: 2px 16px 2px 0; }
+    .choices__list--dropdown .choices__item { font-size: .82rem; }
+    .print-only { display: none; }
+    /* Хэвлэх тайлан (A4 босоо) */
+    .pr { font-family: Arial, sans-serif; color: #000; font-size: 9.5pt; }
+    .pr h1 { font-size: 13pt; font-weight: 700; margin: 0 0 1mm; }
+    .pr .sub { font-size: 8.5pt; margin-bottom: 4mm; }
+    .pr table { width: 100%; border-collapse: collapse; }
+    .pr th, .pr td { border: 1px solid #666; padding: .8mm 1.5mm; vertical-align: top; text-align: left; }
+    .pr th { font-weight: 700; background: #fff; }
+    .pr .r { text-align: right; white-space: nowrap; }
+    .pr tfoot td { font-weight: 700; }
+    .pr .load { margin-bottom: 5mm; break-inside: avoid; }
+    .pr .load-head { display: flex; justify-content: space-between; gap: 4mm; font-size: 10pt; border-bottom: 1.5px solid #000; padding-bottom: .8mm; margin-bottom: 1.5mm; }
+    .pr .load-body { display: flex; gap: 3mm; align-items: flex-start; }
+    .pr .load-body .items { flex: 1 1 auto; font-size: 8pt; }
+    .pr .load-body .people { flex: 0 0 58mm; font-size: 8.5pt; }
+    .pr .grand { text-align: right; font-weight: 700; font-size: 10.5pt; margin-top: 2mm; }
+    .pr .summary { font-size: 10pt; }
+    .pr .summary td, .pr .summary th { padding: 1.5mm 2mm; }
+    .pr .sign { display: flex; justify-content: space-between; margin-top: 12mm; font-size: 9.5pt; }
+    .pr-section + .pr-section { break-before: page; }
+    @media print {
+        @page { size: A4 portrait; margin: 10mm; }
+        body > * { display: none !important; }
+        body > .pr-host { display: block !important; }
+        html, body { background: #fff !important; }
+        .pr tr { break-inside: avoid; }
+        body.print-detail .pr-summary, body.print-summary .pr-detail { display: none !important; }
+    }
+    .print-menu { position: relative; }
+    .print-menu > div { position: absolute; right: 0; top: calc(100% + 4px); z-index: 30; min-width: 200px; }
+</style>
+{% endblock %}
+
+{% block content %}
+{% load l10n %}
+<div class="flex min-h-screen bg-gray-50">
+    {% include 'shop/_sidebar.html' with active_page=active_page %}
+
+    <main class="flex-1 p-3 lg:p-8 min-w-0 space-y-5">
+        <div class="flex flex-wrap items-end justify-between gap-3">
+            <div>
+                <div class="text-xs font-medium text-gray-500 mb-1">Хангамж</div>
+                <h1 class="text-2xl lg:text-3xl font-bold tracking-tight">🏗️ Ачаа буулгалт</h1>
+                <p class="text-sm text-gray-500 mt-1">Татан авалтын ачаа бүрт оролцсон хүмүүс, ажлын хөлс. Ачааны мөр дээр дарж бүртгэнэ.</p>
+            </div>
+            <div class="flex flex-wrap items-center gap-2">
+                <form method="get" class="flex items-center gap-1 bg-white border border-gray-200 rounded-lg p-1">
+                    <a href="?year={{ prev_month.year|unlocalize }}&month={{ prev_month.month }}" class="px-2 py-1 rounded-md hover:bg-gray-100" title="Өмнөх сар">←</a>
+                    <select name="year" class="text-sm px-1 py-1 bg-transparent" aria-label="Он" onchange="this.form.submit()">
+                        {% for y in years %}<option value="{{ y|unlocalize }}" {% if y == year %}selected{% endif %}>{{ y|unlocalize }}</option>{% endfor %}
+                    </select>
+                    <select name="month" class="text-sm px-1 py-1 bg-transparent" aria-label="Сар" onchange="this.form.submit()">
+                        {% for num, label in months %}<option value="{{ num }}" {% if num == month %}selected{% endif %}>{{ label }}</option>{% endfor %}
+                    </select>
+                    <a href="?year={{ next_month.year|unlocalize }}&month={{ next_month.month }}" class="px-2 py-1 rounded-md hover:bg-gray-100" title="Дараагийн сар">→</a>
+                </form>
+                <button type="button" onclick="document.getElementById('ul-settings').toggleAttribute('hidden')" class="text-sm font-medium px-3 py-2 rounded-lg border border-gray-200 bg-white hover:bg-gray-50">⚙ Анхдагч</button>
+                <div class="print-menu">
+                    <button type="button" data-print-toggle class="text-sm font-medium px-3 py-2 rounded-lg border border-gray-200 bg-white hover:bg-gray-50">🖨 Хэвлэх ▾</button>
+                    <div hidden class="bg-white border border-gray-200 rounded-lg shadow-lg py-1 text-sm">
+                        <button type="button" data-print="all" class="block w-full text-left px-3 py-2 hover:bg-gray-50">Бүгд <span class="text-xs text-gray-500">(нэгтгэл шинэ хуудсанд)</span></button>
+                        <button type="button" data-print="detail" class="block w-full text-left px-3 py-2 hover:bg-gray-50">Зөвхөн дэлгэрэнгүй</button>
+                        <button type="button" data-print="summary" class="block w-full text-left px-3 py-2 hover:bg-gray-50">Зөвхөн нэгтгэл</button>
+                    </div>
+                </div>
+                <a href="{% url 'shop:unloading_export' %}?year={{ year|unlocalize }}&month={{ month }}" class="text-sm font-medium px-3 py-2 rounded-lg border border-gray-200 bg-white hover:bg-gray-50">⬇ Excel</a>
+            </div>
+        </div>
+
+        {% if messages %}
+        <div class="space-y-2">{% for message in messages %}<div class="p-3 rounded-lg text-sm {% if message.tags == 'error' %}bg-red-100 text-red-800{% elif message.tags == 'warning' %}bg-yellow-100 text-yellow-800{% else %}bg-green-100 text-green-800{% endif %}">{{ message }}</div>{% endfor %}</div>
+        {% endif %}
+
+        {# Анхдагч тохиргоо - шинэ ачааны маягтад урьдчилан бөглөгдөнө #}
+        <section id="ul-settings" class="ul-settings bg-white rounded-xl shadow-sm border border-gray-100 p-4" hidden>
+            <h2 class="font-semibold mb-1">Анхдагч тохиргоо</h2>
+            <p class="text-xs text-gray-500 mb-3">Шинээр бүртгэх ачааны маягтад эдгээр хүн, хөлс урьдчилан бөглөгдөнө. Хадгалсан ачаанд нөлөөлөхгүй.</p>
+            <form method="post" class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="settings"><input type="hidden" name="year" value="{{ year|unlocalize }}"><input type="hidden" name="month" value="{{ month }}">
+                <label><span class="lbl">Гааль мэдүүлсэн</span><select name="customs_code" data-emp-select data-value="{{ settings_obj.customs_code }}"></select></label>
+                <label><span class="lbl">Хянаж авсан</span><select name="check_code" data-emp-select data-value="{{ settings_obj.check_code }}"></select></label>
+                <label><span class="lbl">Орлого хүлээж авсан</span><select name="receive_code" data-emp-select data-value="{{ settings_obj.receive_code }}"></select></label>
+                <label><span class="lbl">Дээрх 3 хүний хөлс</span><input type="text" inputmode="numeric" name="key_fee" class="field text-right" data-money value="{{ settings_obj.key_fee|floatformat:'0g' }}"></label>
+                <label><span class="lbl">Бусад ажилтны хөлс</span><input type="text" inputmode="numeric" name="worker_fee" class="field text-right" data-money value="{{ settings_obj.worker_fee|floatformat:'0g' }}"></label>
+                <label><span class="lbl">Гаднаас хөлсөлсөн нэг хүний хөлс</span><input type="text" inputmode="numeric" name="outside_fee" class="field text-right" data-money value="{{ settings_obj.outside_fee|floatformat:'0g' }}"></label>
+                <div class="md:col-span-3 flex justify-end"><button type="submit" class="bg-primary text-white text-sm font-semibold px-5 py-2 rounded-lg hover:bg-green-700">💾 Хадгалах</button></div>
+            </form>
+        </section>
+
+        {# Ачаанууд #}
+        <section class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+            <div class="px-4 py-3 border-b border-gray-100">
+                <h2 class="font-semibold">{{ period_label }}ын татан авалт <span class="text-sm font-normal text-gray-500">({{ docs|length }} ачаа)</span></h2>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="ul-table">
+                    <thead><tr><th>Огноо</th><th>Дугаар</th><th>Илгээгч</th><th class="r">Бараа</th><th class="r">Тоо ширхэг</th><th>Буулгасан хүмүүс</th><th class="r">Ажлын хөлс</th></tr></thead>
+                    <tbody>
+                        {% for d in docs %}
+                        <tr class="doc-row" id="doc-{{ d.id|unlocalize }}" data-doc="{{ d.id|unlocalize }}" tabindex="0">
+                            <td class="whitespace-nowrap">{{ d.date|date:'Y-m-d' }}{% if d.event and d.event.unload_date != d.date %}<div class="text-xs text-gray-500">буулгасан {{ d.event.unload_date|date:'m-d' }}</div>{% endif %}</td>
+                            <td class="font-medium whitespace-nowrap">{{ d.number }}</td>
+                            <td>{{ d.vendor }}<div class="text-xs text-gray-500">{{ d.warehouse }}</div></td>
+                            <td class="r">{{ d.item_count }}</td>
+                            <td class="r">{{ d.qty|floatformat:'0g' }}</td>
+                            <td>
+                                {% if d.event %}
+                                {% for w in d.workers %}<span class="chip" title="{{ w.role_label }}">{{ w.name }} <b>{{ w.fee|floatformat:'0g' }}</b></span>{% endfor %}
+                                {% if d.event.outside_count %}<span class="chip">Гаднаас {{ d.event.outside_count }} × <b>{{ d.event.outside_fee|floatformat:'0g' }}</b></span>{% endif %}
+                                {% else %}<span class="chip status-no">бүртгээгүй</span>{% endif %}
+                            </td>
+                            <td class="r font-semibold">{% if d.event %}{{ d.total|floatformat:'0g' }}<div class="text-xs font-normal text-gray-500">{{ d.people }} хүн</div>{% else %}—{% endif %}</td>
+                        </tr>
+                        <tr data-detail="{{ d.id|unlocalize }}" hidden>
+                            <td colspan="7" style="background:#fafaf9">
+                                <div class="grid grid-cols-1 xl:grid-cols-5 gap-5 py-2">
+                                    <div class="xl:col-span-2">
+                                        <div class="lbl">Бараа ({{ d.items|length }})</div>
+                                        <div class="bg-white border border-gray-100 rounded-lg overflow-auto" style="max-height: 380px">
+                                            <table class="ul-table">
+                                                <thead><tr><th>Барааны нэр</th><th class="r">Тоо ширхэг</th></tr></thead>
+                                                <tbody>{% for it in d.items %}<tr><td>{{ it.name }}</td><td class="r">{{ it.qty|floatformat:'-2g' }} {{ it.measure }}</td></tr>{% endfor %}</tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                    <form method="post" class="xl:col-span-3 space-y-3 bg-white border border-gray-100 rounded-lg p-4" data-form="{{ d.id|unlocalize }}">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="action" value="save"><input type="hidden" name="document_id" value="{{ d.id|unlocalize }}"><input type="hidden" name="document_number" value="{{ d.number }}">
+                                        <input type="hidden" name="year" value="{{ year|unlocalize }}"><input type="hidden" name="month" value="{{ month }}">
+                                        <label class="block" style="max-width: 220px"><span class="lbl">Буулгасан огноо</span><input type="date" name="unload_date" class="field" value="{% if d.event %}{{ d.event.unload_date|date:'Y-m-d' }}{% else %}{{ d.date|date:'Y-m-d' }}{% endif %}"></label>
+                                        <div>
+                                            <div class="lbl">Ажилчид</div>
+                                            <table class="w-full w-rows">
+                                                <thead><tr class="text-xs text-gray-500"><th class="text-left font-medium px-1" style="width:30%">Үүрэг</th><th class="text-left font-medium px-1">Ажилтан</th><th class="text-right font-medium px-1" style="width:130px">Ажлын хөлс</th><th style="width:32px"></th></tr></thead>
+                                                <tbody data-rows></tbody>
+                                            </table>
+                                            <button type="button" data-add class="mt-1 text-sm font-medium text-blue-700 hover:bg-blue-50 rounded-lg px-2 py-1">+ Ажилтан нэмэх</button>
+                                        </div>
+                                        <div>
+                                            <div class="lbl">Гаднаас хөлсөлсөн</div>
+                                            <div class="flex flex-wrap items-center gap-2 text-sm">
+                                                <input type="number" min="0" step="1" name="outside_count" class="field text-right" style="width: 80px" data-outside-count aria-label="Хүний тоо"> хүн ×
+                                                <input type="text" inputmode="numeric" name="outside_fee" class="field text-right" style="width: 120px" data-money data-outside-fee aria-label="Нэг хүний хөлс"> =
+                                                <b data-outside-total>0</b>
+                                            </div>
+                                        </div>
+                                        <label class="block"><span class="lbl">Тайлбар</span><input type="text" name="note" maxlength="300" class="field" value="{{ d.event.note|default:'' }}"></label>
+                                        <div class="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-gray-100">
+                                            <div class="text-sm">Нийт: <b class="text-base" data-total>0</b> <span class="text-gray-500" data-total-sub></span></div>
+                                            <div class="flex gap-2">
+                                                {% if d.event %}<button type="submit" name="action" value="delete" formnovalidate class="text-sm px-3 py-2 rounded-lg text-red-700 hover:bg-red-50" onclick="return confirm('{{ d.number }} ачааны бүртгэлийг устгах уу?')">Устгах</button>{% endif %}
+                                                <button type="submit" class="bg-primary text-white text-sm font-semibold px-5 py-2 rounded-lg hover:bg-green-700">💾 Хадгалах</button>
+                                            </div>
+                                        </div>
+                                    </form>
+                                </div>
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="7" class="text-center text-gray-500" style="padding:2rem">Энэ сард татан авалт алга.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        {# Сарын нэгтгэл #}
+        <section class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+            <div class="px-4 py-3 border-b border-gray-100">
+                <h2 class="font-semibold">Сарын нэгтгэл - ажлын хөлс</h2>
+                <p class="text-xs text-gray-500">{{ period_label }}д буулгасан {{ month_docs|length }} ачаа (буулгасан огноогоор)</p>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="ul-table">
+                    <thead><tr><th>№</th><th>Ажилтан</th><th>Албан тушаал</th><th class="r">Ачааны тоо</th><th class="r">Ажлын хөлс</th></tr></thead>
+                    <tbody>
+                        {% for r in summary_rows %}
+                        <tr><td>{{ forloop.counter }}</td><td class="font-medium">{{ r.name }}</td><td class="text-gray-600">{{ r.position }}</td><td class="r">{{ r.loads }}</td><td class="r">{{ r.amount|floatformat:'0g' }}</td></tr>
+                        {% empty %}
+                        <tr><td colspan="5" class="text-center text-gray-500" style="padding:1.5rem">Энэ сард бүртгэсэн ачаа буулгалт алга.</td></tr>
+                        {% endfor %}
+                        {% if outside_people %}
+                        <tr><td></td><td class="font-medium">Гаднаас хөлсөлсөн</td><td class="text-gray-600">{{ outside_people }} хүн</td><td></td><td class="r">{{ outside_amount|floatformat:'0g' }}</td></tr>
+                        {% endif %}
+                    </tbody>
+                    <tfoot><tr><td></td><td colspan="3" class="font-bold">Нийт</td><td class="r font-bold">{{ grand_total|floatformat:'0g' }}</td></tr></tfoot>
+                </table>
+            </div>
+        </section>
+    </main>
+</div>
+
+{# Хэвлэх тайлан - зөвхөн хэвлэхэд харагдана (JS-ээр body-д зөөгдөнө). Нэгтгэл үргэлж шинэ хуудаснаас эхэлнэ. #}
+<div class="pr-host print-only">
+    <div class="pr">
+        <section class="pr-section pr-detail">
+            <h1>Ачаа буулгалт - дэлгэрэнгүй, {{ period_label }}</h1>
+            <div class="sub">Буулгасан огноогоор · {{ month_docs|length }} ачаа · хэвлэсэн {{ printed_at|date:'Y-m-d H:i' }}</div>
+            {% for d in month_docs %}
+            <div class="load">
+                <div class="load-head">
+                    <span><b>{{ forloop.counter }}. {{ d.number }}</b> · {{ d.vendor }}</span>
+                    <span>Татан авалт {{ d.date|date:'Y-m-d' }} · буулгасан <b>{{ d.event.unload_date|date:'Y-m-d' }}</b></span>
+                </div>
+                <div class="load-body">
+                    <table class="items">
+                        <thead><tr><th style="width:6mm">№</th><th>Барааны нэр</th><th class="r" style="width:20mm">Тоо ширхэг</th><th style="width:15mm">Нэгж</th></tr></thead>
+                        <tbody>{% for it in d.items %}<tr><td>{{ forloop.counter }}</td><td>{{ it.name }}</td><td class="r">{{ it.qty|floatformat:'-2g' }}</td><td>{{ it.measure }}</td></tr>{% endfor %}</tbody>
+                        <tfoot><tr><td></td><td>Нийт</td><td class="r">{{ d.qty|floatformat:'-2g' }}</td><td></td></tr></tfoot>
+                    </table>
+                    <table class="people">
+                        <thead><tr><th>Буулгасан хүмүүс</th><th class="r">Хөлс</th></tr></thead>
+                        <tbody>
+                            {% for w in d.workers %}<tr><td>{{ w.name }}</td><td class="r">{{ w.fee|floatformat:'0g' }}</td></tr>{% endfor %}
+                            {% if d.event.outside_count %}<tr><td>Гаднаас {{ d.event.outside_count }} хүн × {{ d.event.outside_fee|floatformat:'0g' }}</td><td class="r">{{ d.event.outside_amount|floatformat:'0g' }}</td></tr>{% endif %}
+                        </tbody>
+                        <tfoot><tr><td>Нийт ({{ d.people }} хүн)</td><td class="r">{{ d.total|floatformat:'0g' }}</td></tr></tfoot>
+                    </table>
+                </div>
+            </div>
+            {% empty %}
+            <p>Бүртгэсэн ачаа буулгалт алга.</p>
+            {% endfor %}
+            {% if month_docs %}<div class="grand">Бүх ачааны нийт ажлын хөлс: {{ grand_total|floatformat:'0g' }}</div>{% endif %}
+        </section>
+
+        <section class="pr-section pr-summary">
+            <h1>Ачаа буулгалтын ажлын хөлс - нэгтгэл, {{ period_label }}</h1>
+            <div class="sub">Буулгасан огноогоор · {{ month_docs|length }} ачаа · хэвлэсэн {{ printed_at|date:'Y-m-d H:i' }}</div>
+            <table class="summary">
+                <thead><tr><th style="width:8mm">№</th><th>Ажилтан</th><th>Албан тушаал</th><th class="r">Ачааны тоо</th><th class="r">Ажлын хөлс</th><th style="width:32mm">Гарын үсэг</th></tr></thead>
+                <tbody>
+                    {% for r in summary_rows %}
+                    <tr><td>{{ forloop.counter }}</td><td>{{ r.name }}</td><td>{{ r.position }}</td><td class="r">{{ r.loads }}</td><td class="r">{{ r.amount|floatformat:'0g' }}</td><td></td></tr>
+                    {% endfor %}
+                    {% if outside_people %}<tr><td></td><td>Гаднаас хөлсөлсөн</td><td>{{ outside_people }} хүн</td><td></td><td class="r">{{ outside_amount|floatformat:'0g' }}</td><td></td></tr>{% endif %}
+                </tbody>
+                <tfoot><tr><td></td><td colspan="3">Нийт</td><td class="r">{{ grand_total|floatformat:'0g' }}</td><td></td></tr></tfoot>
+            </table>
+            <div class="sign"><span>Тайлан гаргасан: ......................</span><span>Хянасан: ......................</span><span>Баталсан: ......................</span></div>
+        </section>
+    </div>
+</div>
+
+{{ unloading_js|json_script:'unloading-data' }}
+<script>
+(function () {
+    const DATA = JSON.parse(document.getElementById('unloading-data').textContent);
+    const nf = new Intl.NumberFormat('en-US');
+    const num = (v) => Number(String(v ?? '').replace(/,/g, '')) || 0;
+    const fmt = (v) => nf.format(Math.round(num(v)));
+    const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+    // Хэвлэх тайланг body-гийн шууд хүүхэд болгоно (хэвлэхэд бусад бүгд нуугдана)
+    document.body.appendChild(document.querySelector('.pr-host'));
+    // Хэвлэх: бүгд / зөвхөн дэлгэрэнгүй / зөвхөн нэгтгэл
+    const printMenu = document.querySelector('.print-menu > div');
+    document.querySelector('[data-print-toggle]').addEventListener('click', (e) => { e.stopPropagation(); printMenu.hidden = !printMenu.hidden; });
+    document.addEventListener('click', () => { printMenu.hidden = true; });
+    document.querySelectorAll('[data-print]').forEach((b) => b.addEventListener('click', () => {
+        printMenu.hidden = true;
+        document.body.classList.remove('print-detail', 'print-summary');
+        if (b.dataset.print !== 'all') document.body.classList.add('print-' + b.dataset.print);
+        window.print();
+    }));
+    window.addEventListener('afterprint', () => document.body.classList.remove('print-detail', 'print-summary'));
+
+    // Мөнгөн дүнгийн нүд: бичихэд таслалгүй, гарахад мянгатын таслалтай
+    function money(input, onChange) {
+        input.addEventListener('focus', () => { input.value = input.value.replace(/,/g, ''); });
+        input.addEventListener('blur', () => { if (input.value.trim()) input.value = fmt(input.value); });
+        if (onChange) input.addEventListener('input', onChange);
+    }
+    document.querySelectorAll('form').forEach((f) => f.addEventListener('submit', () => {
+        f.querySelectorAll('[data-money]').forEach((i) => { i.value = i.value.replace(/,/g, ''); });
+    }));
+
+    // Ажилтан сонгох (нэрээр хайлттай)
+    function employeeSelect(select, value) {
+        const choices = [{ value: '', label: 'Ажилтан сонгох...', placeholder: true, selected: !value }]
+            .concat(DATA.employees.map((e) => ({ value: e.id, label: e.label, selected: e.id === value })));
+        if (!window.Choices) {
+            select.className = 'field';
+            select.innerHTML = choices.map((c) => `<option value="${esc(c.value)}" ${c.selected ? 'selected' : ''}>${esc(c.label)}</option>`).join('');
+            return;
+        }
+        new Choices(select, { choices, searchEnabled: true, shouldSort: false, itemSelectText: '', searchResultLimit: 50,
+            searchPlaceholderValue: 'Нэрээр хайх...', noResultsText: 'Олдсонгүй', allowHTML: false });
+    }
+    document.querySelectorAll('[data-emp-select]').forEach((s) => employeeSelect(s, s.dataset.value));
+    document.querySelectorAll('#ul-settings [data-money]').forEach((i) => money(i));
+
+    // Ачааны мөр дээр дарахад дэлгэрэнгүй нээх / хаах
+    function toggle(id, open) {
+        const row = document.querySelector(`tr[data-doc="${id}"]`);
+        const detail = document.querySelector(`tr[data-detail="${id}"]`);
+        if (!row || !detail) return;
+        const show = open ?? detail.hidden;
+        detail.hidden = !show;
+        row.classList.toggle('open', show);
+        if (show) initForm(detail.querySelector('form[data-form]'));
+    }
+    document.querySelectorAll('tr[data-doc]').forEach((row) => {
+        row.addEventListener('click', () => toggle(row.dataset.doc));
+        row.addEventListener('keydown', (e) => { if (e.key === 'Enter') toggle(row.dataset.doc); });
+    });
+
+    // Маягт: ажилтан бүрийн мөр (үүрэг, ажилтан, хөлс), гаднаас хөлсөлсөн (тоо × хөлс), нийт дүн
+    function initForm(form) {
+        if (!form || form.dataset.ready) return;
+        form.dataset.ready = '1';
+        const state = DATA.forms[form.dataset.form] || { rows: [], outside_count: 0, outside_fee: 0 };
+        const tbody = form.querySelector('[data-rows]');
+        const oc = form.querySelector('[data-outside-count]'), of = form.querySelector('[data-outside-fee]');
+        oc.value = state.outside_count;
+        of.value = fmt(state.outside_fee);
+
+        const update = () => {
+            const fees = [...tbody.querySelectorAll('tr')].filter((tr) => tr.querySelector('select[name=worker_code]').value)
+                .map((tr) => num(tr.querySelector('[name=worker_fee]').value));
+            const staff = fees.reduce((a, b) => a + b, 0);
+            const outside = num(oc.value) * num(of.value);
+            form.querySelector('[data-outside-total]').textContent = fmt(outside) + '₮';
+            form.querySelector('[data-total]').textContent = fmt(staff + outside) + '₮';
+            form.querySelector('[data-total-sub]').textContent =
+                `(${fees.length} ажилтан ${fmt(staff)}${num(oc.value) ? ` + гаднаас ${num(oc.value)} хүн ${fmt(outside)}` : ''})`;
+        };
+        function addRow(r) {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td><select name="worker_role" class="field">${DATA.roles.map((x) => `<option value="${x.id}" ${x.id === r.role ? 'selected' : ''}>${esc(x.label)}</option>`).join('')}</select></td>
+                <td><select name="worker_code"></select></td>
+                <td><input type="text" inputmode="numeric" name="worker_fee" class="field text-right" data-money value="${fmt(r.fee)}" aria-label="Ажлын хөлс"></td>
+                <td><button type="button" class="text-gray-400 hover:text-red-600 px-2" title="Хасах" data-remove>✕</button></td>`;
+            tbody.appendChild(tr);
+            const role = tr.querySelector('[name=worker_role]'), fee = tr.querySelector('[name=worker_fee]'), emp = tr.querySelector('[name=worker_code]');
+            employeeSelect(emp, r.code);
+            emp.addEventListener('change', update);
+            money(fee, update);
+            // Үүрэг солиход хөлс нь анхдагч хэвээр бол шинэ үүргийн анхдагч хөлсөөр солино
+            let prev = role.value;
+            role.addEventListener('change', () => {
+                if (num(fee.value) === num(DATA.role_fees[prev])) fee.value = fmt(DATA.role_fees[role.value]);
+                prev = role.value;
+                update();
+            });
+            tr.querySelector('[data-remove]').addEventListener('click', () => { tr.remove(); update(); });
+        }
+        state.rows.forEach(addRow);
+        form.querySelector('[data-add]').addEventListener('click', () => { addRow({ role: 'unload', code: '', fee: DATA.role_fees.unload }); update(); });
+        oc.addEventListener('input', update);
+        money(of, update);
+        update();
+    }
+
+    // Хадгалсны дараа тухайн ачааг нээлттэй харуулна
+    if (location.hash.startsWith('#doc-')) toggle(location.hash.slice(5), true);
+})();
+</script>
+{% endblock %}

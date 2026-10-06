@@ -1,227 +1,494 @@
 {% extends 'base.html' %}
-{% load humanize %}
 
 {% block title %}Борлуулалтын тайлан - Euro Foods{% endblock %}
 
 {% block hide_mobile_menu %}hidden{% endblock %}
 
+{% block extra_css %}
+<style>
+    /* Токен: ангиллын series-1/2, дараалсан шат - validate_palette-аар шалгасан. Бичвэр цувааны өнгө авахгүй */
+    .sr-root { --ink: #111827; --ink-2: #4b5563; --muted: #6b7280; --grid: #eeeeec; --axis: #d1d5db; --hairline: rgba(17,24,39,.08);
+               --series-1: #2a78d6; --series-2: #eb6834; --good-text: #006300; --good-bg: #e8f5e9; --bad-text: #b42323; --bad-bg: #fdecec;
+               --canvas: #f7f7f5; color: var(--ink); }
+    .sr-card { background: #fff; border: 1px solid var(--hairline); border-radius: 1rem; box-shadow: 0 1px 2px rgba(0,0,0,.04); }
+    .sr-card h3 { font-size: .95rem; font-weight: 600; }
+    .sr-sub { font-size: .75rem; color: var(--muted); }
+    .sr-num { font-variant-numeric: tabular-nums; }
+    .sr-label { display: block; font-size: .7rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .03em; margin-bottom: .3rem; }
+    .sr-field { border: 1px solid #e5e7eb; border-radius: .6rem; padding: .45rem .7rem; font-size: .875rem; background: #fff; }
+    .sr-field:focus { outline: 2px solid rgba(42,120,214,.35); border-color: var(--series-1); }
+    .seg { display: inline-flex; padding: 3px; gap: 2px; background: #f1f1ef; border-radius: .7rem; flex-wrap: wrap; max-width: 100%; }
+    .seg button { font-size: .8rem; padding: .35rem .75rem; border-radius: .55rem; color: var(--ink-2); font-weight: 500; white-space: nowrap; }
+    .seg button:hover { color: var(--ink); }
+    .seg button[aria-pressed="true"] { background: #fff; color: var(--ink); box-shadow: 0 1px 2px rgba(0,0,0,.1); }
+    .sr-root .choices { margin-bottom: 0; }
+    .sr-root .choices__inner { min-height: 38px; border-radius: .6rem; background: #fff; padding: 3px 6px; font-size: .85rem; }
+    .sr-root .choices__list--multiple .choices__item { background: #2a78d6; border-color: #2a78d6; border-radius: 999px; font-size: .75rem; }
+    .kpi-value { font-size: clamp(1.05rem, 1.45vw, 1.5rem); font-weight: 650; letter-spacing: -.015em; line-height: 1.2; }
+    @media (min-width: 768px) { .kpi-value { white-space: nowrap; } }
+    .delta { display: inline-flex; align-items: center; gap: .2rem; font-size: .72rem; font-weight: 600; padding: .1rem .45rem; border-radius: 999px; }
+    .delta.up { color: var(--good-text); background: var(--good-bg); } .delta.down { color: var(--bad-text); background: var(--bad-bg); }
+    .delta.flat { color: var(--ink-2); background: #f3f4f6; }
+    .tabs { display: flex; gap: .15rem; overflow-x: auto; scrollbar-width: none; border-bottom: 1px solid #e7e5e4; }
+    .tabs::-webkit-scrollbar { display: none; }
+    .tabs a { padding: .7rem .95rem; font-size: .875rem; font-weight: 500; color: var(--ink-2); border-bottom: 2px solid transparent; margin-bottom: -1px; white-space: nowrap; }
+    .tabs a:hover { color: var(--ink); }
+    .tabs a[aria-current="page"] { color: var(--ink); border-bottom-color: var(--series-1); font-weight: 600; }
+    .bar-row { display: grid; grid-template-columns: minmax(0, 46%) 1fr auto; align-items: center; gap: .6rem; padding: .3rem .4rem; border-radius: .5rem; cursor: pointer; }
+    .bar-row:hover, .bar-row:focus-visible { background: var(--canvas); outline: none; }
+    .bar-label { font-size: .8rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .bar-rank { color: var(--muted); margin-right: .35rem; font-variant-numeric: tabular-nums; }
+    .bar-track { height: 12px; position: relative; }
+    .bar-fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 0 4px 4px 0; background: var(--series-1); min-width: 2px; transition: width .35s ease; }
+    .bar-value { font-size: .78rem; color: var(--ink-2); text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+    .chart-wrap { position: relative; }
+    .chart-wrap svg { display: block; width: 100%; height: 280px; overflow: visible; }
+    .grid-line { stroke: var(--grid); }
+    .axis-text { fill: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+    .tooltip { position: absolute; pointer-events: none; background: #111827; color: #fff; font-size: .75rem; padding: .45rem .6rem; border-radius: .5rem;
+               box-shadow: 0 6px 20px rgba(0,0,0,.18); white-space: nowrap; z-index: 20; transform: translate(-50%, calc(-100% - 10px)); opacity: 0; transition: opacity .1s; }
+    .tooltip.show { opacity: 1; }
+    .tooltip .t-head { font-weight: 600; margin-bottom: .2rem; }
+    .tooltip .t-row { display: flex; gap: .6rem; justify-content: space-between; align-items: center; }
+    .tooltip i { width: 8px; height: 8px; border-radius: 2px; display: inline-block; margin-right: .3rem; }
+    .legend { display: flex; gap: 1rem; font-size: .75rem; color: var(--ink-2); flex-wrap: wrap; }
+    .legend span { display: inline-flex; align-items: center; gap: .35rem; }
+    .legend i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+    .sr-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: .82rem; }
+    .sr-table thead th { position: sticky; top: 0; z-index: 2; background: #fafaf9; color: var(--ink-2); font-weight: 600; font-size: .7rem; text-transform: uppercase;
+                         letter-spacing: .03em; padding: .6rem .7rem; border-bottom: 1px solid #e7e5e4; text-align: right; white-space: nowrap; user-select: none; }
+    .sr-table thead th.l { text-align: left; }
+    .sr-table thead th[data-sort] { cursor: pointer; }
+    .sr-table thead th[data-sort]:hover { color: var(--ink); }
+    .sr-table thead th .arrow { opacity: .35; margin-left: .2rem; font-size: .65rem; }
+    .sr-table thead th.sorted .arrow { opacity: 1; color: var(--series-1); }
+    .sr-table tbody td { padding: .5rem .6rem; border-bottom: 1px solid #f1f1ef; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+    .sr-table tbody td.l { text-align: left; }
+    .sr-table tbody tr.click { cursor: pointer; }
+    .sr-table tbody tr:hover { background: #f8fafc; }
+    .sr-table tfoot td { position: sticky; bottom: 0; background: #fafaf9; padding: .6rem .7rem; font-weight: 650; text-align: right; border-top: 1px solid #e7e5e4; white-space: nowrap; font-variant-numeric: tabular-nums; }
+    .sr-table tfoot td.l { text-align: left; }
+    .sr-table tr.year-row td { background: #f3f7fd; font-weight: 600; cursor: pointer; }
+    .sr-table tr.year-row:hover td { background: #e8f0fb; }
+    .neg { color: var(--bad-text); }
+    .name-cell { max-width: 20rem; overflow: hidden; text-overflow: ellipsis; }
+    .share { display: inline-flex; align-items: center; gap: .4rem; justify-content: flex-end; }
+    .share .mini { width: 46px; height: 6px; background: #efefec; border-radius: 999px; overflow: hidden; }
+    .share .mini b { display: block; height: 100%; background: var(--series-1); border-radius: 999px; }
+    .chip { display: inline-block; font-size: .68rem; color: var(--ink-2); background: #f3f4f6; border-radius: 999px; padding: .05rem .45rem; margin-left: .35rem; vertical-align: middle; }
+    .table-scroll { max-height: 72vh; overflow: auto; }
+    .fade-in { animation: fadeIn .3s ease both; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
+    @media (prefers-reduced-motion: reduce) { .fade-in, .bar-fill { animation: none; transition: none; } }
+    @media print {
+        #sidebar, #sidebar-open-button, #sidebar-overlay, header, footer, .no-print, #ai-chat-widget { display: none !important; }
+        main { margin: 0 !important; padding: 0 !important; }
+        .table-scroll { max-height: none; overflow: visible; }
+        .sr-card { box-shadow: none; break-inside: avoid; }
+    }
+</style>
+{% endblock %}
+
 {% block content %}
+{% load l10n %}
 <div class="flex min-h-screen bg-gray-50">
-    <!-- Mobile-responsive Sidebar -->
-    {% include 'shop/_sidebar.html' with active_page='sales_report' %}
-    
-    <!-- Main Content -->
-    <main class="flex-1 p-2 lg:p-8 lg:ml-0">
-        <div class="max-w-7xl mx-auto">
-            <!-- Header -->
-            <div class="mb-4 lg:mb-6">
-                <h1 class="text-2xl lg:text-3xl font-bold text-gray-800">📊 Борлуулалтын тайлан</h1>
-                <p class="text-gray-600 mt-2">
-                    {% if active_tab == 'summary' %}
-                        <strong>📅 {{ earliest_date }} - {{ latest_date }}</strong> • БҮХ борлуулалт ({{ all_records_count|intcomma }} бичлэг)
-                    {% else %}
-                        {% if date_from or date_to %}
-                            {% if date_from %}{{ date_from }}{% else %}эхнээс{% endif %} ~ 
-                            {% if date_to %}{{ date_to }}{% else %}одоог хүртэл{% endif %}
-                        {% else %}
-                            БҮХ хугацаа ({{ earliest_date }} - {{ latest_date }})
-                        {% endif %}
-                        • {{ total_records|intcomma }} борлуулалт
-                    {% endif %}
+    {% include 'shop/_sidebar.html' with active_page=active_page %}
+
+    <main class="sr-root flex-1 p-3 lg:p-8 min-w-0 space-y-5">
+        <div class="flex flex-wrap items-end justify-between gap-3">
+            <div>
+                <div class="text-xs font-medium text-gray-500 mb-1">Борлуулалт <span class="mx-1 text-gray-300">/</span> OpenDataSale</div>
+                <h1 class="text-2xl lg:text-3xl font-bold tracking-tight">📊 Борлуулалтын тайлан</h1>
+                <p class="text-sm text-gray-500 mt-1">
+                    {% if filters.date_from or filters.date_to %}{{ filters.date_from|date:'Y.m.d'|default:'эхнээс' }} – {{ filters.date_to|date:'Y.m.d'|default:'одоог хүртэл' }}{% else %}Бүх хугацаа ({{ options.first|date:'Y.m.d' }} – {{ options.last|date:'Y.m.d' }}){% endif %}
+                    · {{ options.rows|unlocalize }} мөр өгөгдөл
                 </p>
             </div>
-            
-            <!-- Tab Navigation -->
-            <div class="bg-white rounded-lg shadow mb-4 lg:mb-6">
-                <div class="border-b overflow-x-auto">
-                    <nav class="flex space-x-0 lg:space-x-2 px-2 lg:px-4 min-w-max lg:min-w-0" aria-label="Tabs">
-                        <a href="?tab=summary&date_from={{ date_from }}&date_to={{ date_to }}" 
-                           class="px-3 lg:px-6 py-2 lg:py-3 font-medium text-sm lg:text-base whitespace-nowrap transition {% if active_tab == 'summary' %}text-primary border-b-2 border-primary{% else %}text-gray-500 hover:text-gray-700{% endif %}">
-                            📈 Нэгтгэл
-                        </a>
-                        <a href="?tab=by_product&date_from={{ date_from }}&date_to={{ date_to }}" 
-                           class="px-3 lg:px-6 py-2 lg:py-3 font-medium text-sm lg:text-base whitespace-nowrap transition {% if active_tab == 'by_product' %}text-primary border-b-2 border-primary{% else %}text-gray-500 hover:text-gray-700{% endif %}">
-                            📦 Бараагаар
-                        </a>
-                        <a href="?tab=by_customer&date_from={{ date_from }}&date_to={{ date_to }}" 
-                           class="px-3 lg:px-6 py-2 lg:py-3 font-medium text-sm lg:text-base whitespace-nowrap transition {% if active_tab == 'by_customer' %}text-primary border-b-2 border-primary{% else %}text-gray-500 hover:text-gray-700{% endif %}">
-                            👥 Харилцагчаар
-                        </a>
-                        <a href="?tab=by_date&date_from={{ date_from }}&date_to={{ date_to }}" 
-                           class="px-3 lg:px-6 py-2 lg:py-3 font-medium text-sm lg:text-base whitespace-nowrap transition {% if active_tab == 'by_date' %}text-primary border-b-2 border-primary{% else %}text-gray-500 hover:text-gray-700{% endif %}">
-                            📅 Огноогоор
-                        </a>
-                    </nav>
+            <div class="flex flex-wrap gap-2 no-print">
+                <a href="{% url 'shop:sales_report_export' %}?tab={{ tab }}&{{ query_string }}" class="inline-flex items-center gap-1.5 text-sm font-medium px-3.5 py-2 rounded-lg border border-gray-200 bg-white hover:bg-gray-50">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 3v12m0 0l-4-4m4 4l4-4M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>Excel
+                </a>
+                <button type="button" onclick="window.print()" class="text-sm font-medium px-3.5 py-2 rounded-lg border border-gray-200 bg-white hover:bg-gray-50">🖨 Хэвлэх</button>
+            </div>
+        </div>
+
+        {# Шүүлт - бүх tab-д үйлчилнэ #}
+        <form id="sr-form" method="get" class="sr-card p-4 lg:p-5 space-y-4 no-print">
+            <input type="hidden" name="tab" value="{{ tab }}">
+            <div class="flex flex-wrap items-end gap-3">
+                <div class="max-w-full">
+                    <span class="sr-label">Хугацаа</span>
+                    <div class="seg" role="group" aria-label="Хугацааны бэлэн сонголт">
+                        <button type="button" data-preset="month">Энэ сар</button>
+                        <button type="button" data-preset="prev_month">Өмнөх сар</button>
+                        <button type="button" data-preset="quarter">Энэ улирал</button>
+                        <button type="button" data-preset="year">Энэ он</button>
+                        <button type="button" data-preset="prev_year">Өнгөрсөн он</button>
+                        <button type="button" data-preset="last12">Сүүлийн 12 сар</button>
+                        <button type="button" data-preset="all">Бүх хугацаа</button>
+                    </div>
+                </div>
+                <div class="flex flex-wrap items-end gap-2">
+                    <label><span class="sr-label">Эхлэх</span><input type="date" name="date_from" id="sr-from" value="{{ filters.date_from|date:'Y-m-d' }}" class="sr-field"></label>
+                    <span class="pb-2 text-gray-400">–</span>
+                    <label><span class="sr-label">Дуусах</span><input type="date" name="date_to" id="sr-to" value="{{ filters.date_to|date:'Y-m-d' }}" class="sr-field"></label>
                 </div>
             </div>
-            
-            <!-- Global Stats -->
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-                <div class="bg-white rounded-lg shadow p-6">
-                    <p class="text-gray-500 text-sm">Нийт орлого</p>
-                    <p class="text-3xl font-bold text-primary mt-2">{{ stats.total_revenue|default:0|floatformat:0|intcomma }}₮</p>
-                </div>
-                <div class="bg-white rounded-lg shadow p-6">
-                    <p class="text-gray-500 text-sm">Нийт захиалга</p>
-                    <p class="text-3xl font-bold text-blue-600 mt-2">{{ stats.total_orders|default:0|intcomma }}</p>
-                </div>
-                <div class="bg-white rounded-lg shadow p-6">
-                   <p class="text-gray-500 text-sm">Зарагдсан бараа</p>
-                    <p class="text-3xl font-bold text-green-600 mt-2">{{ stats.total_qty|default:0|floatformat:0|intcomma }}</p>
-                </div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+                <label class="block min-w-0"><span class="sr-label">Суваг</span>
+                    <select name="channel" id="f-channel" multiple>{% for v in options.channel %}<option value="{{ v }}" {% if v in filters.channel %}selected{% endif %}>{{ v }}</option>{% endfor %}</select></label>
+                <label class="block min-w-0"><span class="sr-label">Барааны бүлэг</span>
+                    <select name="group" id="f-group" multiple>{% for v in options.group %}<option value="{{ v }}" {% if v in filters.group %}selected{% endif %}>{{ v }}</option>{% endfor %}</select></label>
+                <label class="block min-w-0"><span class="sr-label">Бараа</span>
+                    <select name="item" id="f-item" multiple>{% for id, name in options.item %}<option value="{{ id }}" {% if id in filters.item %}selected{% endif %}>{{ name }}</option>{% endfor %}</select></label>
+                <label class="block min-w-0"><span class="sr-label">Харилцагч</span>
+                    <select name="customer" id="f-customer" multiple>{% for c in selected_customers %}<option value="{{ c.id }}" selected>{{ c.name }}</option>{% endfor %}</select></label>
+                <label class="block min-w-0"><span class="sr-label">Борлуулагч</span>
+                    <select name="seller" id="f-seller" multiple>{% for v in options.seller %}<option value="{{ v }}" {% if v in filters.seller %}selected{% endif %}>{{ v }}</option>{% endfor %}</select></label>
+                <label class="block min-w-0"><span class="sr-label">Агуулах</span>
+                    <select name="warehouse" id="f-warehouse" multiple>{% for v in options.warehouse %}<option value="{{ v }}" {% if v in filters.warehouse %}selected{% endif %}>{{ v }}</option>{% endfor %}</select></label>
             </div>
-            
-            <!-- Tab Content -->
-            {% if active_tab == 'summary' %}
-                {% include 'shop/reports/sale_summary_tab.html' %}
-            {% elif active_tab == 'by_product' %}
-                {% include 'shop/reports/sale_product_tab.html' %}
-            {% elif active_tab == 'by_customer' %}
-                {% include 'shop/reports/sale_customer_tab.html' %}
-            {% elif active_tab == 'by_date' %}
-                {% include 'shop/reports/sale_date_tab.html' %}
+            <div class="flex flex-wrap items-center gap-2">
+                <button type="submit" class="bg-primary text-white text-sm font-semibold px-5 py-2 rounded-lg hover:bg-green-700 transition">Шүүх</button>
+                {% if is_filtered %}<a href="?tab={{ tab }}" class="text-sm px-3 py-2 rounded-lg text-gray-600 hover:bg-gray-100">Бүх шүүлтийг цэвэрлэх</a>{% endif %}
+                <span class="sr-sub ml-auto">Шүүлт бүх tab-д үйлчилнэ · үр дүн кэшлэгдэж, өгөгдөл синк хийгдэхэд шинэчлэгдэнэ</span>
+            </div>
+        </form>
+
+        {# Үзүүлэлтүүд #}
+        {% with c=kpis.current p=kpis.previous %}
+        <section class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3" aria-label="Үндсэн үзүүлэлт">
+            <div class="sr-card p-4 fade-in"><div class="text-xs font-medium text-gray-600">Орлого</div><div class="kpi-value sr-num mt-1" data-compact="{{ c.revenue|unlocalize }}"></div><div class="mt-2" data-delta="revenue"></div></div>
+            <div class="sr-card p-4 fade-in"><div class="text-xs font-medium text-gray-600">Ашиг</div><div class="kpi-value sr-num mt-1" data-compact="{{ c.profit|unlocalize }}"></div><div class="mt-2 flex flex-wrap gap-2 items-center"><span data-delta="profit"></span><span class="sr-sub">ашгийн хувь {{ c.margin|floatformat:1 }}%</span></div></div>
+            <div class="sr-card p-4 fade-in"><div class="text-xs font-medium text-gray-600">Захиалга</div><div class="kpi-value sr-num mt-1" data-int="{{ c.orders|unlocalize }}"></div><div class="mt-2" data-delta="orders"></div></div>
+            <div class="sr-card p-4 fade-in"><div class="text-xs font-medium text-gray-600">Харилцагч</div><div class="kpi-value sr-num mt-1" data-int="{{ c.customers|unlocalize }}"></div><div class="mt-2" data-delta="customers"></div></div>
+            <div class="sr-card p-4 fade-in"><div class="text-xs font-medium text-gray-600">Тоо ширхэг</div><div class="kpi-value sr-num mt-1" data-int="{{ c.qty|unlocalize }}"></div><div class="mt-2" data-delta="qty"></div></div>
+            <div class="sr-card p-4 fade-in"><div class="text-xs font-medium text-gray-600">Дундаж захиалга</div><div class="kpi-value sr-num mt-1" data-compact="{{ c.avg_order|unlocalize }}"></div><div class="mt-2" data-delta="avg_order"></div></div>
+        </section>
+        {% endwith %}
+
+        <div class="sr-card overflow-hidden">
+            <nav class="tabs px-3 no-print" aria-label="Тайлангийн хэсэг">
+                {% for key, label, icon in tabs %}<a href="?tab={{ key }}&{{ query_string }}" {% if key == tab %}aria-current="page"{% endif %}>{{ icon }} {{ label }}</a>{% endfor %}
+            </nav>
+
+            {% if tab == 'summary' %}
+            <div class="p-4 lg:p-5 space-y-5">
+                <div>
+                    <div class="flex flex-wrap items-start justify-between gap-3">
+                        <div><h3>Сарын борлуулалт</h3><p class="sr-sub">Орлого ба ашиг (НӨАТ-гүй дүн − өртөг), сараар<span id="chart-note" hidden> · тасархай шугам = дуусаагүй сар</span></p></div>
+                        <div class="legend"><span><i style="background:var(--series-1)"></i>Орлого</span><span><i style="background:var(--series-2)"></i>Ашиг</span></div>
+                    </div>
+                    <div class="chart-wrap mt-2" id="chart"><div class="tooltip" id="tip"></div></div>
+                </div>
+                <div class="table-scroll border border-gray-100 rounded-xl">
+                    <table class="sr-table" id="pivot">
+                        <thead><tr><th class="l">Он / сар</th><th>Орлого</th><th>Өртөг</th><th>Ашиг</th><th>Ашгийн %</th><th>Захиалга</th><th>Харилцагч</th><th>Тоо ширхэг</th></tr></thead>
+                        <tbody></tbody><tfoot></tfoot>
+                    </table>
+                </div>
+                <p class="sr-sub">Он дээр дарахад сарууд нээгдэнэ/хаагдана. Харилцагчийн тоо нь давхардаагүй (жил, нийт түвшинд дахин тоолсон).</p>
+            </div>
+            {% elif tab == 'daily' %}
+            <div class="p-4 lg:p-5 space-y-5">
+                <div class="grid grid-cols-1 xl:grid-cols-3 gap-5">
+                    <div class="xl:col-span-2">
+                        <h3>Өдрийн орлого</h3><p class="sr-sub">{% if not filters.date_from %}Сүүлийн 365 хоног · {% endif %}багана бүр нэг өдөр</p>
+                        <div class="chart-wrap mt-2" id="chart"><div class="tooltip" id="tip"></div></div>
+                    </div>
+                    <div>
+                        <h3>Гарагийн дундаж</h3><p class="sr-sub">Борлуулалттай өдрийн дундаж орлого</p>
+                        <div id="weekday" class="mt-3 space-y-0.5"></div>
+                    </div>
+                </div>
+                {% include 'shop/reports/_sr_table.html' %}
+            </div>
+            {% else %}
+            <div class="p-4 lg:p-5 space-y-5">
+                <div>
+                    <div class="flex flex-wrap items-start justify-between gap-2">
+                        <div><h3>Хамгийн их орлоготой 10</h3><p class="sr-sub">Дарахад тухайн утгаар шүүгдэж {% if tab == 'product' %}харилцагчаар{% else %}бараагаар{% endif %} задарна</p></div>
+                        <span class="sr-sub" id="top-share"></span>
+                    </div>
+                    <div id="top-list" class="mt-3 space-y-0.5"></div>
+                </div>
+                {% include 'shop/reports/_sr_table.html' %}
+            </div>
             {% endif %}
         </div>
     </main>
 </div>
 
+{{ data|json_script:"sr-data" }}
+{{ kpis|json_script:"sr-kpis" }}
 <script>
-// Pivot table toggle functionality
-function toggleYear(yearId) {
-    console.log('toggleYear called with:', yearId);
-    const monthsRow = document.getElementById('months-' + yearId);
-    const icon = document.getElementById('icon-' + yearId);
-    
-    console.log('monthsRow:', monthsRow);
-    console.log('icon:', icon);
-    
-    if (!monthsRow || !icon) {
-        console.error('Elements not found for year:', yearId);
+(function () {
+    const TAB = '{{ tab }}';
+    const DATA = JSON.parse(document.getElementById('sr-data').textContent);
+    const KPIS = JSON.parse(document.getElementById('sr-kpis').textContent);
+    const QUERY = new URLSearchParams('{{ query_string|escapejs }}');
+    const COUNT_LABEL = '{{ dim.count_label|default:""|escapejs }}';
+    const nf = new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 });
+    const money = (v) => (v < 0 ? '−' : '') + '₮' + nf.format(Math.abs(Math.round(v)));
+    const int = (v) => nf.format(Math.round(v));
+    const pct1 = (v) => `${(Math.round(v * 10) / 10).toFixed(1)}%`;
+    function compact(v) {
+        const a = Math.abs(v), s = v < 0 ? '−' : '';
+        if (a >= 1e9) return `${s}₮${(a / 1e9).toFixed(2)} тэрбум`;
+        if (a >= 1e6) return `${s}₮${(a / 1e6).toFixed(1)} сая`;
+        if (a >= 1e3) return `${s}₮${(a / 1e3).toFixed(0)} мянга`;
+        return `${s}₮${nf.format(Math.round(a))}`;
+    }
+    const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+    // ---- KPI ----
+    document.querySelectorAll('[data-compact]').forEach((el) => { const v = Number(el.dataset.compact); el.textContent = compact(v); el.title = money(v); });
+    document.querySelectorAll('[data-int]').forEach((el) => { el.textContent = int(Number(el.dataset.int)); });
+    document.querySelectorAll('[data-delta]').forEach((el) => {
+        if (!KPIS.previous) { el.remove(); return; }
+        const cur = KPIS.current[el.dataset.delta], prev = KPIS.previous[el.dataset.delta];
+        if (!prev) { el.innerHTML = '<span class="sr-sub">өмнөх хугацаанд 0</span>'; return; }
+        const d = (cur - prev) / Math.abs(prev) * 100;
+        const cls = Math.abs(d) < 0.05 ? 'flat' : d > 0 ? 'up' : 'down';
+        el.innerHTML = `<span class="delta ${cls}" title="Өмнөх ${esc(KPIS.previous.period)}: ${el.dataset.delta === 'orders' || el.dataset.delta === 'customers' || el.dataset.delta === 'qty' ? int(prev) : money(prev)}">${d > 0 ? '▲' : d < 0 ? '▼' : '■'} ${Math.abs(d).toFixed(1)}%</span>`;
+    });
+
+    // ---- Шүүлт ----
+    const form = document.getElementById('sr-form');
+    const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const today = new Date(), Y = today.getFullYear(), M = today.getMonth();
+    const presets = {
+        month: [new Date(Y, M, 1), today], prev_month: [new Date(Y, M - 1, 1), new Date(Y, M, 0)],
+        quarter: [new Date(Y, Math.floor(M / 3) * 3, 1), today], year: [new Date(Y, 0, 1), today],
+        prev_year: [new Date(Y - 1, 0, 1), new Date(Y - 1, 11, 31)], last12: [new Date(Y, M - 11, 1), today], all: [null, null],
+    };
+    const fromEl = document.getElementById('sr-from'), toEl = document.getElementById('sr-to');
+    document.querySelectorAll('[data-preset]').forEach((btn) => {
+        const [f, t] = presets[btn.dataset.preset];
+        if ((f ? iso(f) : '') === fromEl.value && (t ? iso(t) : '') === toEl.value) btn.setAttribute('aria-pressed', 'true');
+        btn.addEventListener('click', () => { fromEl.value = f ? iso(f) : ''; toEl.value = t ? iso(t) : ''; form.submit(); });
+    });
+    if (window.Choices) {
+        const opts = { removeItemButton: true, searchResultLimit: 60, shouldSort: false, itemSelectText: '', noResultsText: 'Олдсонгүй', noChoicesText: 'Сонголт алга' };
+        [['f-channel', 'Бүх суваг'], ['f-group', 'Бүх бүлэг'], ['f-item', 'Бүх бараа'], ['f-seller', 'Бүх борлуулагч'], ['f-warehouse', 'Бүх агуулах']]
+            .forEach(([id, ph]) => new Choices(`#${id}`, { ...opts, placeholderValue: ph }));
+        // Харилцагч: 2,300 гаруй тул хуудсанд оруулахгүй - жагсаалтыг анх нээхэд нэг удаа ачаалж, дараа нь хөтөч дотроо
+        // (нэр, кодоор) хайна. Сонгогдсон харилцагчид хуудастайгаа ирдэг тул давхардуулахгүй
+        const customerEl = document.getElementById('f-customer');
+        const customer = new Choices(customerEl, { ...opts, placeholderValue: 'Харилцагч хайх (нэр, код)...', noChoicesText: 'Харилцагчдыг ачаалж байна...',
+                                                   searchFields: ['label', 'value'], fuseOptions: { threshold: 0.2, ignoreLocation: true } });
+        let customersLoaded = false;
+        customerEl.addEventListener('showDropdown', async () => {
+            if (customersLoaded) return;
+            customersLoaded = true;
+            try {
+                const res = await fetch(`{% url 'shop:sales_report_customers' %}`);
+                const { results } = await res.json();
+                const selected = new Set(customer.getValue(true));
+                customer.setChoices(results.filter((r) => !selected.has(r.id)).map((r) => ({ value: r.id, label: `${r.name} · ${r.id}` })), 'value', 'label', false);
+            } catch (err) {
+                customersLoaded = false;
+                customer.setChoices([{ value: '', label: 'Ачаалж чадсангүй - дахин нээнэ үү', disabled: true }], 'value', 'label', true);
+            }
+        });
+    }
+
+    // ---- SVG туслах ----
+    const NS = 'http://www.w3.org/2000/svg';
+    const el = (tag, attrs = {}) => { const n = document.createElementNS(NS, tag); Object.entries(attrs).forEach(([k, v]) => n.setAttribute(k, v)); return n; };
+    function niceTicks(min, max, count = 4) {
+        if (max === min) max = min + 1;
+        const step0 = (max - min) / count, mag = Math.pow(10, Math.floor(Math.log10(step0)));
+        const step = [1, 2, 2.5, 5, 10].map((m) => m * mag).find((s) => s >= step0);
+        const ticks = [];
+        for (let v = Math.floor(min / step) * step; v <= Math.ceil(max / step) * step + step / 2; v += step) ticks.push(v);
+        return ticks;
+    }
+    function axisFormatter(ticks) {
+        const max = Math.max(...ticks.map(Math.abs));
+        const [div, unit] = max >= 1e9 ? [1e9, 'тэр'] : max >= 1e6 ? [1e6, 'сая'] : max >= 1e3 ? [1e3, 'мян'] : [1, ''];
+        const digits = ticks.some((t) => Math.abs(t / div - Math.round(t / div)) > 1e-9) ? 1 : 0;
+        return (v) => (v === 0 ? '0' : (v / div).toFixed(digits) + unit);
+    }
+    // Нэг тэнхлэгтэй график: series = [{key, color, type: 'line'|'bar'}]
+    function chart(points, series, tipHtml, labelEvery, partialLast) {
+        const wrap = document.getElementById('chart'), tip = document.getElementById('tip');
+        if (!wrap) return;
+        wrap.querySelector('svg')?.remove();
+        if (!points.length) { wrap.insertAdjacentHTML('afterbegin', '<p class="sr-sub py-10 text-center">Өгөгдөл алга</p>'); return; }
+        const W = Math.max(wrap.clientWidth, 320), H = 280, Mg = { t: 14, r: 12, b: 28, l: 58 };
+        const iw = W - Mg.l - Mg.r, ih = H - Mg.t - Mg.b, n = points.length, band = iw / n;
+        const values = points.flatMap((p) => series.map((s) => p[s.key]));
+        const ticks = niceTicks(Math.min(0, ...values), Math.max(0, ...values));
+        const y0 = ticks[0], y1 = ticks[ticks.length - 1], fmt = axisFormatter(ticks);
+        const y = (v) => Mg.t + ih - (v - y0) / (y1 - y0) * ih, cx = (i) => Mg.l + band * (i + 0.5);
+        const svg = el('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': series.map((s) => s.label).join(', ') });
+        ticks.forEach((t) => {
+            svg.append(el('line', { x1: Mg.l, x2: W - Mg.r, y1: y(t), y2: y(t), class: 'grid-line' }));
+            const tx = el('text', { x: Mg.l - 8, y: y(t) + 4, 'text-anchor': 'end', class: 'axis-text' }); tx.textContent = fmt(t); svg.append(tx);
+        });
+        const every = labelEvery || Math.ceil(n / Math.max(4, Math.floor(iw / 70)));
+        points.forEach((p, i) => {
+            if (i % every && i !== n - 1) return;
+            const tx = el('text', { x: cx(i), y: H - 8, 'text-anchor': 'middle', class: 'axis-text' }); tx.textContent = p.label; svg.append(tx);
+        });
+        series.filter((s) => s.type === 'bar').forEach((s) => {
+            const bw = Math.max(Math.min(band - 2, 28), 1);
+            points.forEach((p, i) => {
+                const v = p[s.key], top = y(Math.max(v, 0)), h = Math.abs(y(0) - y(v));
+                if (h <= 0) return;
+                const r = Math.min(4, bw / 2, h), x = cx(i) - bw / 2;
+                svg.append(el('path', { d: v >= 0 ? `M${x},${top + h}V${top + r}Q${x},${top} ${x + r},${top}H${x + bw - r}Q${x + bw},${top} ${x + bw},${top + r}V${top + h}Z` : `M${x},${y(0)}h${bw}v${h}h${-bw}Z`, fill: s.color }));
+            });
+        });
+        series.filter((s) => s.type === 'line').forEach((s) => {
+            // Дуусаагүй (одоогийн) сарын сүүлийн хэсгийг тасархай зураасаар - огцом уналт мэт харагдуулахгүй
+            const solid = partialLast && n > 1 ? points.slice(0, -1) : points;
+            const d = solid.map((p, i) => `${i ? 'L' : 'M'}${cx(i).toFixed(1)},${y(p[s.key]).toFixed(1)}`).join('');
+            svg.append(el('path', { d, fill: 'none', stroke: s.color, 'stroke-width': 2, 'stroke-linejoin': 'round', 'stroke-linecap': 'round' }));
+            if (partialLast && n > 1) {
+                svg.append(el('path', { d: `M${cx(n - 2)},${y(points[n - 2][s.key])}L${cx(n - 1)},${y(points[n - 1][s.key])}`, fill: 'none', stroke: s.color,
+                                        'stroke-width': 2, 'stroke-dasharray': '4 4', opacity: 0.7 }));
+            }
+        });
+        svg.append(el('line', { x1: Mg.l, x2: W - Mg.r, y1: y(Math.max(y0, 0)), y2: y(Math.max(y0, 0)), stroke: 'var(--axis)' }));
+        const cross = el('line', { y1: Mg.t, y2: Mg.t + ih, stroke: 'var(--axis)', visibility: 'hidden' });
+        svg.append(cross);
+        const dots = series.filter((s) => s.type === 'line').map((s) => { const c = el('circle', { r: 4.5, fill: s.color, stroke: '#fff', 'stroke-width': 2, visibility: 'hidden' }); svg.append(c); return [s, c]; });
+        points.forEach((p, i) => {
+            const hit = el('rect', { x: Mg.l + band * i, y: Mg.t, width: band, height: ih, fill: 'transparent' });
+            hit.addEventListener('mouseenter', () => {
+                cross.setAttribute('x1', cx(i)); cross.setAttribute('x2', cx(i)); cross.setAttribute('visibility', 'visible');
+                dots.forEach(([s, c]) => { c.setAttribute('cx', cx(i)); c.setAttribute('cy', y(p[s.key])); c.setAttribute('visibility', 'visible'); });
+                tip.innerHTML = tipHtml(p);
+                const scale = wrap.clientWidth / W;
+                tip.style.left = `${Math.min(Math.max(cx(i) * scale, 100), wrap.clientWidth - 100)}px`;
+                tip.style.top = `${y(Math.max(...series.map((s) => p[s.key]))) * scale}px`;
+                tip.classList.add('show');
+            });
+            svg.append(hit);
+        });
+        svg.addEventListener('mouseleave', () => { tip.classList.remove('show'); cross.setAttribute('visibility', 'hidden'); dots.forEach(([, c]) => c.setAttribute('visibility', 'hidden')); });
+        wrap.prepend(svg);
+    }
+    const onResize = (fn) => { let t; window.addEventListener('resize', () => { clearTimeout(t); t = setTimeout(fn, 150); }); fn(); };
+
+    // ---- Нэгтгэл ----
+    if (TAB === 'summary') {
+        const S = DATA.summary;
+        const points = S.years.flatMap((y) => y.months.map((m) => ({ ...m, label: `${String(y.year).slice(2)}.${String(m.month).padStart(2, '0')}`, full: `${y.year} оны ${m.month}-р сар` })));
+        const last = points[points.length - 1];
+        const partial = !!last && last.full === `${Y} оны ${M + 1}-р сар`;
+        if (partial) { last.full += ' (сар дуусаагүй)'; document.getElementById('chart-note').hidden = false; }
+        onResize(() => chart(points, [{ key: 'revenue', label: 'Орлого', color: 'var(--series-1)', type: 'line' }, { key: 'profit', label: 'Ашиг', color: 'var(--series-2)', type: 'line' }],
+            (p) => `<div class="t-head">${p.full}</div><div class="t-row"><span><i style="background:var(--series-1)"></i>Орлого</span><b>${money(p.revenue)}</b></div>
+                    <div class="t-row"><span><i style="background:var(--series-2)"></i>Ашиг</span><b>${money(p.profit)}</b></div><div class="t-row" style="opacity:.8"><span>Ашгийн хувь</span><span>${pct1(p.margin)}</span></div>`, null, partial));
+        const row = (label, m, cls, attrs = '') => `<tr class="${cls}" ${attrs}><td class="l">${label}</td><td>${money(m.revenue)}</td><td class="text-gray-600">${money(m.cost)}</td>
+            <td class="${m.profit < 0 ? 'neg' : ''}">${money(m.profit)}</td><td>${pct1(m.margin)}</td><td>${int(m.orders)}</td><td>${int(m.customers)}</td><td>${int(m.qty)}</td></tr>`;
+        const latest = S.years.length ? S.years[S.years.length - 1].year : null;
+        document.querySelector('#pivot tbody').innerHTML = S.years.slice().reverse().map((y) =>
+            row(`<span class="inline-block w-4 text-gray-500" data-caret>${y.year === latest ? '▾' : '▸'}</span>${y.year} он`, y.total, 'year-row', `data-year="${y.year}" tabindex="0"`)
+            + y.months.map((m) => row(`<span class="pl-6 text-gray-600">${m.month}-р сар</span>`, m, '', `data-month-of="${y.year}" ${y.year === latest ? '' : 'hidden'}`)).join('')
+        ).join('') || '<tr><td colspan="8" class="l" style="padding:2rem;text-align:center;color:var(--muted)">Өгөгдөл алга</td></tr>';
+        if (S.total) document.querySelector('#pivot tfoot').innerHTML = row('Нийт', S.total, '').replace('<tr class="" >', '<tr>');
+        document.querySelector('#pivot tbody').addEventListener('click', (e) => {
+            const tr = e.target.closest('tr[data-year]'); if (!tr) return;
+            const rows = document.querySelectorAll(`tr[data-month-of="${tr.dataset.year}"]`);
+            const open = rows[0]?.hidden;
+            rows.forEach((r) => { r.hidden = !open; });
+            tr.querySelector('[data-caret]').textContent = open ? '▾' : '▸';
+        });
+        document.querySelector('#pivot tbody').addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.matches('tr[data-year]')) e.target.click(); });
         return;
     }
-    
-    if (monthsRow.classList.contains('hidden')) {
-        monthsRow.classList.remove('hidden');
-        icon.textContent = '▼';
-        console.log('Showed months for year:', yearId);
-    } else {
-        monthsRow.classList.add('hidden');
-        icon.textContent = '►';
-        console.log('Hidden months for year:', yearId);
-    }
-}
 
-// Table sorting functionality
-function sortTable(tableId, columnIndex, isNumeric = false) {
-    const table = document.getElementById(tableId);
-    if (!table) return;
-    
-    const tbody = table.querySelector('tbody');
-    const rows = Array.from(tbody.querySelectorAll('tr:not(.hidden)'));
-    
-    // Одоогийн эрэмбэ шалгах
-    const currentOrder = table.dataset.sortOrder || 'asc';
-    const newOrder = currentOrder === 'asc' ? 'desc' : 'asc';
-    table.dataset.sortOrder = newOrder;
-    
-    rows.sort((a, b) => {
-        const aCell = a.cells[columnIndex];
-        const bCell = b.cells[columnIndex];
-        
-        if (!aCell || !bCell) return 0;
-        
-        let aVal = aCell.textContent.trim();
-        let bVal = bCell.textContent.trim();
-        
-        if (isNumeric) {
-            // Тоон утгыг цэвэрлэх (,₮ гэх мэт)
-            aVal = parseFloat(aVal.replace(/[,₮]/g, '')) || 0;
-            bVal = parseFloat(bVal.replace(/[,₮]/g, '')) || 0;
-            return newOrder === 'asc' ? aVal - bVal : bVal - aVal;
-        } else {
-            // Текст эрэмбэлэх
-            return newOrder === 'asc' 
-                ? aVal.localeCompare(bVal, 'mn') 
-                : bVal.localeCompare(aVal, 'mn');
+    // ---- Хүснэгт (задаргаа, өдөр): эрэмбэлэх, хайх, хуудаслах ----
+    const ROWS = TAB === 'daily' ? DATA.daily : DATA.rows;
+    const DOW = ['', 'Даваа', 'Мягмар', 'Лхагва', 'Пүрэв', 'Баасан', 'Бямба', 'Ням'];
+    ROWS.forEach((r) => { r._s = `${r.name || ''} ${r.id || ''} ${r.group || ''} ${r.channel || ''} ${r.date || ''}`.toLowerCase(); });
+    const state = { sort: TAB === 'daily' ? 'date' : 'revenue', desc: true, q: '', page: 0, size: 50 };
+    const DRILL = { product: ['item', 'customer'], customer: ['customer', 'product'], channel: ['channel', 'product'], group: ['group', 'product'], seller: ['seller', 'customer'], warehouse: ['warehouse', 'product'] };
+    function drill(r) {
+        if (!DRILL[TAB] || r.id === null || r.id === undefined || r.id === '') return;
+        const [param, nextTab] = DRILL[TAB];
+        const q = new URLSearchParams(QUERY);
+        q.delete(param); q.append(param, r.id); q.set('tab', nextTab);
+        window.location.search = q.toString();
+    }
+    function list() {
+        const q = state.q.trim().toLowerCase();
+        const out = q ? ROWS.filter((r) => r._s.includes(q)) : ROWS.slice();
+        const k = state.sort;
+        out.sort((a, b) => { const va = a[k] ?? '', vb = b[k] ?? ''; const c = typeof va === 'string' ? va.localeCompare(vb, 'mn') : va - vb; return state.desc ? -c : c; });
+        return out;
+    }
+    function render() {
+        const rows = list(), pages = Math.max(1, Math.ceil(rows.length / state.size));
+        state.page = Math.min(state.page, pages - 1);
+        const slice = rows.slice(state.page * state.size, (state.page + 1) * state.size);
+        const total = ROWS.reduce((s, r) => s + r.revenue, 0) || 1;
+        document.getElementById('sr-tbody').innerHTML = slice.map((r, i) => {
+            const first = TAB === 'daily'
+                ? `<td class="l">${r.date} <span class="chip">${DOW[r.dow]}</span></td>`
+                : `<td class="l text-gray-400">${state.page * state.size + i + 1}</td><td class="l"><div class="name-cell"><span class="font-medium text-gray-900" title="${esc(r.name)}">${esc(r.name)}</span>${r.group ? `<span class="chip">${esc(r.group)}</span>` : ''}${r.channel ? `<span class="chip">${esc(r.channel)}</span>` : ''}</div></td>`;
+            const share = r.revenue / total * 100;
+            return `<tr class="${DRILL[TAB] ? 'click' : ''}" data-i="${ROWS.indexOf(r)}" ${DRILL[TAB] ? 'tabindex="0"' : ''}>${first}
+                <td class="font-semibold">${money(r.revenue)}</td>
+                <td><span class="share"><span class="text-gray-600">${pct1(share)}</span><span class="mini"><b style="width:${Math.min(share, 100)}%"></b></span></span></td>
+                <td class="${r.profit < 0 ? 'neg' : ''}">${money(r.profit)}</td><td>${pct1(r.margin)}</td>
+                <td>${int(r.orders)}</td><td>${int(TAB === 'daily' ? r.customers : r.count)}</td><td>${int(r.qty)}</td>
+                ${TAB === 'customer' ? `<td class="text-gray-600">${r.last_date || ''}</td>` : ''}</tr>`;
+        }).join('') || '<tr><td colspan="10" class="l" style="padding:2.5rem;text-align:center;color:var(--muted)">Шүүлтэд тохирох мөр алга</td></tr>';
+        const sum = (k) => rows.reduce((s, r) => s + r[k], 0);
+        const nonvat = sum('nonvat');
+        document.getElementById('sr-tfoot').innerHTML = `<tr><td class="l" ${TAB === 'daily' ? '' : 'colspan="2"'}>Нийт · ${int(rows.length)} мөр</td><td>${money(sum('revenue'))}</td><td></td>
+            <td>${money(sum('profit'))}</td><td>${pct1(nonvat ? sum('profit') / nonvat * 100 : 0)}</td><td>${int(sum('orders'))}</td><td></td><td>${int(sum('qty'))}</td>${TAB === 'customer' ? '<td></td>' : ''}</tr>`;
+        document.getElementById('page-info').textContent = rows.length ? `${int(state.page * state.size + 1)}–${int(Math.min((state.page + 1) * state.size, rows.length))} / ${int(rows.length)}` : '';
+        const pager = document.getElementById('pager'); pager.innerHTML = '';
+        if (pages > 1) {
+            const btn = (label, page, disabled, active) => { const b = document.createElement('button'); b.type = 'button'; b.textContent = label; b.disabled = disabled;
+                b.className = `min-w-[2rem] px-2 py-1 rounded-md text-sm ${active ? 'bg-gray-900 text-white' : 'hover:bg-gray-100 text-gray-700'} disabled:opacity-30`;
+                b.addEventListener('click', () => { state.page = page; render(); }); pager.append(b); };
+            btn('‹', state.page - 1, state.page === 0);
+            const from = Math.max(0, Math.min(state.page - 2, pages - 5));
+            for (let p = from; p < Math.min(pages, from + 5); p++) btn(String(p + 1), p, false, p === state.page);
+            btn('›', state.page + 1, state.page >= pages - 1);
         }
-    });
-    
-    // Эрэмбэлсэн мөрүүдийг буцааж оруулах
-    rows.forEach(row => tbody.appendChild(row));
-    
-    // Header icons шинэчлэх
-    const headers = table.querySelectorAll('th[onclick]');
-    headers.forEach(th => {
-        th.innerHTML = th.innerHTML.replace(/[▲▼]/g, '');
-    });
-    
-    const currentHeader = table.querySelectorAll('th')[columnIndex];
-    if (currentHeader) {
-        currentHeader.innerHTML += newOrder === 'asc' ? ' ▲' : ' ▼';
+        document.querySelectorAll('#sr-table thead th[data-sort]').forEach((th) => {
+            const on = th.dataset.sort === state.sort;
+            th.classList.toggle('sorted', on); th.querySelector('.arrow').textContent = on ? (state.desc ? '↓' : '↑') : '↕';
+            th.setAttribute('aria-sort', on ? (state.desc ? 'descending' : 'ascending') : 'none');
+        });
     }
-}
+    document.querySelectorAll('#sr-table thead th[data-sort]').forEach((th) => th.addEventListener('click', () => {
+        const k = th.dataset.sort; state.desc = state.sort === k ? !state.desc : !['name', 'date'].includes(k) || k === 'date'; state.sort = k; state.page = 0; render();
+    }));
+    let st; document.getElementById('table-search').addEventListener('input', (e) => { clearTimeout(st); st = setTimeout(() => { state.q = e.target.value; state.page = 0; render(); }, 120); });
+    document.getElementById('page-size').addEventListener('change', (e) => { state.size = Number(e.target.value); state.page = 0; render(); });
+    const tbody = document.getElementById('sr-tbody');
+    tbody.addEventListener('click', (e) => { const tr = e.target.closest('tr[data-i]'); if (tr) drill(ROWS[Number(tr.dataset.i)]); });
+    tbody.addEventListener('keydown', (e) => { const tr = e.target.closest('tr[data-i]'); if (tr && e.key === 'Enter') drill(ROWS[Number(tr.dataset.i)]); });
+    render();
 
-// Choices.js initialization - Searchable dropdown
-document.addEventListener('DOMContentLoaded', function() {
-    // Бараагаар tab-ын dropdown-ууд
-    const productSelect = document.getElementById('product-select');
-    const customerSelect = document.getElementById('customer-select');
-    
-    if (productSelect) {
-        new Choices(productSelect, {
-            searchEnabled: true,
-            searchPlaceholderValue: 'Хайх...',
-            noResultsText: 'Илэрц олдсонгүй',
-            itemSelectText: 'Сонгох',
-            removeItemButton: false,
-            shouldSort: false,
-            placeholder: true,
-            placeholderValue: 'Бүх бараа'
-        });
+    if (TAB === 'daily') {
+        const pts = ROWS.slice().reverse().map((r) => ({ ...r, label: r.date.slice(5).replace('-', '.') }));
+        onResize(() => chart(pts, [{ key: 'revenue', label: 'Орлого', color: 'var(--series-1)', type: 'bar' }],
+            (p) => `<div class="t-head">${p.date} · ${DOW[p.dow]}</div><div class="t-row"><span>Орлого</span><b>${money(p.revenue)}</b></div>
+                    <div class="t-row"><span>Захиалга</span><span>${int(p.orders)}</span></div><div class="t-row"><span>Харилцагч</span><span>${int(p.customers)}</span></div>`));
+        const byDow = [1, 2, 3, 4, 5, 6, 7].map((d) => { const rs = ROWS.filter((r) => r.dow === d); return { d, avg: rs.length ? rs.reduce((s, r) => s + r.revenue, 0) / rs.length : 0, n: rs.length }; });
+        const max = Math.max(...byDow.map((x) => x.avg)) || 1;
+        document.getElementById('weekday').innerHTML = byDow.map((x) => `<div class="bar-row" style="cursor:default"><div class="bar-label">${DOW[x.d]} <span class="sr-sub">· ${x.n} өдөр</span></div>
+            <div class="bar-track"><div class="bar-fill" style="width:${x.avg / max * 100}%"></div></div><div class="bar-value" title="${money(x.avg)}">${compact(x.avg)}</div></div>`).join('');
+    } else {
+        const top = ROWS.slice(0, 10), max = top[0]?.revenue || 1, total = ROWS.reduce((s, r) => s + r.revenue, 0) || 1;
+        document.getElementById('top-share').textContent = top.length ? `Нийт орлогын ${pct1(top.reduce((s, r) => s + r.revenue, 0) / total * 100)}` : '';
+        const box = document.getElementById('top-list');
+        box.innerHTML = top.map((r, i) => `<div class="bar-row" tabindex="0" data-i="${i}"><div class="bar-label" title="${esc(r.name)}"><span class="bar-rank">${i + 1}</span>${esc(r.name)}</div>
+            <div class="bar-track"><div class="bar-fill" style="width:0%"></div></div><div class="bar-value" title="${money(r.revenue)}">${compact(r.revenue)}</div></div>`).join('') || '<p class="sr-sub">Өгөгдөл алга</p>';
+        requestAnimationFrame(() => box.querySelectorAll('.bar-fill').forEach((b, i) => { b.style.width = `${Math.max(top[i].revenue / max * 100, 0.5)}%`; }));
+        box.addEventListener('click', (e) => { const r = e.target.closest('[data-i]'); if (r) drill(top[Number(r.dataset.i)]); });
+        box.addEventListener('keydown', (e) => { const r = e.target.closest('[data-i]'); if (r && e.key === 'Enter') drill(top[Number(r.dataset.i)]); });
     }
-    
-    if (customerSelect) {
-        new Choices(customerSelect, {
-            searchEnabled: true,
-            searchPlaceholderValue: 'Хайх...',
-            noResultsText: 'Илэрц олдсонгүй',
-            itemSelectText: 'Сонгох',
-            removeItemButton: false,
-            shouldSort: false,
-            placeholder: true,
-            placeholderValue: 'Бүх харилцагч'
-        });
-    }
-    
-    // Харилцагчаар tab-ын dropdown-ууд
-    const customerSelectMain = document.getElementById('customer-select-main');
-    const productSelectMain = document.getElementById('product-select-main');
-    
-    if (customerSelectMain) {
-        new Choices(customerSelectMain, {
-            searchEnabled: true,
-            searchPlaceholderValue: 'Хайх...',
-            noResultsText: 'Илэрц олдсонгүй',
-            itemSelectText: 'Сонгох',
-            removeItemButton: false,
-            shouldSort: false,
-            placeholder: true,
-            placeholderValue: 'Бүх харилцагч'
-        });
-    }
-    
-    if (productSelectMain) {
-        new Choices(productSelectMain, {
-            searchEnabled: true,
-            searchPlaceholderValue: 'Хайх...',
-            noResultsText: 'Илэрц олдсонгүй',
-            itemSelectText: 'Сонгох',
-            removeItemButton: false,
-            shouldSort: false,
-            placeholder: true,
-            placeholderValue: 'Бүх бараа'
-        });
-    }
-});
+})();
 </script>
 {% endblock %}

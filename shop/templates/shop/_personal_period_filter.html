@@ -1,0 +1,68 @@
+{% load l10n %}
+{% comment %}
+Хувийн мэдээллийн цалин / нэмэгдлийн шүүлтүүр (_personal_period-ийн context). url_name - "энэ сар руу буцах" холбоос.
+Нэмэлт сонголтыг (карт/бэлэн, хүснэгт) extra_name / extra_label / extra_value / extra_choices-аар дамжуулна.
+{% endcomment %}
+<form method="get" id="period-filter" class="bg-white rounded-lg shadow p-4 mb-6 flex flex-wrap items-end gap-3">
+    <div>
+        <span class="block text-sm font-medium mb-1">Харах хэлбэр</span>
+        <div class="inline-flex rounded-lg border border-gray-300 overflow-hidden">
+            <label class="cursor-pointer">
+                <input type="radio" name="view" value="month" class="sr-only peer" {% if mode == 'month' %}checked{% endif %} onchange="this.form.submit()">
+                <span class="block px-4 py-2 peer-checked:bg-primary peer-checked:text-white hover:bg-gray-50 peer-checked:hover:bg-primary">Сараар</span>
+            </label>
+            <label class="cursor-pointer border-l border-gray-300">
+                <input type="radio" name="view" value="year" class="sr-only peer" {% if mode == 'year' %}checked{% endif %} onchange="this.form.submit()">
+                <span class="block px-4 py-2 peer-checked:bg-primary peer-checked:text-white hover:bg-gray-50 peer-checked:hover:bg-primary">Жилээр</span>
+            </label>
+        </div>
+    </div>
+
+    {% if mode == 'month' %}
+    <a href="?view=month&year={{ prev_month.year|unlocalize }}&month={{ prev_month.month }}{% if extra_value and extra_value != 'all' %}&{{ extra_name }}={{ extra_value }}{% endif %}"
+       class="bg-white border border-gray-300 text-gray-700 px-3 py-2 rounded-lg hover:bg-gray-50 transition" title="Өмнөх сар">←</a>
+    {% endif %}
+    <div>
+        <label for="pf-year" class="block text-sm font-medium mb-1">Он</label>
+        <select id="pf-year" name="year" class="border border-gray-300 rounded-lg px-3 py-2" onchange="this.form.submit()">
+            {% for y in years %}
+            <option value="{{ y|unlocalize }}" {% if y == year %}selected{% endif %}>{{ y|unlocalize }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    {% if mode == 'month' %}
+    <div>
+        <label for="pf-month" class="block text-sm font-medium mb-1">Сар</label>
+        <select id="pf-month" name="month" class="border border-gray-300 rounded-lg px-3 py-2" onchange="this.form.submit()">
+            {% for num, label in months %}
+            <option value="{{ num }}" {% if num == month %}selected{% endif %}{% if year == current_year and num not in year_months %} disabled{% endif %}>{{ label }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    {% if next_month %}
+    <a href="?view=month&year={{ next_month.year|unlocalize }}&month={{ next_month.month }}{% if extra_value and extra_value != 'all' %}&{{ extra_name }}={{ extra_value }}{% endif %}"
+       class="bg-white border border-gray-300 text-gray-700 px-3 py-2 rounded-lg hover:bg-gray-50 transition" title="Дараагийн сар">→</a>
+    {% else %}
+    <span class="border border-gray-200 text-gray-300 px-3 py-2 rounded-lg cursor-not-allowed" title="Ирээдүйн сар">→</span>
+    {% endif %}
+    {% else %}
+    <input type="hidden" name="month" value="{{ month }}">
+    {% endif %}
+
+    {% if extra_choices %}
+    <div>
+        <label for="pf-extra" class="block text-sm font-medium mb-1">{{ extra_label }}</label>
+        <select id="pf-extra" name="{{ extra_name }}" class="border border-gray-300 rounded-lg px-3 py-2" onchange="this.form.submit()">
+            <option value="all" {% if extra_value == 'all' %}selected{% endif %}>Бүгд</option>
+            {% for value, label in extra_choices %}
+            <option value="{{ value }}" {% if value == extra_value %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    {% endif %}
+
+    <noscript><button type="submit" class="bg-primary text-white px-6 py-2 rounded-lg hover:bg-green-700 transition">Харах</button></noscript>
+    {% if mode == 'year' and year != current_year or mode == 'month' and not is_current_month %}
+    <a href="{% url url_name %}{% if mode == 'year' %}?view=year{% endif %}" class="text-sm text-primary underline py-2">{% if mode == 'year' %}Энэ он{% else %}Энэ сар{% endif %} руу буцах</a>
+    {% endif %}
+</form>

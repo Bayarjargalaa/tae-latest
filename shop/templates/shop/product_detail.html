@@ -4,15 +4,15 @@
 {% block title %}{{ product.name }} - EuroFoods{% endblock %}
 
 {% block content %}
-<div class="container mx-auto px-4 py-8">
+<div class="container mx-auto px-2 sm:px-4 py-4 lg:py-8">
     <div class="bg-white rounded-lg shadow-lg overflow-hidden">
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 p-8">
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 lg:gap-8 p-4 lg:p-8">
             <!-- Product Images -->
-            <div>
+            <div class="min-w-0">
                 <div class="mb-4">
-                    <img src="{{ product|product_image_url }}" 
+                    <img src="{{ product|product_image_url }}"
                          alt="{{ product.name }}"
-                         class="w-full h-96 object-contain bg-gray-50 rounded-lg">
+                         class="w-full h-64 sm:h-96 object-contain bg-gray-50 rounded-lg">
                 </div>
                 
                 <!-- Thumbnail Images -->
@@ -36,7 +36,7 @@
             </div>
             
             <!-- Product Info -->
-            <div>
+            <div class="min-w-0">
                 <div class="mb-4">
                     <span class="text-sm text-gray-500 uppercase">{{ product.itemcategoryname|default:"Бусад" }}</span>
                     {% if product.brandname %}
@@ -45,7 +45,7 @@
                     {% endif %}
                 </div>
                 
-                <h1 class="text-3xl font-bold mb-4">
+                <h1 class="text-2xl lg:text-3xl font-bold mb-4 break-words">
                     {% if product.extension and product.extension.name_mn %}
                         {{ product.extension.name_mn }}
                     {% else %}
@@ -63,7 +63,7 @@
                 <!-- Price -->
                 <div class="mb-6">
                     {% if product.saleprice %}
-                    <div class="text-4xl font-bold text-primary">
+                    <div class="text-3xl lg:text-4xl font-bold text-primary">
                         {{ product.saleprice|floatformat:0 }}₮
                     </div>
                     {% if product.baseprice and product.baseprice != product.saleprice %}
@@ -98,9 +98,9 @@
                     {% endif %}
                     
                     {% if product.manufacturername %}
-                    <div class="flex justify-between">
-                        <span class="text-gray-600">Үйлдвэрлэгч:</span>
-                        <span class="font-medium">{{ product.manufacturername }}</span>
+                    <div class="flex justify-between gap-3">
+                        <span class="text-gray-600 shrink-0">Үйлдвэрлэгч:</span>
+                        <span class="font-medium text-right break-words min-w-0">{{ product.manufacturername }}</span>
                     </div>
                     {% endif %}
                 </div>
@@ -124,9 +124,9 @@
     
     <!-- Related Products -->
     {% if related_products %}
-    <div class="mt-12">
-        <h2 class="text-2xl font-bold mb-6">Төстэй бүтээгдэхүүн</h2>
-        <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+    <div class="mt-8 lg:mt-12">
+        <h2 class="text-xl lg:text-2xl font-bold mb-4 lg:mb-6">Төстэй бүтээгдэхүүн</h2>
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-3 lg:gap-4">
             {% for related in related_products %}
             <a href="{% url 'shop:product_detail' related.id %}" 
                class="bg-white rounded-lg shadow hover:shadow-lg transition p-4">

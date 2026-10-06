@@ -96,6 +96,17 @@ WSGI_APPLICATION = 'core.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
 
+# Кэш - файл дээр: вэб сервер болон синк (import_views) процесс хуваалцана - синкийн дараа тайлангийн кэшийг
+# урьдчилан бэлдэхэд (shop.services.sales_report.warm_cache)
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.filebased.FileBasedCache',
+        'LOCATION': BASE_DIR / '.cache',
+        'TIMEOUT': 3 * 60 * 60,
+        'OPTIONS': {'MAX_ENTRIES': 3000},
+    }
+}
+
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',

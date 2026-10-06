@@ -1,0 +1,480 @@
+{% extends 'base.html' %}
+
+{% block title %}Барааны өртөг - Euro Foods{% endblock %}
+
+{% block hide_mobile_menu %}hidden{% endblock %}
+
+{% block extra_css %}
+<style>
+    .viz-root {
+        --surface: #ffffff;
+        --ink: #111827;
+        --ink-2: #4b5563;
+        --muted: #6b7280;
+        --grid: #eeeeec;
+        --axis: #d1d5db;
+        --hairline: rgba(17, 24, 39, 0.08);
+        --series-avg: #2a78d6;     /* дундаж өртөг - ангиллын 1-р өнгө */
+        --series-landed: #eb6834;  /* татан авалтын өртөг (НӨАТ-тэй) - ангиллын 2-р өнгө */
+        --series-novat: #1baf7a;   /* татан авалтын өртөг (НӨАТ-гүй) - ангиллын 3-р өнгө */
+        color: var(--ink);
+    }
+    .ic-filters .choices { margin-bottom: 0; }
+    .ic-filters .choices__inner { min-height: 42px; border-radius: 0.5rem; background: #fff; }
+    .ht-preset { font-size: .75rem; padding: .25rem .6rem; border-radius: 999px; border: 1px solid #e5e7eb; color: #4b5563; background: #fff; }
+    .ht-preset:hover { background: #f3f4f6; color: #111827; }
+    .viz-card { background: var(--surface); border: 1px solid var(--hairline); border-radius: 1rem; box-shadow: 0 1px 2px rgba(0,0,0,.04); }
+
+    .ic-table { width: 100%; font-size: .82rem; border-collapse: separate; border-spacing: 0; }
+    .ic-table > thead > tr > th { position: sticky; top: 0; z-index: 2; background: #f9fafb; color: var(--ink-2); font-weight: 600;
+                         text-align: right; padding: .6rem .75rem; border-bottom: 1px solid var(--axis); white-space: nowrap;
+                         cursor: pointer; user-select: none; }
+    .ic-table > thead > tr > th:hover { background: #f1f1ef; }
+    .ic-table > thead > tr > th.text-left { text-align: left; }
+    .ic-table > tbody > tr > td { padding: .55rem .75rem; border-bottom: 1px solid var(--grid); text-align: right;
+                         font-variant-numeric: tabular-nums; vertical-align: top; }
+    .ic-table > tbody > tr > td:first-child { text-align: left; min-width: 300px; max-width: 420px; }
+    .ic-table > tbody > tr > td:not(:first-child) { white-space: nowrap; }
+    .ic-table > tbody > tr.ic-detail > td { max-width: none; min-width: 0; white-space: normal; }
+    .ic-table > thead > tr > th:not(:first-child) { white-space: normal; min-width: 96px; line-height: 1.2; }
+    .ic-row { cursor: pointer; }
+    .ic-row:hover td, .ic-row:focus-visible td { background: #fafaf8; outline: none; }
+    .ic-row.open td { background: #f5f8fd; }
+    .ic-sub { display: block; font-size: .7rem; color: var(--muted); margin-top: .1rem; }
+    .ic-chg { font-size: .75rem; font-weight: 600; white-space: nowrap; }
+    .ic-key { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: .35rem; vertical-align: -1px; }
+
+    .viz-tooltip { position: fixed; z-index: 60; pointer-events: none; background: #fff; border: 1px solid var(--hairline);
+                   border-radius: .6rem; box-shadow: 0 8px 24px rgba(0,0,0,.12); padding: .55rem .7rem; font-size: .78rem;
+                   min-width: 170px; opacity: 0; transition: opacity .1s; }
+    .viz-tooltip.show { opacity: 1; }
+    .viz-tooltip .tt-title { color: var(--muted); font-size: .72rem; margin-bottom: .3rem; }
+    .viz-tooltip .tt-row { display: flex; align-items: center; gap: .45rem; margin-top: .15rem; }
+    .viz-tooltip .tt-key { width: 12px; height: 2px; border-radius: 1px; flex: none; }
+    .viz-tooltip .tt-val { font-weight: 650; font-variant-numeric: tabular-nums; }
+    .viz-tooltip .tt-name { color: var(--ink-2); }
+
+    .mini-table { width: 100%; font-size: .78rem; }
+    .mini-table th { text-align: right; font-weight: 600; color: var(--ink-2); padding: .35rem .5rem; border-bottom: 1px solid var(--axis); white-space: nowrap; }
+    .mini-table td { text-align: right; padding: .3rem .5rem; border-bottom: 1px solid var(--grid); font-variant-numeric: tabular-nums; }
+    .mini-table th:first-child, .mini-table td:first-child { text-align: left; }
+    .legend { display: flex; flex-wrap: wrap; gap: .35rem 1rem; font-size: .75rem; color: var(--ink-2); }
+    .legend span { display: inline-flex; align-items: center; gap: .4rem; }
+    .legend i { width: 14px; height: 2px; border-radius: 1px; display: inline-block; }
+    /* Утсан дээр барааны нэрийн багана дэлгэцийг бүхэлд нь эзлэхгүй */
+    @media (max-width: 639px) {
+        .ic-table { font-size: .75rem; }
+        .ic-table > tbody > tr > td:first-child { min-width: 170px; max-width: 60vw; }
+        .ic-table > thead > tr > th:not(:first-child) { min-width: 80px; }
+        .ic-table > thead > tr > th, .ic-table > tbody > tr > td { padding: .45rem .5rem; }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="flex min-h-screen bg-gray-50">
+    {% include 'shop/_sidebar.html' with active_page='item_costs' %}
+
+    <main class="flex-1 p-2 lg:p-8 lg:ml-0 min-w-0">
+        <div class="mb-4 lg:mb-6">
+            <h1 class="text-2xl lg:text-3xl font-bold text-gray-900 tracking-tight">🧾 Барааны өртөг</h1>
+            <p class="text-gray-500 mt-1 text-sm">
+                <span class="ic-key" style="background:#eb6834"></span>Татан авалтын өртөг НӨАТ-тэй
+                • <span class="ic-key" style="background:#1baf7a"></span>НӨАТ-гүй (÷ 1.1) - дараагийн татан авалт хүртэл хүчинтэй
+                • <span class="ic-key" style="background:#2a78d6"></span>Дундаж өртөг (бараа материалын хөдөлгөөний өртөг)
+                • {{ date_from }} ~ {{ date_to }}
+            </p>
+        </div>
+
+        <form method="get" id="ic-form" class="ic-filters bg-white rounded-2xl border border-gray-200 shadow-sm p-4 mb-6">
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-3">
+                <div>
+                    <label class="block text-sm font-medium mb-1">Эхлэх огноо</label>
+                    <input type="date" name="date_from" id="ic-date-from" value="{{ date_from }}" class="border border-gray-300 rounded-lg px-3 py-2 w-full">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium mb-1">Дуусах огноо (өртгийг энэ өдрөөр харуулна)</label>
+                    <input type="date" name="date_to" id="ic-date-to" value="{{ date_to }}" class="border border-gray-300 rounded-lg px-3 py-2 w-full">
+                </div>
+                <div class="md:col-span-2">
+                    <label class="block text-sm font-medium mb-1">Бараа (олноор сонгож болно)</label>
+                    <select name="item" id="ic-item-select" multiple>
+                        {% for item_id, name in item_options %}
+                        <option value="{{ item_id }}" {% if item_id in filters.items %}selected{% endif %}>{{ item_id }} - {{ name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+            <div class="flex flex-wrap items-center gap-2 mb-4">
+                <span class="text-xs text-gray-500 mr-1">Хугацаа:</span>
+                <button type="button" class="ht-preset" data-preset="month">Энэ сар</button>
+                <button type="button" class="ht-preset" data-preset="last3">Сүүлийн 3 сар</button>
+                <button type="button" class="ht-preset" data-preset="year">Энэ он</button>
+                <button type="button" class="ht-preset" data-preset="prevyear">Өнгөрсөн он</button>
+                <button type="button" class="ht-preset" data-preset="last12">Сүүлийн 12 сар</button>
+                <button type="button" class="ht-preset" data-preset="last36">Сүүлийн 3 жил</button>
+            </div>
+            <div class="flex flex-wrap items-center gap-x-6 gap-y-3">
+                <label class="flex items-center gap-2 text-sm font-medium">
+                    <input type="checkbox" name="landed_only" value="true" {% if filters.landed_only %}checked{% endif %} class="w-4 h-4 accent-primary">
+                    Зөвхөн хугацаанд татан авалт хийгдсэн бараа
+                </label>
+                <label class="flex items-center gap-2 text-sm font-medium">
+                    <input type="checkbox" name="stock_only" value="true" {% if filters.stock_only %}checked{% endif %} class="w-4 h-4 accent-primary">
+                    Үлдэгдэлтэй бараа
+                </label>
+                <div class="flex gap-2 ml-auto">
+                    <button type="submit" class="bg-primary text-white px-6 py-2 rounded-lg hover:bg-green-700 transition">Шүүх</button>
+                    <a href="{% url 'shop:item_costs' %}" class="bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50 transition">Цэвэрлэх</a>
+                    <a href="{% url 'shop:item_costs_export' %}?{{ querystring }}"
+                       class="bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50 transition whitespace-nowrap">📥 Excel рүү гаргах</a>
+                </div>
+            </div>
+        </form>
+
+        <div class="viz-root">
+            <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-4 mb-5" id="ic-stats"></div>
+
+            <div class="viz-card">
+                <div class="flex flex-wrap items-center gap-3 p-3 border-b border-gray-100">
+                    <input type="search" id="ic-search" placeholder="Код эсвэл нэрээр хайх..."
+                           class="border border-gray-300 rounded-lg px-3 py-1.5 text-sm w-64 max-w-full">
+                    <span class="text-xs text-gray-500" id="ic-count"></span>
+                    <span class="text-xs text-gray-500 ml-auto">Баганын толгой дээр дарж эрэмбэлнэ • Мөрөн дээр дарж өртгийн түүхийг харна</span>
+                </div>
+                <div class="overflow-auto" style="max-height: 78vh;">
+                    <table class="ic-table">
+                        <thead id="ic-head"></thead>
+                        <tbody id="ic-body"></tbody>
+                    </table>
+                </div>
+            </div>
+            <div id="viz-tooltip" class="viz-tooltip" role="tooltip"></div>
+        </div>
+    </main>
+</div>
+
+{{ costs|json_script:"ic-data" }}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    new Choices('#ic-item-select', {
+        removeItemButton: true, searchEnabled: true, searchPlaceholderValue: 'Хайх...', noResultsText: 'Илэрц олдсонгүй',
+        noChoicesText: 'Сонгох зүйлгүй', itemSelectText: '', shouldSort: false, placeholder: true, placeholderValue: 'Бүх бараа',
+        // "код - нэр" дотроос аль ч хэсгийг нь бараг яг таараагаар хайна (анхдагч нь бүдэг хайлт, 4 илэрц)
+        searchResultLimit: 50,
+        searchFields: ['label'],
+        fuseOptions: { threshold: 0.1, ignoreLocation: true },
+    });
+    const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    document.querySelectorAll('.ht-preset').forEach((button) => {
+        button.addEventListener('click', () => {
+            const today = new Date(), y = today.getFullYear(), m = today.getMonth();
+            const ranges = {
+                month: [new Date(y, m, 1), today], last3: [new Date(y, m - 2, 1), today],
+                year: [new Date(y, 0, 1), today], prevyear: [new Date(y - 1, 0, 1), new Date(y - 1, 11, 31)],
+                last12: [new Date(y, m - 11, 1), today], last36: [new Date(y - 3, m + 1, 1), today],
+            };
+            const [from, to] = ranges[button.dataset.preset];
+            document.getElementById('ic-date-from').value = iso(from);
+            document.getElementById('ic-date-to').value = iso(to);
+            document.getElementById('ic-form').submit();
+        });
+    });
+
+    const D = JSON.parse(document.getElementById('ic-data').textContent);
+    const head = document.getElementById('ic-head');
+    const body = document.getElementById('ic-body');
+    const moneyFmt = new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const intFmt = new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 });
+    const qtyFmt = new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 });
+    const money = (v) => (v === null || v === undefined ? '—' : moneyFmt.format(v));
+    const dot = (s) => (s ? s.replaceAll('-', '.') : '');
+    const cssVar = (name) => getComputedStyle(document.querySelector('.viz-root')).getPropertyValue(name).trim();
+
+    // Өөрчлөлтийн хувь: сум + текст (зөвхөн өнгөөр биш)
+    function change(v) {
+        const span = document.createElement('span');
+        span.className = 'ic-chg';
+        if (v === null || v === undefined) { span.textContent = '—'; span.style.color = 'var(--muted)'; return span; }
+        const flat = Math.abs(v) < 0.0005;
+        span.textContent = flat ? '■ 0.0%' : `${v > 0 ? '▲' : '▼'} ${Math.abs(v * 100).toFixed(1)}%`;
+        span.style.color = flat ? 'var(--muted)' : 'var(--ink-2)';
+        return span;
+    }
+
+    // ---------- Статистик ----------
+    (function renderStats() {
+        const rows = D.rows;
+        const landedItems = rows.filter((r) => r.landed_count > 0).length;
+        const landedDocs = new Set(rows.flatMap((r) => r.events.map((e) => e.number))).size;
+        const stockValue = rows.reduce((s, r) => s + (r.stock_value || 0), 0);
+        const withBoth = rows.filter((r) => r.diff !== null);
+        const above = withBoth.filter((r) => r.diff > 0.0005).length;
+        const tiles = [
+            ['Бараа', intFmt.format(rows.length), 'өртгийн мэдээлэлтэй'],
+            ['Хугацаанд татан авалт', `${intFmt.format(landedDocs)} баримт`, `${intFmt.format(landedItems)} бараа`],
+            ['Дундаж > татан авалтын өртөг (НӨАТ-гүй)', intFmt.format(above), `${intFmt.format(withBoth.length)} бараанаас`],
+            ['Одоогийн үлдэгдлийн өртөг', `${intFmt.format(stockValue)}₮`, 'үлдэгдэл × дундаж өртөг'],
+        ];
+        document.getElementById('ic-stats').replaceChildren(...tiles.map(([label, value, sub]) => {
+            const card = document.createElement('div'); card.className = 'viz-card p-4 min-w-0';
+            const l = document.createElement('div'); l.className = 'text-xs font-medium text-gray-500'; l.textContent = label;
+            const v = document.createElement('div'); v.className = 'text-xl lg:text-2xl font-semibold mt-1'; v.textContent = value;
+            const s = document.createElement('div'); s.className = 'text-xs text-gray-400 mt-0.5'; s.textContent = sub;
+            card.append(l, v, s);
+            return card;
+        }));
+    })();
+
+    // ---------- Хүснэгт ----------
+    const COLUMNS = [
+        { key: 'name', label: 'Бараа', left: true },
+        { key: 'landed_end', label: 'Татан авалтын өртөг (НӨАТ-тэй)' },
+        { key: 'landed_end_novat', label: 'Татан авалтын өртөг (НӨАТ-гүй)' },
+        { key: 'avg_end', label: 'Дундаж өртөг' },
+        { key: 'diff', label: 'Дундаж − татан авалт (НӨАТ-гүй)' },
+        { key: 'avg_change', label: 'Дундаж өртгийн өөрчлөлт' },
+        { key: 'landed_count', label: 'Татан авалт' },
+        { key: 'stock_qty', label: 'Одоогийн үлдэгдэл' },
+        { key: 'stock_value', label: 'Үлдэгдлийн өртөг' },
+    ];
+    const state = { sortKey: 'name', sortDir: 1, open: new Set(), search: '' };
+
+    function renderHead() {
+        const tr = document.createElement('tr');
+        COLUMNS.forEach((c) => {
+            const th = document.createElement('th');
+            if (c.left) th.className = 'text-left';
+            th.textContent = c.label + (state.sortKey === c.key ? (state.sortDir === 1 ? ' ▲' : ' ▼') : '');
+            th.addEventListener('click', () => {
+                if (state.sortKey === c.key) state.sortDir = -state.sortDir;
+                else { state.sortKey = c.key; state.sortDir = c.key === 'name' ? 1 : -1; }
+                render();
+            });
+            tr.appendChild(th);
+        });
+        head.replaceChildren(tr);
+    }
+
+    function cell(main, sub) {
+        const td = document.createElement('td');
+        if (main instanceof Node) td.appendChild(main); else td.appendChild(document.createTextNode(main));
+        if (sub) { const s = document.createElement('span'); s.className = 'ic-sub'; s.textContent = sub; td.appendChild(s); }
+        return td;
+    }
+
+    function render() {
+        renderHead();
+        const q = state.search.trim().toLowerCase();
+        // Барааны код эсвэл нэрээр хайна
+        const rows = D.rows.filter((r) => !q || r.id.toLowerCase().includes(q) || r.name.toLowerCase().includes(q));
+        rows.sort((a, b) => {
+            const va = a[state.sortKey], vb = b[state.sortKey];
+            if (va === null || va === undefined) return 1;
+            if (vb === null || vb === undefined) return -1;
+            return (typeof va === 'string' ? va.localeCompare(vb, 'mn') : va - vb) * state.sortDir;
+        });
+        document.getElementById('ic-count').textContent = `${rows.length} бараа`;
+        if (!rows.length) {
+            const tr = document.createElement('tr'); const td = document.createElement('td');
+            td.colSpan = COLUMNS.length; td.className = 'text-center text-gray-500 py-8'; td.textContent = 'Шүүлтэд тохирох бараа олдсонгүй.';
+            tr.appendChild(td); body.replaceChildren(tr); return;
+        }
+        const frag = document.createDocumentFragment();
+        rows.forEach((r) => {
+            const open = state.open.has(r.id);
+            const tr = document.createElement('tr');
+            tr.className = `ic-row${open ? ' open' : ''}`; tr.tabIndex = 0;
+            const name = document.createElement('span');
+            name.textContent = `${open ? '▼' : '►'} ${r.name}`;
+            tr.append(
+                cell(name, `${r.id}${r.measure ? ' • ' + r.measure : ''}`),
+                cell(money(r.landed_end), r.landed_end_date ? `${dot(r.landed_end_date)} • ${r.landed_end_numbers}` : 'татан авалтгүй'),
+                cell(money(r.landed_end_novat)),
+                cell(money(r.avg_end), r.avg_end_date ? dot(r.avg_end_date) : ''),
+                cell(change(r.diff)),
+                cell(change(r.avg_change), r.avg_start !== null ? `эхэнд ${money(r.avg_start)}` : ''),
+                cell(r.landed_count ? `${r.landed_count}` : '—'),
+                cell(r.stock_qty === null ? '—' : qtyFmt.format(r.stock_qty)),
+                cell(r.stock_value === null ? '—' : intFmt.format(r.stock_value)),
+            );
+            const toggle = () => { if (state.open.has(r.id)) state.open.delete(r.id); else state.open.add(r.id); render(); };
+            tr.addEventListener('click', toggle);
+            tr.addEventListener('keydown', (e) => { if (e.key === 'Enter') toggle(); });
+            frag.appendChild(tr);
+            if (open) frag.appendChild(detailRow(r));
+        });
+        body.replaceChildren(frag);
+    }
+
+    document.getElementById('ic-search').addEventListener('input', (e) => { state.search = e.target.value; render(); });
+
+    // ---------- Дэлгэрэнгүй: график + түүх + татан авалтууд ----------
+    function detailRow(r) {
+        const tr = document.createElement('tr');
+        tr.className = 'ic-detail';
+        const td = document.createElement('td');
+        td.colSpan = COLUMNS.length;
+        td.style.background = '#fbfcfe'; td.style.textAlign = 'left';
+        const wrap = document.createElement('div');
+        wrap.className = 'p-2 lg:p-3 grid grid-cols-1 xl:grid-cols-5 gap-4';
+        const chartBox = document.createElement('div'); chartBox.className = 'xl:col-span-3 min-w-0';
+        const tablesBox = document.createElement('div'); tablesBox.className = 'xl:col-span-2 min-w-0 space-y-4';
+        wrap.append(chartBox, tablesBox);
+        td.appendChild(wrap); tr.appendChild(td);
+
+        const legend = document.createElement('div'); legend.className = 'legend mb-2';
+        [['--series-landed', 'Татан авалтын өртөг (НӨАТ-тэй)'], ['--series-novat', 'Татан авалтын өртөг (НӨАТ-гүй)'],
+         ['--series-avg', 'Дундаж өртөг']].forEach(([v, label]) => {
+            const s = document.createElement('span'); const i = document.createElement('i'); i.style.background = `var(${v})`;
+            s.append(i, document.createTextNode(label)); legend.appendChild(s);
+        });
+        const plot = document.createElement('div');
+        chartBox.append(legend, plot);
+        requestAnimationFrame(() => drawChart(plot, r));
+
+        tablesBox.appendChild(miniTable('Өртгийн өөрчлөлт',
+            ['Огноо', 'Дундаж өртөг', 'Татан авалт НӨАТ-тэй', 'НӨАТ-гүй', 'Татан авалт'],
+            r.history.map(([day, avg, landed, novat, note]) => [dot(day), money(avg), money(landed), money(novat), note || ''])));
+        if (r.events.length) {
+            tablesBox.appendChild(miniTable('Хугацаанд хийгдсэн татан авалтууд',
+                ['Огноо', 'Баримт', 'Нийлүүлэгч', 'Тоо', 'Үнэ (валют)', 'Ханш', 'Нэгжийн өртөг', 'Зарах үнэ'],
+                r.events.map((e) => [dot(e.date), e.number, e.vendor, qtyFmt.format(e.qty),
+                    `${qtyFmt.format(e.price)} ${e.currency}`, qtyFmt.format(e.rate), money(e.unit_cost),
+                    e.sale_price ? intFmt.format(e.sale_price) : '—'])));
+        }
+        return tr;
+    }
+
+    function miniTable(title, headers, rows) {
+        const box = document.createElement('div');
+        const h = document.createElement('div'); h.className = 'text-xs font-semibold text-gray-600 mb-1'; h.textContent = title;
+        const scroll = document.createElement('div'); scroll.className = 'overflow-auto max-h-60';
+        const table = document.createElement('table'); table.className = 'mini-table';
+        const hr = table.createTHead().insertRow();
+        headers.forEach((t) => { const th = document.createElement('th'); th.textContent = t; hr.appendChild(th); });
+        const tb = table.createTBody();
+        rows.forEach((cells) => { const tr = tb.insertRow(); cells.forEach((c) => { tr.insertCell().textContent = c; }); });
+        scroll.appendChild(table);
+        box.append(h, scroll);
+        return box;
+    }
+
+    // ---------- Tooltip ----------
+    const tooltip = document.getElementById('viz-tooltip');
+    function showTooltip(x, y, title, rows) {
+        tooltip.replaceChildren();
+        const t = document.createElement('div'); t.className = 'tt-title'; t.textContent = title; tooltip.appendChild(t);
+        rows.forEach(([color, value, name]) => {
+            const row = document.createElement('div'); row.className = 'tt-row';
+            const k = document.createElement('span'); k.className = 'tt-key'; k.style.background = color || 'transparent';
+            const v = document.createElement('span'); v.className = 'tt-val'; v.textContent = value;
+            const n = document.createElement('span'); n.className = 'tt-name'; n.textContent = name;
+            row.append(k, v, n); tooltip.appendChild(row);
+        });
+        tooltip.classList.add('show');
+        const tw = tooltip.offsetWidth, th = tooltip.offsetHeight;
+        let left = x + 14, top = y + 14;
+        if (left + tw > window.innerWidth - 8) left = x - tw - 14;
+        if (top + th > window.innerHeight - 8) top = y - th - 14;
+        tooltip.style.left = `${Math.max(8, left)}px`; tooltip.style.top = `${Math.max(8, top)}px`;
+    }
+    const hideTooltip = () => tooltip.classList.remove('show');
+
+    // Шугаман график: огноо нь бодит хугацааны тэнхлэгээр; татан авалтын өртөг нь шатлал (дараагийн татан авалт хүртэл)
+    function drawChart(plot, r) {
+        const pts = r.history.map(([day, avg, landed, novat, note]) => ({ t: new Date(day).getTime(), day, avg, landed, novat, note }));
+        const values = pts.flatMap((p) => [p.avg, p.landed, p.novat]).filter((v) => v !== null);
+        if (!values.length) { plot.textContent = 'Өртгийн мэдээлэл алга.'; return; }
+        const width = Math.max(plot.clientWidth, 300), height = 240;
+        const minV = Math.min(...values), maxV = Math.max(...values);
+        const pad = (maxV - minV) * 0.12 || maxV * 0.05 || 1;
+        const lo = Math.max(0, minV - pad), hi = maxV + pad;
+        const labelW = Math.max(moneyFmt.format(hi).length, moneyFmt.format(lo).length) * 6.2 + 14;
+        const m = { top: 12, right: 16, bottom: 26, left: labelW };
+        const w = width - m.left - m.right, h = height - m.top - m.bottom;
+        const t0 = pts[0].t, t1 = pts[pts.length - 1].t;
+        const x = (t) => m.left + (t1 === t0 ? w / 2 : ((t - t0) / (t1 - t0)) * w);
+        const y = (v) => m.top + h - ((v - lo) / (hi - lo || 1)) * h;
+        const svgNS = 'http://www.w3.org/2000/svg';
+        const svg = document.createElementNS(svgNS, 'svg');
+        svg.setAttribute('width', width); svg.setAttribute('height', height);
+        svg.setAttribute('role', 'img'); svg.setAttribute('aria-label', `${r.name} - өртгийн түүх`);
+        const el = (tag, attrs, text) => {
+            const node = document.createElementNS(svgNS, tag);
+            Object.entries(attrs).forEach(([k, v]) => node.setAttribute(k, v));
+            if (text !== undefined) node.textContent = text;
+            svg.appendChild(node); return node;
+        };
+        for (let i = 0; i <= 4; i++) {
+            const v = lo + ((hi - lo) * i) / 4;
+            el('line', { x1: m.left, x2: m.left + w, y1: y(v), y2: y(v), stroke: i === 0 ? cssVar('--axis') : cssVar('--grid'), 'stroke-width': 1 });
+            el('text', { x: m.left - 8, y: y(v) + 4, 'text-anchor': 'end', 'font-size': 11, fill: cssVar('--muted'),
+                         style: 'font-variant-numeric: tabular-nums' }, moneyFmt.format(v));
+        }
+        [pts[0], pts[pts.length - 1]].forEach((p, i) => {
+            el('text', { x: x(p.t), y: height - 6, 'text-anchor': i ? 'end' : 'start', 'font-size': 11, fill: cssVar('--muted') }, dot(p.day));
+        });
+        // Татан авалт - шатлалтай шугам; дундаж - цэгүүдийг холбосон шугам
+        const path = (key, step) => {
+            let d = '', pen = 'M', prev = null;
+            pts.forEach((p) => {
+                const v = p[key];
+                if (v === null) { pen = 'M'; prev = null; return; }
+                if (step && prev !== null) d += `L${x(p.t).toFixed(1)},${y(prev).toFixed(1)}`;
+                d += `${pen}${x(p.t).toFixed(1)},${y(v).toFixed(1)}`; pen = 'L'; prev = v;
+            });
+            return d;
+        };
+        el('path', { d: path('landed', true), fill: 'none', stroke: cssVar('--series-landed'), 'stroke-width': 2, 'stroke-linejoin': 'round' });
+        el('path', { d: path('novat', true), fill: 'none', stroke: cssVar('--series-novat'), 'stroke-width': 2, 'stroke-linejoin': 'round' });
+        el('path', { d: path('avg', false), fill: 'none', stroke: cssVar('--series-avg'), 'stroke-width': 2, 'stroke-linejoin': 'round' });
+        pts.filter((p) => p.note && p.landed !== null).forEach((p) => {
+            el('circle', { cx: x(p.t), cy: y(p.landed), r: 4, fill: cssVar('--series-landed'), stroke: '#fff', 'stroke-width': 2 });
+        });
+
+        // Crosshair: хамгийн ойрын өөрчлөлтийн цэг рүү
+        const guide = el('line', { y1: m.top, y2: m.top + h, stroke: cssVar('--axis'), 'stroke-width': 1, visibility: 'hidden' });
+        const dotAvg = el('circle', { r: 4, fill: cssVar('--series-avg'), stroke: '#fff', 'stroke-width': 2, visibility: 'hidden' });
+        const dotLanded = el('circle', { r: 4, fill: cssVar('--series-landed'), stroke: '#fff', 'stroke-width': 2, visibility: 'hidden' });
+        const dotNovat = el('circle', { r: 4, fill: cssVar('--series-novat'), stroke: '#fff', 'stroke-width': 2, visibility: 'hidden' });
+        const hit = el('rect', { x: m.left - 8, y: m.top, width: w + 16, height: h, fill: 'transparent', tabindex: 0 });
+        let focus = pts.length - 1;
+        const showAt = (i, cx, cy) => {
+            focus = i; const p = pts[i];
+            guide.setAttribute('x1', x(p.t)); guide.setAttribute('x2', x(p.t)); guide.setAttribute('visibility', 'visible');
+            [[dotAvg, p.avg], [dotLanded, p.landed], [dotNovat, p.novat]].forEach(([d, v]) => {
+                d.setAttribute('cx', x(p.t)); d.setAttribute('cy', v === null ? 0 : y(v)); d.setAttribute('visibility', v === null ? 'hidden' : 'visible');
+            });
+            const rows = [[cssVar('--series-landed'), money(p.landed), 'Татан авалт НӨАТ-тэй'],
+                          [cssVar('--series-novat'), money(p.novat), 'Татан авалт НӨАТ-гүй'],
+                          [cssVar('--series-avg'), money(p.avg), 'Дундаж өртөг']];
+            if (p.avg !== null && p.novat) rows.push(['', `${p.avg >= p.novat ? '▲' : '▼'} ${Math.abs((p.avg - p.novat) / p.novat * 100).toFixed(1)}%`, 'дундаж − НӨАТ-гүй татан авалт']);
+            if (p.note) rows.push(['', p.note, 'татан авалт']);
+            const rect = svg.getBoundingClientRect();
+            showTooltip(cx ?? rect.left + x(p.t), cy ?? rect.top + m.top, dot(p.day), rows);
+        };
+        const hide = () => { [guide, dotAvg, dotLanded, dotNovat].forEach((n) => n.setAttribute('visibility', 'hidden')); hideTooltip(); };
+        hit.addEventListener('pointermove', (evt) => {
+            const rect = svg.getBoundingClientRect(), px = evt.clientX - rect.left;
+            let best = 0;
+            pts.forEach((p, i) => { if (Math.abs(x(p.t) - px) < Math.abs(x(pts[best].t) - px)) best = i; });
+            showAt(best, evt.clientX, evt.clientY);
+        });
+        hit.addEventListener('pointerleave', hide);
+        hit.addEventListener('focus', () => showAt(focus));
+        hit.addEventListener('blur', hide);
+        hit.addEventListener('keydown', (e) => {
+            if (e.key === 'ArrowRight') { showAt(Math.min(pts.length - 1, focus + 1)); e.preventDefault(); }
+            if (e.key === 'ArrowLeft') { showAt(Math.max(0, focus - 1)); e.preventDefault(); }
+        });
+        plot.replaceChildren(svg);
+    }
+
+    render();
+});
+</script>
+{% endblock %}

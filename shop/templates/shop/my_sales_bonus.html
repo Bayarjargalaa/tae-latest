@@ -1,0 +1,249 @@
+{% extends 'base.html' %}
+
+{% block title %}Борлуулалтын нэмэгдэл - Euro Foods{% endblock %}
+
+{% block hide_mobile_menu %}hidden{% endblock %}
+
+{% block content %}
+{% load l10n %}
+<div class="flex min-h-screen bg-gray-50">
+    {% include 'shop/_sidebar.html' with active_page='my_sales_bonus' %}
+
+    <main class="flex-1 p-2 lg:p-8 lg:ml-0">
+        <div class="mb-6">
+            <h1 class="text-2xl lg:text-3xl font-bold text-gray-900">🎯 Борлуулалтын нэмэгдэл</h1>
+            <p class="text-gray-600 mt-2">Таны цалин бодолтод орсон борлуулалтын нэмэгдлийн задаргаа{% if employee %} · {{ employee.name }}{% if employee.positionname %} ({{ employee.positionname }}){% endif %}{% endif %}</p>
+        </div>
+
+        {% if not employee %}
+        <div class="bg-white rounded-lg shadow p-6 text-gray-600">Таны бүртгэлтэй ажилтны мэдээлэл олдсонгүй.</div>
+        {% elif not has_any %}
+        <div class="bg-white rounded-lg shadow p-6 text-gray-600">Танд бодогдсон борлуулалтын нэмэгдэл одоогоор алга байна.</div>
+        {% else %}
+
+        {% include 'shop/_personal_period_filter.html' with url_name='shop:my_sales_bonus' extra_name='scheme' extra_label='Хүснэгт' extra_value=scheme extra_choices=scheme_choices %}
+
+        {% if mode == 'month' %}
+        <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+            <div class="bg-white rounded-lg shadow p-4 ring-2 ring-primary">
+                <div class="text-sm text-gray-500">{{ month_label }}</div>
+                <div class="text-2xl font-bold text-primary">{{ month_total.total|floatformat:'-2g' }}₮</div>
+            </div>
+            <div class="bg-white rounded-lg shadow p-4">
+                <div class="text-sm text-gray-500">Картын цалинд</div>
+                <div class="text-2xl font-bold text-gray-900">{{ month_total.card|floatformat:'-2g' }}₮</div>
+            </div>
+            <div class="bg-white rounded-lg shadow p-4">
+                <div class="text-sm text-gray-500">Бэлэн цалинд</div>
+                <div class="text-2xl font-bold text-gray-900">{{ month_total.cash|floatformat:'-2g' }}₮</div>
+            </div>
+            <div class="bg-white rounded-lg shadow p-4">
+                <div class="text-sm text-gray-500">{{ year|unlocalize }} оны нийт</div>
+                <div class="text-2xl font-bold text-gray-900">{{ year_total.total|floatformat:'0g' }}₮</div>
+            </div>
+        </div>
+
+        {% if not details %}
+        <div class="bg-white rounded-lg shadow p-6 text-gray-500">{{ month_label }}-д бодогдсон нэмэгдэл алга байна{% if is_current_month %} (сарын нэмэгдлийг ихэвчлэн сарын төгсгөлд бодно){% endif %}.</div>
+        {% endif %}
+
+        <div class="space-y-6">
+            {% for d in details %}
+            {% with c=d.result %}
+            <div class="bg-white rounded-lg shadow p-6">
+                <div class="flex flex-wrap items-baseline justify-between gap-2 mb-4">
+                    <h2 class="text-lg font-bold text-gray-900">{{ d.label }}</h2>
+                    <span class="text-sm text-gray-500">Бодсон хугацаа: {{ d.period }}</span>
+                </div>
+
+                {% if d.scheme == 'altjin_seller' %}
+                <table class="w-full text-sm">
+                    <tbody>
+                        <tr class="border-t"><td class="py-2 text-gray-700" colspan="2">Борлуулалт</td><td class="py-2 text-right">{{ c.sales|floatformat:'-2g' }}</td></tr>
+                        <tr class="border-t"><td class="py-2 text-gray-700" colspan="2">Буцаалт</td><td class="py-2 text-right">{{ c.returns|floatformat:'-2g' }}</td></tr>
+                        <tr class="border-t font-semibold"><td class="py-2" colspan="2">Цэвэр борлуулалт</td><td class="py-2 text-right">{{ c.net|floatformat:'-2g' }}</td></tr>
+                        {% for t in c.tiers %}
+                        <tr class="border-t {% if not t.active %}text-gray-400{% endif %}">
+                            <td class="py-2">{{ t.from|floatformat:'0g' }}{% if t.to is None %}-с дээш{% else %} - {{ t.to|floatformat:'0g' }}{% endif %} <span class="text-xs text-gray-500">({{ t.rate|floatformat:'-2' }}%)</span></td>
+                            <td class="py-2 text-right pr-3 text-xs text-gray-500">{% if c.mode != 'flat' %}{{ t.base|floatformat:'0g' }} × {{ t.rate|floatformat:'-2' }}%{% endif %}</td>
+                            <td class="py-2 text-right">{{ t.bonus|floatformat:'-2g' }}</td>
+                        </tr>
+                        {% endfor %}
+                        <tr class="border-t bg-gray-50 font-semibold"><td class="py-2 px-1" colspan="2">Нийт нэмэгдэл</td><td class="py-2 px-1 text-right">{{ c.subtotal|floatformat:'-2g' }}</td></tr>
+                {# хүснэгтийг доорх нийтлэг мөрүүдийн дараа хаана #}
+                {% elif d.scheme == 'distributor' %}
+                <table class="w-full text-sm">
+                    <tbody>
+                        <tr class="border-t"><td class="py-2 text-gray-700" colspan="2">Түгээлтийн дүн</td><td class="py-2 text-right">{{ c.delivery_amount|floatformat:'-2g' }}</td></tr>
+                        {% for cr in c.criteria %}
+                        <tr class="border-t">
+                            <td class="py-2 text-gray-700">{{ cr.label }} <span class="text-xs text-gray-500">({{ cr.rate }}%)</span></td>
+                            <td class="py-2 text-right pr-3">{% if cr.met %}<span class="text-green-700">✓ биелсэн</span>{% else %}<span class="text-red-600">✗ биелээгүй</span>{% endif %}</td>
+                            <td class="py-2 text-right">{{ cr.amount|floatformat:'-2g' }}</td>
+                        </tr>
+                        {% endfor %}
+                        <tr class="border-t">
+                            <td class="py-2 text-gray-700">Туслахгүй өдөр</td>
+                            <td class="py-2 text-right pr-3 text-xs text-gray-500">{{ c.solo_days|floatformat:'-1' }} өдөр × {{ distributor_settings.solo_day|floatformat:'0g' }}</td>
+                            <td class="py-2 text-right">{{ c.solo_amount|floatformat:'-2g' }}</td>
+                        </tr>
+                        {% if c.helper_days %}
+                        <tr class="border-t">
+                            <td class="py-2 text-gray-700">Хамт (туслахтай) өдөр</td>
+                            <td class="py-2 text-right pr-3 text-xs text-gray-500">{{ c.helper_days|floatformat:'-1' }} өдөр × {{ distributor_settings.helper_day|floatformat:'0g' }}</td>
+                            <td class="py-2 text-right">{{ c.helper_amount|floatformat:'-2g' }}</td>
+                        </tr>
+                        {% endif %}
+                        <tr class="border-t bg-gray-50 font-semibold"><td class="py-2 px-1" colspan="2">Нийт нэмэгдэл</td><td class="py-2 px-1 text-right">{{ c.subtotal|floatformat:'-2g' }}</td></tr>
+                {# хүснэгтийг доорх нийтлэг (нэмэх/хасах, олгох дүн) мөрүүдийн дараа хаана #}
+                {% else %}
+                <div class="overflow-x-auto">
+                    <table class="min-w-full text-sm border border-gray-200">
+                        <thead>
+                            <tr class="bg-gray-100 text-left align-bottom">
+                                <th class="px-3 py-2 font-semibold text-gray-700">{% if d.scheme == 'storekeeper' %}Мөр{% else %}Суваг{% endif %}</th>
+                                <th class="px-3 py-2 font-semibold text-gray-700 text-right">Борлуулалт</th>
+                                <th class="px-3 py-2 font-semibold text-gray-700 text-right">Буцаалт</th>
+                                {% if d.scheme != 'storekeeper' %}<th class="px-3 py-2 font-semibold text-gray-700 text-right">Шилжүүлсэн</th>{% endif %}
+                                <th class="px-3 py-2 font-semibold text-gray-700 text-right">Цэвэр дүн</th>
+                                <th class="px-3 py-2 font-semibold text-gray-700 text-right">Хувь</th>
+                                <th class="px-3 py-2 font-semibold text-gray-900 text-right bg-gray-200">Нэмэгдэл</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for l in c.lines %}
+                            <tr class="border-t">
+                                <td class="px-3 py-2">{{ l.channel }}</td>
+                                <td class="px-3 py-2 text-right">{{ l.sales|floatformat:'-2g' }}</td>
+                                <td class="px-3 py-2 text-right">{{ l.returns|floatformat:'-2g' }}</td>
+                                {% if d.scheme != 'storekeeper' %}
+                                <td class="px-3 py-2 text-right">{% if l.transferred %}<span title="{% for t in l.transfers_out %}{{ t.name }}: {{ t.amount|floatformat:'-2g' }}{% if not forloop.last %}, {% endif %}{% endfor %}">{{ l.transferred|floatformat:'-2g' }}</span>{% else %}-{% endif %}</td>
+                                {% endif %}
+                                <td class="px-3 py-2 text-right">{{ l.net|floatformat:'-2g' }}</td>
+                                <td class="px-3 py-2 text-right">{{ l.rate|floatformat:'-2' }}%</td>
+                                <td class="px-3 py-2 text-right font-semibold bg-gray-50">{{ l.bonus|floatformat:'-2g' }}</td>
+                            </tr>
+                            {% endfor %}
+                            {% for t in c.transfers %}
+                            <tr class="border-t bg-green-50">
+                                <td class="px-3 py-2">{{ t.channel }} <span class="text-xs text-gray-500">(шилжүүлж авсан)</span></td>
+                                <td class="px-3 py-2 text-right" colspan="{% if d.scheme != 'storekeeper' %}4{% else %}3{% endif %}">{{ t.amount|floatformat:'-2g' }}</td>
+                                <td class="px-3 py-2 text-right">{{ t.rate|floatformat:'-2' }}%</td>
+                                <td class="px-3 py-2 text-right font-semibold bg-gray-50">{{ t.bonus|floatformat:'-2g' }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+
+                <table class="w-full text-sm mt-4">
+                    <tbody>
+                        {% if d.scheme == 'storekeeper' %}
+                        <tr class="border-t">
+                            <td class="py-2 text-gray-700" colspan="2">Ажилласан өдөр</td>
+                            <td class="py-2 text-right">{{ c.days_worked|floatformat:'-1' }}{% if c.shared_days %} <span class="text-xs text-gray-500">(хуваалцсан {{ c.shared_days|length }})</span>{% endif %}</td>
+                        </tr>
+                        {% if c.inventory %}<tr class="border-t"><td class="py-2 text-gray-700" colspan="2">Тооллого</td><td class="py-2 text-right">{{ c.inventory|floatformat:'-2g' }}</td></tr>{% endif %}
+                        {% else %}
+                        <tr class="border-t font-semibold"><td class="py-2" colspan="2">Нийт нэмэгдэл</td><td class="py-2 text-right">{{ c.subtotal|floatformat:'-2g' }}</td></tr>
+                        <tr class="border-t">
+                            <td class="py-2 text-gray-700" colspan="2">Хасагдах дүн <span class="text-xs text-gray-500">(нийт × {{ c.base_pct|floatformat:'-2' }}% × тасралтын {{ c.deduction_pct|floatformat:'-2' }}%)</span></td>
+                            <td class="py-2 text-right {% if c.deduction %}text-red-600{% endif %}">{% if c.deduction %}−{{ c.deduction|floatformat:'-2g' }}{% else %}-{% endif %}</td>
+                        </tr>
+                        <tr class="border-t">
+                            <td class="py-2 text-gray-700" colspan="2">Төлөвлөгөөт барааны биелэлт <span class="text-xs text-gray-500">({{ c.plan_pct|floatformat:'-2' }}%)</span></td>
+                            <td class="py-2 text-right {% if c.plan_loss %}text-red-600{% endif %}">{% if c.plan_loss %}−{{ c.plan_loss|floatformat:'-2g' }}{% else %}-{% endif %}</td>
+                        </tr>
+                        {% endif %}
+                        {% endif %}
+                        {% if c.adjustment %}
+                        <tr class="border-t"><td class="py-2 text-gray-700" colspan="2">{{ d.note|default:'Нэмэх / хасах' }}</td><td class="py-2 text-right">{{ c.adjustment|floatformat:'-2g' }}</td></tr>
+                        {% endif %}
+                        <tr class="border-t-2 border-primary bg-green-50 font-bold text-primary">
+                            <td class="py-3 px-1" colspan="2">Олгох нэмэгдэл</td>
+                            <td class="py-3 px-1 text-right text-lg">{{ d.entry.total|floatformat:'-2g' }}₮</td>
+                        </tr>
+                        {% if d.entry.card_amount and d.entry.cash_amount %}
+                        <tr><td class="pt-2 text-xs text-gray-500" colspan="3">Картын цалинд {{ d.entry.card_amount|floatformat:'-2g' }}₮, бэлэн цалинд {{ d.entry.cash_amount|floatformat:'-2g' }}₮</td></tr>
+                        {% endif %}
+                    </tbody>
+                </table>
+                {% if d.differs %}
+                <p class="mt-3 text-xs text-yellow-700 bg-yellow-50 border border-yellow-200 rounded p-2">Нэмэгдлийг бодож хадгалсны дараа борлуулалт / буцаалтын мэдээлэл шинэчлэгдсэн тул дээрх задаргаа ({{ c.total|floatformat:'-2g' }}₮) олгох дүнгээс зөрж байна. Олгох дүн нь хадгалсан бодолтоор.</p>
+                {% endif %}
+            </div>
+            {% endwith %}
+            {% endfor %}
+        </div>
+
+        {% else %}
+        {# ---------- Жилээр ---------- #}
+        <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+            <div class="bg-white rounded-lg shadow p-4 ring-2 ring-primary">
+                <div class="text-sm text-gray-500">{{ year|unlocalize }} оны нийт нэмэгдэл</div>
+                <div class="text-2xl font-bold text-primary">{{ year_total.total|floatformat:'0g' }}₮</div>
+            </div>
+            <div class="bg-white rounded-lg shadow p-4">
+                <div class="text-sm text-gray-500">Сарын дундаж</div>
+                <div class="text-2xl font-bold text-gray-900">{{ year_avg|floatformat:'0g' }}₮</div>
+                <div class="text-xs text-gray-500">{{ months_with_bonus }} сарын</div>
+            </div>
+            <div class="bg-white rounded-lg shadow p-4">
+                <div class="text-sm text-gray-500">Картын цалинд</div>
+                <div class="text-2xl font-bold text-gray-900">{{ year_total.card|floatformat:'0g' }}₮</div>
+            </div>
+            <div class="bg-white rounded-lg shadow p-4">
+                <div class="text-sm text-gray-500">Бэлэн цалинд</div>
+                <div class="text-2xl font-bold text-gray-900">{{ year_total.cash|floatformat:'0g' }}₮</div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-lg shadow p-6">
+            <h2 class="text-lg font-bold text-gray-900 mb-4">{{ year|unlocalize }} оны нэмэгдэл сараар</h2>
+            {% if not year_rows %}
+            <p class="text-gray-500">Энэ онд бодогдсон нэмэгдэл алга байна.</p>
+            {% else %}
+            <div class="overflow-x-auto">
+                <table class="min-w-full text-sm border border-gray-200">
+                    <thead>
+                        <tr class="bg-gray-100 text-left align-bottom">
+                            <th class="px-3 py-2 font-semibold text-gray-700">Сар</th>
+                            <th class="px-3 py-2 font-semibold text-gray-700">Хүснэгт</th>
+                            <th class="px-3 py-2 font-semibold text-gray-700 text-right">Картын цалинд</th>
+                            <th class="px-3 py-2 font-semibold text-gray-700 text-right">Бэлэн цалинд</th>
+                            <th class="px-3 py-2 font-semibold text-gray-900 text-right bg-gray-200">Нэмэгдэл</th>
+                            <th class="px-3 py-2"></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for r in year_rows %}
+                        {% for e in r.entries %}
+                        <tr class="{% if forloop.first %}border-t{% endif %}">
+                            {% if forloop.first %}<td class="px-3 py-2 whitespace-nowrap align-top" rowspan="{{ r.entries|length }}">{{ r.label }}</td>{% endif %}
+                            <td class="px-3 py-2">{{ e.scheme_label }}</td>
+                            <td class="px-3 py-2 text-right">{{ e.card|floatformat:'-2g' }}</td>
+                            <td class="px-3 py-2 text-right">{{ e.cash|floatformat:'-2g' }}</td>
+                            <td class="px-3 py-2 text-right font-semibold bg-gray-50">{{ e.total|floatformat:'-2g' }}</td>
+                            {% if forloop.first %}<td class="px-3 py-2 whitespace-nowrap align-top" rowspan="{{ r.entries|length }}"><a href="?view=month&year={{ year|unlocalize }}&month={{ r.month }}{% if scheme != 'all' %}&scheme={{ scheme }}{% endif %}" class="text-primary underline">Задаргаа</a></td>{% endif %}
+                        </tr>
+                        {% endfor %}
+                        {% endfor %}
+                    </tbody>
+                    <tfoot>
+                        <tr class="border-t-2 border-gray-300 font-semibold">
+                            <td class="px-3 py-2" colspan="2">Нийт</td>
+                            <td class="px-3 py-2 text-right">{{ year_total.card|floatformat:'-2g' }}</td>
+                            <td class="px-3 py-2 text-right">{{ year_total.cash|floatformat:'-2g' }}</td>
+                            <td class="px-3 py-2 text-right bg-gray-50">{{ year_total.total|floatformat:'-2g' }}</td>
+                            <td></td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+            {% endif %}
+        </div>
+        {% endif %}
+        {% endif %}
+    </main>
+</div>
+{% endblock %}

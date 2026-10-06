@@ -1,0 +1,325 @@
+{% extends 'base.html' %}
+
+{% block title %}Борлуулалтын тайлан ХТ-р - Euro Foods{% endblock %}
+
+{% block hide_mobile_menu %}hidden{% endblock %}
+
+{% block extra_css %}
+<style>
+    .ht-table th.sortable { cursor: pointer; user-select: none; }
+    .ht-table th.sortable:hover { background-color: #e5e7eb; }
+    .ht-table .sticky-col { position: sticky; left: 0; z-index: 1; }
+    .ht-table thead th { position: sticky; top: 0; z-index: 2; }
+    .ht-table thead th.sticky-col { z-index: 3; }
+    .ht-table tfoot td { position: sticky; bottom: 0; z-index: 2; }
+    .ht-table tfoot td.sticky-col { z-index: 3; }
+    /* Утсан дээр тогтмол нэрийн багана дэлгэцийг бүхэлд нь эзлэхгүй */
+    @media (max-width: 639px) {
+        .ht-table { font-size: .75rem; }
+        .ht-table .sticky-col { min-width: 160px !important; max-width: 55vw; white-space: normal; }
+        .ht-stat { font-size: 1.15rem; line-height: 1.5rem; overflow-wrap: anywhere; }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="flex min-h-screen bg-gray-50">
+    {% include 'shop/_sidebar.html' with active_page='sales_report_ht' %}
+
+    <main class="flex-1 p-2 lg:p-8 lg:ml-0 min-w-0">
+        {% include 'shop/_sales_ht_filters.html' with view_mode='table' %}
+
+        <div class="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-4 mb-6">
+            <div class="bg-white rounded-lg shadow p-4">
+                <p class="text-gray-500 text-sm">Нийт дүн</p>
+                <p class="ht-stat text-2xl font-bold text-primary mt-1" id="stat-amount">0₮</p>
+            </div>
+            <div class="bg-white rounded-lg shadow p-4">
+                <p class="text-gray-500 text-sm">Нийт тоо ширхэг</p>
+                <p class="ht-stat text-2xl font-bold text-green-600 mt-1" id="stat-qty">0</p>
+            </div>
+            <div class="bg-white rounded-lg shadow p-4">
+                <p class="text-gray-500 text-sm">Бараа</p>
+                <p class="ht-stat text-2xl font-bold text-blue-600 mt-1" id="stat-items">0</p>
+                <p class="text-sm text-amber-700 mt-1" id="stat-idle-items"></p>
+            </div>
+            <div class="bg-white rounded-lg shadow p-4">
+                <p class="text-gray-500 text-sm">Борлуулалттай харилцагч</p>
+                <p class="ht-stat text-2xl font-bold text-blue-600 mt-1" id="stat-customers">0</p>
+                <p class="text-sm text-amber-700 mt-1" id="stat-idle"></p>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-lg shadow">
+            <div class="flex flex-wrap items-center gap-2 p-3 border-b">
+                <button type="button" id="expand-all" class="text-sm border border-gray-300 rounded-lg px-3 py-1 hover:bg-gray-50">▼ Бүгдийг дэлгэх</button>
+                <button type="button" id="collapse-all" class="text-sm border border-gray-300 rounded-lg px-3 py-1 hover:bg-gray-50">► Бүгдийг хураах</button>
+                <label class="flex items-center gap-2 text-sm ml-2">
+                    <input type="checkbox" id="numbering" {% if filters.numbering %}checked{% endif %} class="w-4 h-4 accent-primary">
+                    Мөр дугаарлах
+                </label>
+                <span id="idle-note" class="hidden text-xs text-amber-700"></span>
+                <span class="text-xs text-gray-500 ml-auto">Баганын толгой дээр дарж эрэмбэлнэ • Мөрөн дээр дарж задална</span>
+            </div>
+            <div class="overflow-auto" style="max-height: 75vh;">
+                <table class="ht-table min-w-full text-sm">
+                    <thead id="ht-head" class="bg-gray-100 text-gray-700"></thead>
+                    <tbody id="ht-body"></tbody>
+                    <tfoot id="ht-foot"></tfoot>
+                </table>
+            </div>
+        </div>
+    </main>
+</div>
+
+{{ report|json_script:"ht-data" }}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const data = JSON.parse(document.getElementById('ht-data').textContent);
+    const groupBySelect = document.getElementById('group-by');
+    const metricSelect = document.getElementById('metric');
+    const numberingCheckbox = document.getElementById('numbering');
+    const exportLink = document.getElementById('export-link');
+    const head = document.getElementById('ht-head');
+    const body = document.getElementById('ht-body');
+    const foot = document.getElementById('ht-foot');
+
+    const state = {
+        groupBy: groupBySelect.value,
+        metric: metricSelect.value,
+        sortKey: 'name',
+        sortDir: 1,
+        expanded: new Set(),
+        numbering: numberingCheckbox.checked,
+    };
+
+    const amountFmt = new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 });
+    const qtyFmt = new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 });
+    const fmt = (v) => (v ? (state.metric === 'amount' ? amountFmt : qtyFmt).format(v) : '');
+    const fmtStock = (v) => (v === null || v === undefined ? '' : qtyFmt.format(v));
+    const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+    const monthCount = data.months.length;
+    const stockCols = [];
+    if (data.show_jijig) stockCols.push({ key: 'jijig', label: 'Үлдэгдэл жижиг', pos: 0 });
+    if (data.show_tolgoit) stockCols.push({ key: 'tolgoit', label: 'Үлдэгдэл толгойт', pos: 1 });
+
+    function stockOf(itemName) {
+        return data.stock[itemName] || [0, 0];
+    }
+
+    // records [бараа, харилцагч, сар, тоо, дүн] -> дээд/доод түвшний бүлгүүд
+    function buildGroups() {
+        const valuePos = state.metric === 'qty' ? 3 : 4;
+        const topIsItem = state.groupBy === 'item';
+        const topNames = topIsItem ? data.items : data.customers;
+        const subNames = topIsItem ? data.customers : data.items;
+        const groups = new Map();
+        const getGroup = (top) => {
+            let g = groups.get(top);
+            if (!g) {
+                g = { id: top, name: topNames[top], values: new Array(monthCount).fill(0), total: 0,
+                      group: topIsItem ? '' : data.customer_groups[top], idle: false,
+                      inactive: !topIsItem && data.customer_inactive[top],
+                      stock: topIsItem ? stockOf(topNames[top]) : null, children: new Map() };
+                groups.set(top, g);
+            }
+            return g;
+        };
+        for (const r of data.records) {
+            const top = topIsItem ? r[0] : r[1];
+            const sub = topIsItem ? r[1] : r[0];
+            const g = getGroup(top);
+            let c = g.children.get(sub);
+            if (!c) {
+                c = { name: subNames[sub], values: new Array(monthCount).fill(0), total: 0,
+                      group: topIsItem ? data.customer_groups[sub] : '',
+                      inactive: topIsItem && data.customer_inactive[sub],
+                      stock: topIsItem ? null : stockOf(subNames[sub]) };
+                g.children.set(sub, c);
+            }
+            const v = r[valuePos];
+            c.values[r[2]] += v; c.total += v;
+            g.values[r[2]] += v; g.total += v;
+        }
+        // Борлуулалтгүй харилцагч / бараа - задрах мөргүй тул зөвхөн өөрийн дээд түвшинд харагдана
+        (topIsItem ? data.idle_items : data.idle_customers).forEach((i) => { getGroup(i).idle = true; });
+        return Array.from(groups.values()).map((g) => ({ ...g, children: Array.from(g.children.values()) }));
+    }
+
+    function sortValue(row) {
+        if (state.sortKey === 'name') return row.name;
+        if (state.sortKey === 'total') return row.total;
+        if (state.sortKey === 'jijig') return row.stock ? row.stock[0] : 0;
+        if (state.sortKey === 'tolgoit') return row.stock ? row.stock[1] : 0;
+        return row.values[state.sortKey];
+    }
+
+    function compare(a, b) {
+        const va = sortValue(a), vb = sortValue(b);
+        const result = typeof va === 'string' ? va.localeCompare(vb, 'mn') : va - vb;
+        return result * state.sortDir;
+    }
+
+    function renderHead() {
+        const topLabel = state.groupBy === 'item' ? 'Бараа' : 'Харилцагч';
+        const subLabel = state.groupBy === 'item' ? 'Харилцагч' : 'Бараа';
+        const arrow = (key) => (state.sortKey === key ? (state.sortDir === 1 ? ' ▲' : ' ▼') : '');
+        const th = (key, label, extra = '') =>
+            `<th data-sort="${key}" class="sortable px-3 py-2 font-semibold border-b whitespace-nowrap bg-gray-100 ${extra}">${label}${arrow(key)}</th>`;
+        let html = '<tr>' + th('name', `${topLabel} / ${subLabel}`, 'sticky-col text-left min-w-[280px]');
+        data.months.forEach((m, i) => { html += th(i, m, 'text-right'); });
+        html += th('total', 'Нийт', 'text-right');
+        stockCols.forEach((s) => { html += th(s.key, s.label, 'text-right'); });
+        head.innerHTML = html + '</tr>';
+    }
+
+    function rowCells(row) {
+        let html = '';
+        row.values.forEach((v) => { html += `<td class="px-3 py-1.5 text-right whitespace-nowrap">${fmt(v)}</td>`; });
+        html += `<td class="px-3 py-1.5 text-right whitespace-nowrap font-semibold">${fmt(row.total)}</td>`;
+        stockCols.forEach((s) => {
+            html += `<td class="px-3 py-1.5 text-right whitespace-nowrap text-blue-700">${row.stock ? fmtStock(row.stock[s.pos]) : ''}</td>`;
+        });
+        return html;
+    }
+
+    function render() {
+        const groups = buildGroups().sort(compare);
+        renderHead();
+
+        const colCount = 2 + monthCount + stockCols.length;
+        const groupTag = (name) => (name ? ` <span class="text-xs font-normal text-gray-400">[${esc(name)}]</span>` : '');
+        const inactiveTag = (row) => (row.inactive
+            ? ' <span class="text-xs font-normal text-red-600 bg-red-50 rounded px-1">идэвхгүй</span>' : '');
+        // Нөгөө дээд түвшинд л харагдах борлуулалтгүй мөрүүдийн тухай сануулга
+        const hiddenIdle = state.groupBy === 'item'
+            ? (data.idle_customers.length ? ['харилцагчид', 'харилцагчдыг', 'Харилцагч'] : null)
+            : (data.idle_items.length ? ['бараа', 'барааг', 'Бараа'] : null);
+        const idleNote = document.getElementById('idle-note');
+        idleNote.classList.toggle('hidden', !hiddenIdle);
+        if (hiddenIdle) idleNote.textContent = `Борлуулалтгүй ${hiddenIdle[0]} зөвхөн "${hiddenIdle[2]}" дээд түвшинд харагдана`;
+        if (!groups.length) {
+            const message = hiddenIdle
+                ? `Борлуулалтгүй ${hiddenIdle[1]} харахын тулд мөрийн дээд түвшинг "${hiddenIdle[2]}" болгоно уу.`
+                : 'Шүүлтэд тохирох борлуулалт олдсонгүй.';
+            body.innerHTML = `<tr><td colspan="${colCount}" class="px-4 py-8 text-center text-gray-500">${message}</td></tr>`;
+            foot.innerHTML = '';
+        } else {
+            // Дугаар нь одоогийн эрэмбэлэлтийн дарааллаар: дээд түвшин 1, 2, ..., доод түвшин 1.1, 1.2, ...
+            const numberCell = (text) => (state.numbering
+                ? `<span class="inline-block min-w-[3rem] pr-2 text-gray-400 tabular-nums">${text}</span>` : '');
+            const parts = [];
+            groups.forEach((g, gi) => {
+                const open = state.expanded.has(g.id);
+                if (g.idle) {
+                    // Борлуулалтгүй харилцагч / бараа - задрах мөргүй, улбар шараар ялгана
+                    parts.push(`<tr class="bg-amber-50 font-medium border-t">
+                        <td class="sticky-col bg-amber-50 px-3 py-1.5">${numberCell(gi + 1)}<span class="inline-block w-4"></span>${esc(g.name || '(хоосон)')}${groupTag(g.group)}${inactiveTag(g)}
+                        <span class="text-xs font-normal text-amber-700">борлуулалтгүй</span></td>${rowCells(g)}</tr>`);
+                    return;
+                }
+                parts.push(`<tr class="group-row bg-green-50 hover:bg-green-100 cursor-pointer font-medium border-t" data-id="${g.id}">
+                    <td class="sticky-col bg-green-50 px-3 py-1.5">${numberCell(gi + 1)}<span class="inline-block w-4 text-gray-500">${open ? '▼' : '►'}</span>${esc(g.name || '(хоосон)')}${groupTag(g.group)}${inactiveTag(g)}
+                    <span class="text-xs text-gray-400">(${g.children.length})</span></td>${rowCells(g)}</tr>`);
+                if (open) {
+                    g.children.sort(compare).forEach((c, ci) => {
+                        parts.push(`<tr class="hover:bg-gray-50 text-gray-700 border-t border-gray-100">
+                            <td class="sticky-col bg-white px-3 py-1.5">${numberCell(`${gi + 1}.${ci + 1}`)}<span class="inline-block w-4"></span><span class="pl-4">${esc(c.name || '(хоосон)')}</span>${groupTag(c.group)}${inactiveTag(c)}</td>${rowCells(c)}</tr>`);
+                    });
+                }
+            });
+            body.innerHTML = parts.join('');
+
+            const grand = new Array(monthCount).fill(0);
+            groups.forEach((g) => g.values.forEach((v, i) => { grand[i] += v; }));
+            let footHtml = '<tr class="font-bold"><td class="sticky-col bg-gray-200 px-3 py-2">НИЙТ</td>';
+            grand.forEach((v) => { footHtml += `<td class="bg-gray-200 px-3 py-2 text-right whitespace-nowrap">${fmt(v)}</td>`; });
+            footHtml += `<td class="bg-gray-200 px-3 py-2 text-right whitespace-nowrap">${fmt(grand.reduce((a, b) => a + b, 0))}</td>`;
+            stockCols.forEach(() => { footHtml += '<td class="bg-gray-200"></td>'; });
+            foot.innerHTML = footHtml + '</tr>';
+        }
+
+        renderStats();
+        updateExportLink();
+    }
+
+    function renderStats() {
+        let qty = 0, amount = 0;
+        const items = new Set(), customers = new Set();
+        for (const r of data.records) {
+            qty += r[3]; amount += r[4];
+            items.add(r[0]); customers.add(r[1]);
+        }
+        document.getElementById('stat-amount').textContent = amountFmt.format(amount) + '₮';
+        document.getElementById('stat-qty').textContent = qtyFmt.format(qty);
+        document.getElementById('stat-items').textContent = items.size;
+        document.getElementById('stat-customers').textContent = customers.size;
+        document.getElementById('stat-idle').textContent = data.idle_customers.length
+            ? `Борлуулалтгүй: ${data.idle_customers.length}` : '';
+        document.getElementById('stat-idle-items').textContent = data.idle_items.length
+            ? `Борлуулалтгүй (үлдэгдэлтэй): ${data.idle_items.length}` : '';
+    }
+
+    // Excel экспорт нь хэрэглэсэн шүүлтээр, харин дээд түвшин/үзүүлэлтийг одоогийн сонголтоор авна
+    function updateExportLink() {
+        const params = new URLSearchParams(window.location.search);
+        params.set('group_by', state.groupBy);
+        params.set('metric', state.metric);
+        params.set('numbering', state.numbering ? 'true' : 'false');
+        params.set('sort', state.sortKey);
+        params.set('dir', state.sortDir === 1 ? 'asc' : 'desc');
+        exportLink.href = exportLink.href.split('?')[0] + '?' + params.toString();
+    }
+
+    head.addEventListener('click', (e) => {
+        const th = e.target.closest('th[data-sort]');
+        if (!th) return;
+        const key = /^\d+$/.test(th.dataset.sort) ? Number(th.dataset.sort) : th.dataset.sort;
+        if (state.sortKey === key) {
+            state.sortDir = -state.sortDir;
+        } else {
+            state.sortKey = key;
+            state.sortDir = key === 'name' ? 1 : -1;  // тоон багана эхлээд ихээс бага руу
+        }
+        render();
+    });
+
+    body.addEventListener('click', (e) => {
+        const tr = e.target.closest('tr.group-row');
+        if (!tr) return;
+        const id = Number(tr.dataset.id);
+        if (state.expanded.has(id)) state.expanded.delete(id); else state.expanded.add(id);
+        render();
+    });
+
+    document.getElementById('expand-all').addEventListener('click', () => {
+        buildGroups().forEach((g) => state.expanded.add(g.id));
+        render();
+    });
+    document.getElementById('collapse-all').addEventListener('click', () => {
+        state.expanded.clear();
+        render();
+    });
+
+    groupBySelect.addEventListener('change', () => {
+        state.groupBy = groupBySelect.value;
+        state.expanded.clear();
+        render();
+    });
+    numberingCheckbox.addEventListener('change', () => {
+        state.numbering = numberingCheckbox.checked;
+        render();
+    });
+    metricSelect.addEventListener('change', () => {
+        state.metric = metricSelect.value;
+        render();
+    });
+
+    render();
+});
+</script>
+{% endblock %}

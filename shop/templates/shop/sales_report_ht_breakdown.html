@@ -1,0 +1,740 @@
+{% extends 'base.html' %}
+
+{% block title %}ХТ Задаргаа - Euro Foods{% endblock %}
+
+{% block hide_mobile_menu %}hidden{% endblock %}
+
+{% block extra_css %}
+<style>
+    .bd-root { --ink: #111827; --ink-2: #4b5563; --muted: #6b7280; --grid: #eeeeec; --axis: #d1d5db;
+               --hairline: rgba(17, 24, 39, 0.08); color: var(--ink); }
+    .bd-card { background: #fff; border: 1px solid var(--hairline); border-radius: 1rem; box-shadow: 0 1px 2px rgba(0,0,0,.04); }
+    .bd-btn { font-size: .8rem; color: var(--ink-2); border: 1px solid #e5e7eb; border-radius: .55rem; padding: .35rem .7rem;
+              background: #fff; white-space: nowrap; }
+    .bd-btn:hover { background: #f3f4f6; color: var(--ink); }
+    .bd-btn[aria-expanded="true"] { background: #eef2ff; border-color: #c7d2fe; color: #1e3a8a; }
+    .bd-select { font-size: .8rem; border: 1px solid #d1d5db; border-radius: .55rem; padding: .35rem .5rem; background: #fff; }
+    .bd-level { display: inline-flex; align-items: center; gap: .3rem; }
+    .bd-level .bd-arrow { color: #9ca3af; font-size: .8rem; }
+    .bd-pop { position: absolute; z-index: 40; margin-top: .4rem; background: #fff; border: 1px solid var(--hairline);
+              border-radius: .8rem; box-shadow: 0 12px 32px rgba(0,0,0,.12); padding: .9rem; }
+    .bd-pop label.bd-check { display: flex; align-items: center; gap: .5rem; font-size: .82rem; padding: .2rem 0; }
+    .bd-chip { display: inline-flex; align-items: center; gap: .35rem; font-size: .75rem; padding: .25rem .35rem .25rem .6rem;
+               border-radius: 999px; background: #eef2ff; color: #1e3a8a; border: 1px solid #c7d2fe; }
+    .bd-chip button { width: 18px; height: 18px; border-radius: 999px; line-height: 1; color: #1e3a8a; }
+    .bd-chip button:hover { background: #c7d2fe; }
+
+    .bd-table { width: 100%; font-size: .8rem; border-collapse: separate; border-spacing: 0; }
+    .bd-table > thead > tr > th { position: sticky; top: 0; z-index: 3; background: #f9fafb; color: var(--ink-2); font-weight: 600;
+        text-align: right; padding: .55rem .7rem; border-bottom: 1px solid var(--axis); cursor: pointer; user-select: none;
+        white-space: normal; line-height: 1.2; min-width: 92px; vertical-align: bottom; }
+    .bd-table > thead > tr > th:hover { background: #f1f1ef; }
+    .bd-table > thead > tr > th:first-child { text-align: left; position: sticky; left: 0; z-index: 4; min-width: 340px; }
+    .bd-table > tbody > tr > td, .bd-table > tfoot > tr > td { padding: .42rem .7rem; text-align: right; white-space: nowrap;
+        border-bottom: 1px solid var(--grid); font-variant-numeric: tabular-nums; }
+    .bd-table > tbody > tr > td:first-child, .bd-table > tfoot > tr > td:first-child { text-align: left; position: sticky; left: 0;
+        z-index: 1; background: inherit; max-width: 460px; overflow: hidden; text-overflow: ellipsis; }
+    .bd-table > tbody > tr { background: #fff; }
+    .bd-table > tbody > tr.lvl-0 { background: #f3f8f3; font-weight: 600; }
+    .bd-table > tbody > tr.lvl-1 { background: #fafbfa; }
+    .bd-table > tbody > tr:hover { background: #eef4ff; }
+    .bd-table > tbody > tr.has-children { cursor: pointer; }
+    .bd-table > tfoot > tr { background: #e5e7eb; font-weight: 700; }
+    .bd-table > tfoot > tr > td { position: sticky; bottom: 0; background: #e5e7eb; }
+    .bd-toggle { display: inline-block; width: 1.1rem; color: #6b7280; }
+    .bd-count { color: #9ca3af; font-weight: 400; font-size: .72rem; margin-left: .3rem; }
+    .bd-code { color: #9ca3af; font-weight: 400; font-size: .72rem; margin-right: .35rem; }
+    .bd-neg { color: #b42323; }
+    .bd-den { color: #9ca3af; font-weight: 400; }
+    .bd-wh { display: inline-flex; align-items: center; gap: .35rem; font-size: .8rem; color: var(--ink-2); }
+    /* Утсан дээр тогтмол эхний багана дэлгэцийг бүхэлд нь эзлэхгүй, тоон баганууд харагдах зайтай байна */
+    @media (max-width: 639px) {
+        .bd-table { font-size: .75rem; }
+        .bd-table > thead > tr > th { min-width: 76px; padding: .45rem .5rem; }
+        .bd-table > thead > tr > th:first-child { min-width: 160px; }
+        .bd-table > tbody > tr > td, .bd-table > tfoot > tr > td { padding: .38rem .5rem; }
+        .bd-table > tbody > tr > td:first-child, .bd-table > tfoot > tr > td:first-child { max-width: 55vw; }
+        .bd-pop { left: 0; right: auto; }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="flex min-h-screen bg-gray-50">
+    {% include 'shop/_sidebar.html' with active_page='sales_report_ht' %}
+
+    <main class="flex-1 p-2 lg:p-8 lg:ml-0 min-w-0">
+        {% include 'shop/_sales_ht_filters.html' with view_mode='breakdown' %}
+
+        <div class="bd-root">
+            <!-- Удирдлага: мөрийн түвшин, багана, шүүлт, дэлгэх -->
+            <div class="bd-card p-3 lg:p-4 mb-4 space-y-3">
+                <div class="flex flex-wrap items-center gap-2">
+                    <span class="text-sm font-medium text-gray-700 mr-1">Мөрийн түвшин:</span>
+                    <div id="bd-levels" class="flex flex-wrap items-center gap-1.5"></div>
+                </div>
+                <div class="flex flex-wrap items-center gap-2">
+                    <div class="relative">
+                        <button type="button" class="bd-btn" id="bd-cols-btn" aria-expanded="false">▦ Багана</button>
+                        <div class="bd-pop hidden w-[min(92vw,520px)]" id="bd-cols-pop">
+                            <div class="flex items-center justify-between mb-2">
+                                <p class="text-xs font-semibold text-gray-500 uppercase tracking-wide">Харуулах баганууд</p>
+                                <div class="flex gap-2">
+                                    <button type="button" class="text-xs text-gray-500 hover:text-gray-900" id="bd-cols-all">Бүгд</button>
+                                    <button type="button" class="text-xs text-gray-500 hover:text-gray-900" id="bd-cols-default">↺ Анхны</button>
+                                </div>
+                            </div>
+                            <div id="bd-cols-list" class="grid grid-cols-1 sm:grid-cols-2 gap-x-4"></div>
+                        </div>
+                    </div>
+                    <div class="relative">
+                        <button type="button" class="bd-btn" id="bd-rule-btn" aria-expanded="false">＋ Шүүлт нэмэх</button>
+                        <div class="bd-pop hidden w-[min(92vw,460px)]" id="bd-rule-pop">
+                            <p class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Шүүлтийн нөхцөл</p>
+                            <div class="grid grid-cols-1 gap-2">
+                                <select id="bd-rule-field" class="bd-select"></select>
+                                <div class="flex gap-2">
+                                    <select id="bd-rule-op" class="bd-select flex-none"></select>
+                                    <input id="bd-rule-value" class="bd-select flex-1 min-w-0" placeholder="Утга">
+                                </div>
+                                <div id="bd-rule-level-row" class="flex items-center gap-2">
+                                    <span class="text-xs text-gray-500">Аль түвшинд шалгах:</span>
+                                    <select id="bd-rule-level" class="bd-select flex-1"></select>
+                                </div>
+                                <p id="bd-rule-hint" class="text-xs text-gray-500"></p>
+                                <div class="flex justify-end gap-2">
+                                    <button type="button" class="bd-btn" id="bd-rule-cancel">Болих</button>
+                                    <button type="button" class="bd-btn" id="bd-rule-add" style="background:#2E7D32;color:#fff;border-color:#2E7D32">Нэмэх</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <span class="w-px h-6 bg-gray-200 mx-1"></span>
+                    <button type="button" class="bd-btn" id="bd-expand-all">▼ Бүгдийг дэлгэх</button>
+                    <button type="button" class="bd-btn" id="bd-collapse-all">► Хураах</button>
+                    <span id="bd-expand-levels" class="flex gap-1"></span>
+                    <button type="button" class="bd-btn ml-auto" id="bd-export">📥 Excel рүү гаргах</button>
+                </div>
+                <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
+                    <span class="text-sm font-medium text-gray-700">Үлдэгдэл:</span>
+                    <div id="bd-warehouses" class="flex flex-wrap items-center gap-x-4 gap-y-1"></div>
+                    <span class="text-xs text-gray-400" id="bd-stock-note"></span>
+                </div>
+                <div id="bd-rules" class="flex flex-wrap items-center gap-2"></div>
+            </div>
+
+            <div class="bd-card">
+                <div class="flex flex-wrap items-center gap-3 px-4 py-2 border-b border-gray-100 text-xs text-gray-500">
+                    <span id="bd-summary"></span>
+                    <span class="ml-auto">Баганын толгой дээр дарж эрэмбэлнэ • Мөрөн дээр дарж задална</span>
+                </div>
+                <div class="overflow-auto" style="max-height: 75vh;">
+                    <table class="bd-table">
+                        <thead id="bd-head"></thead>
+                        <tbody id="bd-body"></tbody>
+                        <tfoot id="bd-foot"></tfoot>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </main>
+</div>
+
+{{ breakdown|json_script:"bd-data" }}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const D = JSON.parse(document.getElementById('bd-data').textContent);
+    // records: [сар, суваг, борлуулагч, харилцагч, бараа, дүн, НӨАТ-гүй, өртөг, тоо, хөнгөлөлт, [баримтууд]]
+    const R = { month: 0, channel: 1, seller: 2, customer: 3, item: 4, amount: 5, net: 6, cost: 7, qty: 8, discount: 9, docs: 10 };
+
+    // ---------- Хэмжээсүүд (мөрийн түвшин) ----------
+    const DIMS = {
+        channel:  { label: 'ХТ / суваг', value: (r) => r[R.channel], name: (v) => D.channels[v] },
+        seller:   { label: 'Борлуулагч', value: (r) => r[R.seller], name: (v) => D.sellers[v] },
+        group:    { label: 'Харилцагчийн бүлэг', value: (r) => D.customer_group[r[R.customer]], name: (v) => D.groups[v] },
+        customer: { label: 'Харилцагч', value: (r) => r[R.customer], name: (v) => D.customers[v] },
+        item:     { label: 'Бараа', value: (r) => r[R.item], name: (v) => D.items[v], code: (v) => D.item_codes[v] },
+        month:    { label: 'Сар', value: (r) => r[R.month], name: (v) => D.months[v] },
+    };
+
+    // ---------- Үзүүлэлтүүд (баганууд) ----------
+    const safe = (a, b) => (b ? a / b : null);
+    const METRICS = [
+        { key: 'qty', label: 'Тоо ширхэг', fmt: 'qty', get: (n) => n.qty, on: true },
+        { key: 'amount', label: 'Борлуулалт (НӨАТ-тэй)', fmt: 'money', get: (n) => n.amount, on: true },
+        { key: 'net', label: 'Борлуулалт (НӨАТ-гүй)', fmt: 'money', get: (n) => n.net },
+        { key: 'cost', label: 'Өртөг', fmt: 'money', get: (n) => n.cost, on: true },
+        { key: 'profit', label: 'Бохир ашиг', fmt: 'money', get: (n) => n.net - n.cost, on: true },
+        { key: 'margin', label: 'Ашгийн хувь', fmt: 'pct', get: (n) => safe(n.net - n.cost, n.net), on: true },
+        { key: 'share_total', label: 'Нийт борлуулалтад эзлэх %', fmt: 'pct', get: (n, c) => safe(n.amount, c.root.amount), on: true },
+        { key: 'share_parent', label: 'Дээд түвшин дэх эзлэх %', fmt: 'pct', get: (n) => safe(n.amount, n.parent ? n.parent.amount : n.amount) },
+        { key: 'profit_share', label: 'Нийт ашигт эзлэх %', fmt: 'pct', get: (n, c) => safe(n.net - n.cost, c.root.net - c.root.cost) },
+        { key: 'orders', label: 'Захиалга', fmt: 'int', get: (n) => n.docs.size },
+        // den: "119/200" хэлбэрээр харуулах хуваарь (Excel-д тусдаа багана болно)
+        { key: 'customers', label: 'Харилцагчийн тоо / идэвхтэй', fmt: 'int', get: (n) => n.custs.size,
+          den: (n) => activeFor(n), denLabel: 'Идэвхтэй харилцагч', on: true },
+        { key: 'registered', label: 'Нийт харилцагч (идэвхтэй + идэвхгүй)', fmt: 'int', get: (n) => registeredFor(n), on: true },
+        { key: 'active', label: 'Идэвхтэй харилцагч', fmt: 'int', get: (n) => activeFor(n) },
+        { key: 'coverage', label: 'Хамрах % (идэвхтэй харилцагчаас)', fmt: 'pct', get: (n) => safe(n.custs.size, activeFor(n)), on: true },
+        { key: 'idle', label: 'Борлуулалтгүй идэвхтэй харилцагч', fmt: 'int', get: (n) => { const a = activeFor(n); return a === null ? null : Math.max(0, a - n.custs.size); } },
+        { key: 'items', label: 'Барааны нэр төрөл', fmt: 'int', get: (n) => n.items.size, on: true },
+        { key: 'stock_items', label: 'Үлдэгдэлтэй барааны нэр төрлөөс борлуулсан', fmt: 'int', get: (n) => stockSold(n),
+          den: () => stockUniverse(), denLabel: 'Үлдэгдэлтэй барааны нэр төрөл', on: true },
+        { key: 'stock_items_pct', label: 'Үлдэгдэлтэй бараанаас борлуулсан %', fmt: 'pct',
+          get: (n) => { const u = stockUniverse(); return u === null ? null : safe(stockSold(n), u); }, on: true },
+        { key: 'aov', label: 'Дундаж захиалга', fmt: 'money', get: (n) => safe(n.amount, n.docs.size) },
+        { key: 'per_customer', label: 'Харилцагчид ногдох борлуулалт', fmt: 'money', get: (n) => safe(n.amount, n.custs.size) },
+        { key: 'avg_price', label: 'Дундаж үнэ', fmt: 'money', get: (n) => safe(n.amount, n.qty) },
+        { key: 'avg_cost', label: 'Дундаж өртөг', fmt: 'money', get: (n) => safe(n.cost, n.qty) },
+        { key: 'discount', label: 'Хөнгөлөлт', fmt: 'money', get: (n) => n.discount },
+    ];
+    const METRIC_BY_KEY = Object.fromEntries(METRICS.map((m) => [m.key, m]));
+
+    // ---------- Бүртгэлтэй харилцагч (хамрах хүрээний хуваарь) ----------
+    // Мөрийн замд суваг / бүлэг байвал түүгээр нь, харилцагч байвал тооцохгүй (утгагүй).
+    // Суваг / бүлгийн текст шүүлт бүртгэлтэй харилцагчдад ч үйлчилнэ (setRegistered-ийг computeTree дуудна).
+    const newCounts = () => ({ total: 0, channel: new Map(), group: new Map(), both: new Map() });
+    let regAll = newCounts(), regActive = newCounts();
+    function setRegistered(list) {
+        regAll = newCounts(); regActive = newCounts();
+        const add = (c, ch, g) => {
+            c.total += 1;
+            c.channel.set(ch, (c.channel.get(ch) || 0) + 1);
+            c.group.set(g, (c.group.get(g) || 0) + 1);
+            c.both.set(`${ch}|${g}`, (c.both.get(`${ch}|${g}`) || 0) + 1);
+        };
+        list.forEach(([ch, g, active]) => { add(regAll, ch, g); if (active) add(regActive, ch, g); });
+    }
+    function countFor(c, n) {
+        const p = n.path;
+        if (p.customer !== undefined) return null;
+        if (p.channel !== undefined && p.group !== undefined) return c.both.get(`${p.channel}|${p.group}`) || 0;
+        if (p.channel !== undefined) return c.channel.get(p.channel) || 0;
+        if (p.group !== undefined) return c.group.get(p.group) || 0;
+        return c.total;
+    }
+    const registeredFor = (n) => countFor(regAll, n);
+    const activeFor = (n) => countFor(regActive, n);
+
+    // ---------- Барааны үлдэгдэл (snapshot) ----------
+    // Сонгосон агуулахын аль нэгэнд үлдэгдэлтэй бол "үлдэгдэлтэй бараа"
+    const WAREHOUSES = [
+        { key: 'jijig', label: 'Агуулах жижиг', pos: 1 },
+        { key: 'tolgoit', label: 'Агуулах Толгойт', pos: 2 },
+        { key: 'altjin', label: 'Агуулах алтжин', pos: 3 },
+    ];
+    const selectedWarehouses = () => WAREHOUSES.filter((w) => prefs.warehouses.includes(w.key));
+    const stockHas = (row) => selectedWarehouses().some((w) => row[w.pos] > 0);
+    function itemInStock(itemIdx) {
+        const si = D.item_stock[itemIdx];
+        return si >= 0 && stockHas(D.stock[si]);
+    }
+    function stockUniverse() {
+        if (!selectedWarehouses().length) return null;
+        return state.stockRows.filter(stockHas).length;
+    }
+    function stockSold(n) {
+        if (!selectedWarehouses().length) return null;
+        let count = 0;
+        n.items.forEach((i) => { if (itemInStock(i)) count += 1; });
+        return count;
+    }
+    // Бараа түвшний мөрөнд тухайн барааны агуулах тус бүрийн үлдэгдэл
+    const stockColumns = () => selectedWarehouses().map((w) => ({
+        key: `stock_${w.key}`, label: `Үлдэгдэл: ${w.label}`, fmt: 'qty',
+        get: (n) => {
+            if (n.path.item === undefined) return null;
+            const si = D.item_stock[n.path.item];
+            return si >= 0 ? D.stock[si][w.pos] : 0;
+        },
+    }));
+
+    // ---------- Тохиргоо (хөтөчид хадгална) ----------
+    const PREFS_KEY = 'ht-breakdown-prefs-v2';
+    const DEFAULT_PREFS = {
+        levels: ['channel', 'customer', 'item'],
+        columns: METRICS.filter((m) => m.on).map((m) => m.key),
+        warehouses: ['jijig'],
+        sortKey: 'amount', sortDir: -1,
+        version: 4,
+    };
+    let prefs, savedVersion = DEFAULT_PREFS.version;
+    try {
+        const saved = JSON.parse(localStorage.getItem(PREFS_KEY) || 'null');
+        if (saved) savedVersion = saved.version || 2;
+        prefs = { ...DEFAULT_PREFS, ...(saved || {}) };
+    } catch (e) { prefs = { ...DEFAULT_PREFS }; }
+    prefs.levels = prefs.levels.filter((l) => DIMS[l]);
+    if (!prefs.levels.length) prefs.levels = [...DEFAULT_PREFS.levels];
+    prefs.columns = prefs.columns.filter((k) => METRIC_BY_KEY[k]);
+    // Хувилбар 3: "Нийт харилцагч" баганыг хадгалсан тохиргоонд нэг удаа нэмнэ (бусад сонголт хэвээр)
+    if (savedVersion < 3) {
+        if (!prefs.columns.includes('registered')) {
+            prefs.columns = METRICS.map((m) => m.key).filter((k) => k === 'registered' || prefs.columns.includes(k));
+        }
+        prefs.version = 3;
+    }
+    // Хувилбар 4: "Тоо ширхэг"-ийг хадгалсан тохиргоонд нэмж, баганыг шинэ дарааллаар (борлуулалтын өмнө) эрэмбэлнэ
+    if (savedVersion < 4) {
+        const set = new Set([...prefs.columns, 'qty']);
+        prefs.columns = METRICS.map((m) => m.key).filter((k) => set.has(k));
+        prefs.version = 4;
+    }
+    prefs.warehouses = (prefs.warehouses || []).filter((k) => WAREHOUSES.some((w) => w.key === k));
+    const savePrefs = () => { try { localStorage.setItem(PREFS_KEY, JSON.stringify(prefs)); } catch (e) { /* ignore */ } };
+
+    const state = { rules: [], expanded: new Set(), tree: null, stockRows: D.stock };
+
+    // ---------- Формат ----------
+    const intFmt = new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 });
+    const qtyFmt = new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 });
+    function fmt(v, kind) {
+        if (v === null || v === undefined || Number.isNaN(v)) return '—';
+        if (kind === 'pct') return `${(v * 100).toFixed(1)}%`;
+        if (kind === 'qty') return qtyFmt.format(v);
+        return intFmt.format(v);
+    }
+    const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+    // ---------- Мод бүтээх ----------
+    function newNode(key, dim, value, depth, parent, path) {
+        return { key, dim, value, depth, parent, path, amount: 0, net: 0, cost: 0, qty: 0, discount: 0,
+                 docs: new Set(), custs: new Set(), items: new Set(), children: new Map() };
+    }
+    function addRecord(n, r) {
+        n.amount += r[R.amount]; n.net += r[R.net]; n.cost += r[R.cost]; n.qty += r[R.qty]; n.discount += r[R.discount];
+        r[R.docs].forEach((d) => n.docs.add(d));
+        n.custs.add(r[R.customer]); n.items.add(r[R.item]);
+    }
+    function buildTree(records, levels) {
+        const root = newNode('root', null, null, -1, null, {});
+        records.forEach((r) => {
+            addRecord(root, r);
+            let node = root;
+            levels.forEach((dim, depth) => {
+                const v = DIMS[dim].value(r);
+                let child = node.children.get(v);
+                if (!child) {
+                    child = newNode(`${node.key}/${v}`, dim, v, depth, node, { ...node.path, [dim]: v });
+                    node.children.set(v, child);
+                }
+                addRecord(child, r);
+                node = child;
+            });
+        });
+        return root;
+    }
+    const nodeLabel = (n) => DIMS[n.dim].name(n.value);
+
+    // ---------- Шүүлтийн нөхцөл ----------
+    const TEXT_OPS = { contains: 'агуулсан', not_contains: 'агуулаагүй', equals: 'тэнцүү' };
+    const NUM_OPS = { gt: '>', gte: '≥', lt: '<', lte: '≤', eq: '=', ne: '≠' };
+    function matchText(label, code, op, value) {
+        const hay = `${code ? code + ' ' : ''}${label}`.toLowerCase();
+        const needle = value.toLowerCase();
+        if (op === 'contains') return hay.includes(needle);
+        if (op === 'not_contains') return !hay.includes(needle);
+        return label.toLowerCase() === needle || (code || '').toLowerCase() === needle;
+    }
+    function matchNum(v, op, target) {
+        if (v === null || v === undefined) return false;
+        const eps = Math.abs(target) * 1e-9 + 1e-9;
+        return { gt: v > target, gte: v >= target - eps, lt: v < target, lte: v <= target + eps,
+                 eq: Math.abs(v - target) <= eps, ne: Math.abs(v - target) > eps }[op];
+    }
+
+    // Хэмжээсийн нөхцөл -> бичлэгийг шүүнэ; үзүүлэлтийн нөхцөл -> тухайн түвшний зангилааг (ба доорхыг) хасна
+    function computeTree() {
+        let records = D.records;
+        let registered = D.registered;  // [суваг, бүлэг, идэвхтэй]
+        let stockRows = D.stock;        // [нэр, жижиг, толгойт, алтжин]
+        state.rules.filter((r) => r.type === 'dim').forEach((rule) => {
+            const dim = DIMS[rule.dim];
+            records = records.filter((r) => {
+                const v = dim.value(r);
+                return matchText(dim.name(v), dim.code ? dim.code(v) : '', rule.op, rule.value);
+            });
+            if (rule.dim === 'item') {
+                const codeByName = new Map(D.items.map((name, i) => [name, D.item_codes[i]]));
+                stockRows = stockRows.filter((row) => matchText(row[0], codeByName.get(row[0]) || '', rule.op, rule.value));
+            }
+            if (rule.dim === 'channel' || rule.dim === 'group') {
+                const pos = rule.dim === 'channel' ? 0 : 1;
+                registered = registered.filter((reg) => matchText(dim.name(reg[pos]), '', rule.op, rule.value));
+            }
+        });
+        setRegistered(registered);
+        state.stockRows = stockRows;
+        let tree = buildTree(records, prefs.levels);
+        const metricRules = state.rules.filter((r) => r.type === 'metric' && r.level < prefs.levels.length)
+            .sort((a, b) => a.level - b.level);
+        metricRules.forEach((rule) => {
+            const metric = METRIC_BY_KEY[rule.metric];
+            const target = metric.fmt === 'pct' ? rule.value / 100 : rule.value;
+            const ctx = { root: tree };
+            const failing = new Set();
+            const walk = (n) => {
+                if (n.depth === rule.level) {
+                    if (!matchNum(metric.get(n, ctx), rule.op, target)) failing.add(n.key);
+                    return;
+                }
+                n.children.forEach(walk);
+            };
+            tree.children.forEach(walk);
+            if (!failing.size) return;
+            records = records.filter((r) => {
+                let key = 'root';
+                for (let d = 0; d <= rule.level; d++) key += `/${DIMS[prefs.levels[d]].value(r)}`;
+                return !failing.has(key);
+            });
+            tree = buildTree(records, prefs.levels);
+        });
+        state.records = records;
+        state.tree = tree;
+    }
+
+    // ---------- Удирдлагууд ----------
+    function renderLevels() {
+        const box = document.getElementById('bd-levels');
+        box.replaceChildren();
+        const count = Math.min(prefs.levels.length + 1, 4);
+        for (let i = 0; i < count; i++) {
+            const wrap = document.createElement('span'); wrap.className = 'bd-level';
+            if (i) { const a = document.createElement('span'); a.className = 'bd-arrow'; a.textContent = '→'; wrap.appendChild(a); }
+            const sel = document.createElement('select'); sel.className = 'bd-select';
+            const none = document.createElement('option'); none.value = ''; none.textContent = i === 0 ? '— сонгох —' : '— (түвшин нэмэх) —';
+            sel.appendChild(none);
+            Object.entries(DIMS).forEach(([key, d]) => {
+                const o = document.createElement('option'); o.value = key; o.textContent = `${i + 1}. ${d.label}`;
+                o.disabled = prefs.levels.includes(key) && prefs.levels[i] !== key;
+                o.selected = prefs.levels[i] === key;
+                sel.appendChild(o);
+            });
+            sel.addEventListener('change', () => {
+                let levels = [...prefs.levels];
+                if (sel.value) {
+                    // Нэг хэмжээс хоёр түвшинд давхцахгүй
+                    levels = levels.filter((l, j) => j === i || l !== sel.value);
+                    levels[Math.min(i, levels.length)] = sel.value;
+                } else levels.splice(i);
+                prefs.levels = levels.filter(Boolean);
+                if (!prefs.levels.length) prefs.levels = ['channel'];
+                state.expanded.clear();
+                savePrefs(); refresh();
+            });
+            wrap.appendChild(sel);
+            box.appendChild(wrap);
+        }
+        const exp = document.getElementById('bd-expand-levels');
+        // Завсрын түвшнүүд хүртэл дэлгэх (эцсийн түвшин = "Бүгдийг дэлгэх")
+        exp.replaceChildren(...prefs.levels.slice(1, -1).map((dim, i) => {
+            const b = document.createElement('button'); b.type = 'button'; b.className = 'bd-btn';
+            b.textContent = `${i + 2}. ${DIMS[dim].label} хүртэл`;
+            b.addEventListener('click', () => { expandTo(i + 2); render(); });
+            return b;
+        }));
+    }
+
+    function renderColumnPicker() {
+        const list = document.getElementById('bd-cols-list');
+        list.replaceChildren(...METRICS.map((m) => {
+            const label = document.createElement('label'); label.className = 'bd-check';
+            const input = document.createElement('input'); input.type = 'checkbox'; input.className = 'w-4 h-4 accent-primary';
+            input.checked = prefs.columns.includes(m.key);
+            input.addEventListener('change', () => {
+                const set = new Set(prefs.columns);
+                if (input.checked) set.add(m.key); else set.delete(m.key);
+                prefs.columns = METRICS.map((x) => x.key).filter((k) => set.has(k));  // анхны дарааллаар
+                savePrefs(); render();
+            });
+            label.append(input, document.createTextNode(m.label));
+            return label;
+        }));
+        document.getElementById('bd-cols-btn').textContent = `▦ Багана (${prefs.columns.length})`;
+    }
+    document.getElementById('bd-cols-all').addEventListener('click', () => {
+        prefs.columns = METRICS.map((m) => m.key); savePrefs(); renderColumnPicker(); render();
+    });
+    document.getElementById('bd-cols-default').addEventListener('click', () => {
+        prefs.columns = [...DEFAULT_PREFS.columns]; savePrefs(); renderColumnPicker(); render();
+    });
+
+    // Popover нээх/хаах
+    function popover(btnId, popId, onOpen) {
+        const btn = document.getElementById(btnId), pop = document.getElementById(popId);
+        const set = (open) => { pop.classList.toggle('hidden', !open); btn.setAttribute('aria-expanded', String(open)); if (open && onOpen) onOpen(); };
+        btn.addEventListener('click', (e) => { e.stopPropagation(); set(pop.classList.contains('hidden')); });
+        document.addEventListener('click', (e) => { if (!pop.contains(e.target) && e.target !== btn) set(false); });
+        document.addEventListener('keydown', (e) => { if (e.key === 'Escape') set(false); });
+        return set;
+    }
+    popover('bd-cols-btn', 'bd-cols-pop', renderColumnPicker);
+    const setRulePop = popover('bd-rule-btn', 'bd-rule-pop', prepareRuleForm);
+
+    // ---------- Шүүлт нэмэх ----------
+    const fieldSel = document.getElementById('bd-rule-field');
+    const opSel = document.getElementById('bd-rule-op');
+    const valueInput = document.getElementById('bd-rule-value');
+    const levelSel = document.getElementById('bd-rule-level');
+    function prepareRuleForm() {
+        fieldSel.replaceChildren();
+        const g1 = document.createElement('optgroup'); g1.label = 'Нэр/кодоор';
+        Object.entries(DIMS).forEach(([key, d]) => {
+            const o = document.createElement('option'); o.value = `dim:${key}`; o.textContent = d.label; g1.appendChild(o);
+        });
+        const g2 = document.createElement('optgroup'); g2.label = 'Тоон үзүүлэлтээр';
+        METRICS.forEach((m) => {
+            const o = document.createElement('option'); o.value = `metric:${m.key}`; o.textContent = m.label; g2.appendChild(o);
+        });
+        fieldSel.append(g1, g2);
+        levelSel.replaceChildren(...prefs.levels.map((dim, i) => {
+            const o = document.createElement('option'); o.value = i; o.textContent = `${i + 1}. ${DIMS[dim].label}`; return o;
+        }));
+        levelSel.value = String(prefs.levels.length - 1);
+        valueInput.value = '';
+        syncRuleForm();
+    }
+    function syncRuleForm() {
+        const [type, key] = fieldSel.value.split(':');
+        const ops = type === 'dim' ? TEXT_OPS : NUM_OPS;
+        opSel.replaceChildren(...Object.entries(ops).map(([k, label]) => {
+            const o = document.createElement('option'); o.value = k; o.textContent = label; return o;
+        }));
+        document.getElementById('bd-rule-level-row').classList.toggle('hidden', type === 'dim');
+        valueInput.type = type === 'dim' ? 'text' : 'number';
+        valueInput.step = 'any';
+        const metric = METRIC_BY_KEY[key];
+        document.getElementById('bd-rule-hint').textContent = type === 'dim'
+            ? 'Бичлэгийг шүүнэ - бүх түвшний дүн дахин тооцогдоно. Бараа, харилцагчийг кодоор ч хайна.'
+            : `Сонгосон түвшний мөр нөхцөлийг хангахгүй бол (доорх мөрүүдтэй нь) хасагдаж, дээд түвшний дүн дахин тооцогдоно.${metric && metric.fmt === 'pct' ? ' Хувийг тоогоор оруулна (жиш: 25 = 25%).' : ''}`;
+    }
+    fieldSel.addEventListener('change', syncRuleForm);
+    document.getElementById('bd-rule-cancel').addEventListener('click', () => setRulePop(false));
+    const addRule = () => {
+        const [type, key] = fieldSel.value.split(':');
+        const raw = valueInput.value.trim();
+        if (!raw) { valueInput.focus(); return; }
+        if (type === 'dim') state.rules.push({ type, dim: key, op: opSel.value, value: raw });
+        else {
+            const value = Number(raw);
+            if (!Number.isFinite(value)) { valueInput.focus(); return; }
+            state.rules.push({ type, metric: key, op: opSel.value, value, level: Number(levelSel.value) });
+        }
+        setRulePop(false);
+        refresh();
+    };
+    document.getElementById('bd-rule-add').addEventListener('click', addRule);
+    valueInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); addRule(); } });
+
+    function renderRules() {
+        const box = document.getElementById('bd-rules');
+        box.replaceChildren(...state.rules.map((rule, i) => {
+            const chip = document.createElement('span'); chip.className = 'bd-chip';
+            let text;
+            if (rule.type === 'dim') text = `${DIMS[rule.dim].label} ${TEXT_OPS[rule.op]} "${rule.value}"`;
+            else {
+                const m = METRIC_BY_KEY[rule.metric];
+                const lvl = prefs.levels[rule.level];
+                text = `${m.label} ${NUM_OPS[rule.op]} ${m.fmt === 'pct' ? rule.value + '%' : intFmt.format(rule.value)}`
+                    + (lvl ? ` (${DIMS[lvl].label} түвшинд)` : ' (идэвхгүй: түвшин байхгүй)');
+            }
+            const t = document.createElement('span'); t.textContent = text;
+            const x = document.createElement('button'); x.type = 'button'; x.textContent = '×'; x.title = 'Хасах';
+            x.addEventListener('click', () => { state.rules.splice(i, 1); refresh(); });
+            chip.append(t, x);
+            return chip;
+        }));
+        if (state.rules.length > 1) {
+            const clear = document.createElement('button'); clear.type = 'button'; clear.className = 'text-xs text-gray-500 hover:text-gray-900';
+            clear.textContent = 'Бүгдийг арилгах';
+            clear.addEventListener('click', () => { state.rules = []; refresh(); });
+            box.appendChild(clear);
+        }
+    }
+
+    // ---------- Хүснэгт ----------
+    const columns = () => [...prefs.columns.map((k) => METRIC_BY_KEY[k]), ...stockColumns()];
+    function sortValue(n, ctx) {
+        if (prefs.sortKey === '__name') return nodeLabel(n);
+        const m = columns().find((c) => c.key === prefs.sortKey);
+        return m ? m.get(n, ctx) : 0;
+    }
+    function sortedChildren(n, ctx) {
+        return [...n.children.values()].sort((a, b) => {
+            const va = sortValue(a, ctx), vb = sortValue(b, ctx);
+            if (va === null || va === undefined) return 1;
+            if (vb === null || vb === undefined) return -1;
+            return (typeof va === 'string' ? va.localeCompare(vb, 'mn') : va - vb) * prefs.sortDir;
+        });
+    }
+    // level (1-ээс) хүртэлх түвшний мөрүүд харагдахаар дэлгэнэ
+    function expandTo(level) {
+        state.expanded.clear();
+        const walk = (n) => n.children.forEach((c) => {
+            if (c.depth < level - 1) { state.expanded.add(c.key); walk(c); }
+        });
+        walk(state.tree);
+    }
+
+    function renderHead() {
+        const tr = document.createElement('tr');
+        const first = document.createElement('th');
+        first.textContent = prefs.levels.map((l) => DIMS[l].label).join(' → ') + (prefs.sortKey === '__name' ? (prefs.sortDir === 1 ? ' ▲' : ' ▼') : '');
+        first.addEventListener('click', () => setSort('__name'));
+        tr.appendChild(first);
+        columns().forEach((m) => {
+            const th = document.createElement('th');
+            th.textContent = m.label + (prefs.sortKey === m.key ? (prefs.sortDir === 1 ? ' ▲' : ' ▼') : '');
+            th.addEventListener('click', () => setSort(m.key));
+            tr.appendChild(th);
+        });
+        document.getElementById('bd-head').replaceChildren(tr);
+    }
+    function setSort(key) {
+        if (prefs.sortKey === key) prefs.sortDir = -prefs.sortDir;
+        else { prefs.sortKey = key; prefs.sortDir = key === '__name' ? 1 : -1; }
+        savePrefs(); render();
+    }
+
+    function cellsHtml(n, ctx) {
+        return columns().map((m) => {
+            const v = m.get(n, ctx);
+            const neg = typeof v === 'number' && v < 0 ? ' class="bd-neg"' : '';
+            const den = m.den ? m.den(n, ctx) : null;
+            const denHtml = den === null || den === undefined || v === null ? '' : `<span class="bd-den">/${fmt(den, m.fmt)}</span>`;
+            return `<td${neg}>${fmt(v, m.fmt)}${denHtml}</td>`;
+        }).join('');
+    }
+
+    function render() {
+        renderHead();
+        const tree = state.tree, ctx = { root: tree };
+        const maxDepth = prefs.levels.length - 1;
+        const parts = [];
+        const walk = (n) => {
+            sortedChildren(n, ctx).forEach((c) => {
+                const open = state.expanded.has(c.key);
+                const hasChildren = c.depth < maxDepth && c.children.size > 0;
+                const dim = DIMS[c.dim];
+                const code = dim.code ? dim.code(c.value) : '';
+                const indent = 0.7 + c.depth * 1.25;
+                parts.push(`<tr class="lvl-${c.depth}${hasChildren ? ' has-children' : ''}" data-key="${esc(c.key)}">`
+                    + `<td style="padding-left:${indent}rem" title="${esc(nodeLabel(c))}">`
+                    + `<span class="bd-toggle">${hasChildren ? (open ? '▾' : '▸') : ''}</span>`
+                    + (code ? `<span class="bd-code">${esc(code)}</span>` : '')
+                    + esc(nodeLabel(c))
+                    + (hasChildren ? `<span class="bd-count">(${c.children.size})</span>` : '')
+                    + `</td>${cellsHtml(c, ctx)}</tr>`);
+                if (open && hasChildren) walk(c);
+            });
+        };
+        walk(tree);
+        const body = document.getElementById('bd-body');
+        body.innerHTML = parts.length ? parts.join('')
+            : `<tr><td colspan="${columns().length + 1}" style="text-align:center;padding:2rem;color:#6b7280">Шүүлтэд тохирох борлуулалт олдсонгүй.</td></tr>`;
+        document.getElementById('bd-foot').innerHTML = `<tr><td>НИЙТ</td>${cellsHtml(tree, ctx)}</tr>`;
+        document.getElementById('bd-summary').textContent =
+            `${D.date_from} ~ ${D.date_to} • ${intFmt.format(tree.children.size)} ${DIMS[prefs.levels[0]].label.toLowerCase()}`
+            + ` • ${intFmt.format(state.records.length)} / ${intFmt.format(D.records.length)} бичлэг`
+            + (state.rules.length ? ` • ${state.rules.length} шүүлт идэвхтэй` : '');
+    }
+
+    document.getElementById('bd-body').addEventListener('click', (e) => {
+        const tr = e.target.closest('tr.has-children');
+        if (!tr) return;
+        const key = tr.dataset.key;
+        if (state.expanded.has(key)) state.expanded.delete(key); else state.expanded.add(key);
+        render();
+    });
+    document.getElementById('bd-expand-all').addEventListener('click', () => { expandTo(prefs.levels.length); render(); });
+    document.getElementById('bd-collapse-all').addEventListener('click', () => { state.expanded.clear(); render(); });
+
+    // ---------- Excel (одоогийн мөрийн түвшин, багана, шүүлт, эрэмбээр; бүгдийг дэлгэсэн) ----------
+    function loadSheetJs() {
+        if (window.XLSX) return Promise.resolve();
+        return new Promise((resolve, reject) => {
+            const s = document.createElement('script');
+            s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+            s.onload = resolve; s.onerror = () => reject(new Error('SheetJS ачаалж чадсангүй'));
+            document.head.appendChild(s);
+        });
+    }
+    document.getElementById('bd-export').addEventListener('click', async () => {
+        const btn = document.getElementById('bd-export');
+        btn.disabled = true; btn.textContent = '⏳ Бэлтгэж байна...';
+        try {
+            await loadSheetJs();
+            const tree = state.tree, ctx = { root: tree }, cols = columns();
+            const aoa = [
+                [`Борлуулалтын задаргаа ${D.date_from} ~ ${D.date_to}`],
+                [state.rules.length ? 'Шүүлт: ' + [...document.querySelectorAll('#bd-rules .bd-chip span')].map((s) => s.textContent).join('; ') : ''],
+                [prefs.levels.map((l) => DIMS[l].label).join(' → '), 'Код', ...cols.flatMap((m) => (m.den ? [m.label, m.denLabel] : [m.label]))],
+            ];
+            const clean = (v) => (v === null || v === undefined || Number.isNaN(v) ? null : v);
+            const values = (n) => cols.flatMap((m) => (m.den ? [clean(m.get(n, ctx)), clean(m.den(n, ctx))] : [clean(m.get(n, ctx))]));
+            const fmts = cols.flatMap((m) => (m.den ? [m.fmt, m.fmt] : [m.fmt]));
+            const rowsMeta = [{}, {}, {}];
+            const walk = (n) => {
+                sortedChildren(n, ctx).forEach((c) => {
+                    const dim = DIMS[c.dim];
+                    aoa.push([`${'    '.repeat(c.depth)}${nodeLabel(c)}`, dim.code ? dim.code(c.value) : '', ...values(c)]);
+                    rowsMeta.push({ level: c.depth, hidden: false });
+                    walk(c);
+                });
+            };
+            walk(tree);
+            aoa.push(['НИЙТ', '', ...values(tree)]);
+            const ws = XLSX.utils.aoa_to_sheet(aoa);
+            ws['!rows'] = rowsMeta;
+            ws['!cols'] = [{ wch: 50 }, { wch: 10 }, ...fmts.map(() => ({ wch: 16 }))];
+            ws['!freeze'] = { xSplit: 1, ySplit: 3 };
+            const numFmt = { money: '#,##0', int: '#,##0', qty: '#,##0.##', pct: '0.0%' };
+            for (let r = 3; r < aoa.length; r++) {
+                fmts.forEach((f, ci) => {
+                    const cell = ws[XLSX.utils.encode_cell({ r, c: ci + 2 })];
+                    if (cell && typeof cell.v === 'number') cell.z = numFmt[f];
+                });
+            }
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, 'Задаргаа');
+            XLSX.writeFile(wb, `sales_ht_breakdown_${D.date_from}_${D.date_to}.xlsx`);
+        } catch (err) {
+            alert(err.message);
+        } finally {
+            btn.disabled = false; btn.textContent = '📥 Excel рүү гаргах';
+        }
+    });
+
+    function renderWarehouses() {
+        const box = document.getElementById('bd-warehouses');
+        box.replaceChildren(...WAREHOUSES.map((w) => {
+            const label = document.createElement('label'); label.className = 'bd-wh';
+            const input = document.createElement('input'); input.type = 'checkbox'; input.className = 'w-4 h-4 accent-primary';
+            input.checked = prefs.warehouses.includes(w.key);
+            input.addEventListener('change', () => {
+                const set = new Set(prefs.warehouses);
+                if (input.checked) set.add(w.key); else set.delete(w.key);
+                prefs.warehouses = WAREHOUSES.map((x) => x.key).filter((k) => set.has(k));
+                savePrefs(); render();
+            });
+            label.append(input, document.createTextNode(w.label));
+            return label;
+        }));
+        document.getElementById('bd-stock-note').textContent =
+            `Одоогийн үлдэгдэл${D.stock_updated ? ` (${D.stock_updated}-ны snapshot)` : ''} • сонгосон агуулахад үлдэгдэлтэй бол "үлдэгдэлтэй бараа"`;
+    }
+
+    function refresh() {
+        computeTree();
+        renderLevels();
+        renderRules();
+        render();
+    }
+    renderWarehouses();
+    refresh();
+});
+</script>
+{% endblock %}

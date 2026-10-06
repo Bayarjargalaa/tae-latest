@@ -33,6 +33,43 @@
         </div>
         {% endif %}
 
+        <form method="get" id="ma-filter" class="bg-white rounded-lg shadow p-4 mb-4">
+            <div class="flex flex-wrap items-end gap-3">
+                <div>
+                    <label class="block text-xs text-gray-500 mb-1">Он сар</label>
+                    <input type="month" id="ma-month" value="{{ date_from|date:'Y-m' }}" class="border border-gray-300 rounded-lg px-3 py-2">
+                </div>
+                <div>
+                    <label class="block text-xs text-gray-500 mb-1">Эхлэх огноо</label>
+                    <input type="date" name="date_from" id="ma-date-from" value="{{ date_from|date:'Y-m-d' }}" class="border border-gray-300 rounded-lg px-3 py-2">
+                </div>
+                <div>
+                    <label class="block text-xs text-gray-500 mb-1">Дуусах огноо</label>
+                    <input type="date" name="date_to" id="ma-date-to" value="{{ date_to|date:'Y-m-d' }}" class="border border-gray-300 rounded-lg px-3 py-2">
+                </div>
+                <div>
+                    <label class="block text-xs text-gray-500 mb-1">Орцны төлөв</label>
+                    <select name="status" class="border border-gray-300 rounded-lg px-3 py-2">
+                        <option value="" {% if not status %}selected{% endif %}>Бүгд</option>
+                        <option value="changed" {% if status == 'changed' %}selected{% endif %}>Өөрчлөлттэй</option>
+                        <option value="unchanged" {% if status == 'unchanged' %}selected{% endif %}>Өөрчлөлтгүй</option>
+                    </select>
+                </div>
+                <div class="flex-1 min-w-[12rem]">
+                    <label class="block text-xs text-gray-500 mb-1">Нэр / тайлбараар хайх</label>
+                    <input type="text" name="q" value="{{ q }}" placeholder="Жиш: Бат" class="w-full border border-gray-300 rounded-lg px-3 py-2">
+                </div>
+                <button type="submit" class="bg-primary text-white px-4 py-2 rounded-lg hover:bg-green-700 transition">Шүүх</button>
+                {% if is_filtered %}
+                <a href="{% url 'shop:meal_attendance_list' %}" class="text-gray-600 px-2 py-2 hover:underline">Цэвэрлэх</a>
+                {% endif %}
+            </div>
+            <p class="text-xs text-gray-500 mt-3">
+                {{ date_from|date:'Y-m-d' }} – {{ date_to|date:'Y-m-d' }}:
+                <strong>{{ attendances|length }}</strong> бүртгэл, нийт <strong>{{ total_headcount|intcomma }}</strong> хүн
+            </p>
+        </form>
+
         <div class="bg-white rounded-lg shadow overflow-x-auto">
             <table class="min-w-full text-sm">
                 <thead>
@@ -48,7 +85,7 @@
                     {% for attendance in attendances %}
                     <tr class="border-t {% if attendance.ingredients_changed %}bg-yellow-50{% endif %}">
                         <td class="px-4 py-3 font-medium text-gray-900">{{ attendance.date }}</td>
-                        <td class="px-4 py-3 text-right">{{ attendance.names.count }}</td>
+                        <td class="px-4 py-3 text-right">{{ attendance.headcount }}</td>
                         <td class="px-4 py-3 whitespace-nowrap">
                             {% if attendance.ingredients_changed %}
                             <span class="inline-block px-2 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">Өөрчлөлттэй</span>
@@ -65,7 +102,7 @@
                     </tr>
                     {% empty %}
                     <tr>
-                        <td colspan="5" class="px-4 py-6 text-center text-gray-500">Бүртгэл алга байна.</td>
+                        <td colspan="5" class="px-4 py-6 text-center text-gray-500">Сонгосон шүүлтэд тохирох бүртгэл алга байна.</td>
                     </tr>
                     {% endfor %}
                 </tbody>
@@ -73,4 +110,18 @@
         </div>
     </main>
 </div>
+<script>
+// Он сар сонгоход тухайн сарын эхний ба сүүлийн өдрөөр шууд шүүнэ
+(function () {
+    const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const monthInput = document.getElementById('ma-month');
+    monthInput.addEventListener('change', () => {
+        if (!monthInput.value) return;
+        const [y, m] = monthInput.value.split('-').map(Number);
+        document.getElementById('ma-date-from').value = iso(new Date(y, m - 1, 1));
+        document.getElementById('ma-date-to').value = iso(new Date(y, m, 0));
+        document.getElementById('ma-filter').submit();
+    });
+})();
+</script>
 {% endblock %}

@@ -1,0 +1,824 @@
+{% extends 'base.html' %}
+
+{% block title %}{{ cfg.title }} - Euro Foods{% endblock %}
+
+{% block hide_mobile_menu %}hidden{% endblock %}
+
+{% block extra_css %}
+<style>
+    /* Өнгө, бэхний токен - ангиллын (series-1/2) болон насжилтын дараалсан (age-0..4, нэг өнгөний light->dark)
+       шатыг validate_palette-аар шалгасан. Бичвэр цувааны өнгө авахгүй - зөвхөн ink токен */
+    .rp-root {
+        --surface: #ffffff;
+        --canvas: #f7f7f5;
+        --ink: #111827;
+        --ink-2: #4b5563;
+        --muted: #6b7280;
+        --grid: #eeeeec;
+        --axis: #d1d5db;
+        --hairline: rgba(17, 24, 39, 0.08);
+        --series-1: #2a78d6;
+        --series-2: #eb6834;
+        --age-0: #86b6ef;
+        --age-1: #5598e7;
+        --age-2: #2a78d6;
+        --age-3: #1c5cab;
+        --age-4: #104281;
+        --critical: #d03b3b;
+        --good-text: #006300;
+        --good-bg: #e8f5e9;
+        --bad-text: #b42323;
+        --bad-bg: #fdecec;
+        color: var(--ink);
+    }
+    .rp-card { background: var(--surface); border: 1px solid var(--hairline); border-radius: 1rem; box-shadow: 0 1px 2px rgba(0,0,0,.04); }
+    .rp-card h3 { font-size: .95rem; font-weight: 600; }
+    .rp-sub { font-size: .75rem; color: var(--muted); }
+    .rp-num { font-variant-numeric: tabular-nums; }
+
+    /* Шүүлт */
+    .seg { display: inline-flex; padding: 3px; gap: 2px; background: #f1f1ef; border-radius: .7rem; flex-wrap: wrap; max-width: 100%; }
+    .seg button, .seg label, .seg a { font-size: .8rem; padding: .35rem .75rem; border-radius: .55rem; color: var(--ink-2); font-weight: 500; cursor: pointer; white-space: nowrap; }
+    .seg button:hover, .seg label:hover, .seg a:hover { color: var(--ink); }
+    .seg a { padding: .35rem .9rem; }
+    .seg button[aria-pressed="true"], .seg a[aria-current="page"], .seg input:checked + span { background: #fff; color: var(--ink); box-shadow: 0 1px 2px rgba(0,0,0,.1); }
+    .seg label { padding: 0; }
+    .seg label span { display: inline-block; padding: .35rem .75rem; border-radius: .55rem; }
+    .seg input { position: absolute; opacity: 0; pointer-events: none; }
+    .rp-field { border: 1px solid #e5e7eb; border-radius: .6rem; padding: .45rem .7rem; font-size: .875rem; background: #fff; }
+    .rp-field:focus { outline: 2px solid rgba(42,120,214,.35); outline-offset: 0; border-color: var(--series-1); }
+    .rp-label { display: block; font-size: .72rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .03em; margin-bottom: .3rem; }
+    .chip { display: inline-flex; align-items: center; gap: .35rem; font-size: .75rem; padding: .2rem .35rem .2rem .6rem; border-radius: 999px; background: #eef4fc; color: #1c4f8f; }
+    .chip a { display: inline-flex; width: 1.1rem; height: 1.1rem; align-items: center; justify-content: center; border-radius: 999px; color: #1c4f8f; }
+    .chip a:hover { background: #d6e6fa; }
+    .rp-root .choices { margin-bottom: 0; }
+    .rp-root .choices__inner { min-height: 38px; border-radius: .6rem; background: #fff; padding: 3px 6px; font-size: .85rem; }
+    .rp-root .choices__list--multiple .choices__item { background: #2a78d6; border-color: #2a78d6; border-radius: 999px; font-size: .75rem; }
+
+    /* KPI */
+    .kpi-value { font-size: clamp(1.05rem, 1.45vw, 1.6rem); line-height: 1.15; overflow-wrap: anywhere; font-weight: 650; letter-spacing: -0.015em; }
+    @media (min-width: 768px) { .kpi-value { white-space: nowrap; } }
+    .kpi-label { font-size: .78rem; color: var(--ink-2); font-weight: 500; }
+    .delta { display: inline-flex; align-items: center; gap: .2rem; font-size: .72rem; font-weight: 600; padding: .1rem .45rem; border-radius: 999px; }
+    .delta.up { color: var(--bad-text); background: var(--bad-bg); }
+    .delta.down { color: var(--good-text); background: var(--good-bg); }
+    .delta.flat { color: var(--ink-2); background: #f3f4f6; }
+    .meter { height: 8px; border-radius: 999px; background: #efefec; overflow: hidden; }
+    .meter > div { height: 100%; border-radius: 999px; background: var(--age-3); }
+
+    /* Насжилт */
+    .stack { display: flex; height: 28px; gap: 2px; border-radius: 8px; overflow: hidden; }
+    .stack > div { min-width: 2px; transition: filter .15s; cursor: pointer; }
+    .stack > div:hover { filter: brightness(1.12); }
+    .age-row { display: grid; grid-template-columns: 14px 1fr auto 3.2rem; gap: .6rem; align-items: center; padding: .4rem .45rem; border-radius: .55rem; cursor: pointer; }
+    .age-row:hover, .age-row:focus-visible { background: var(--canvas); outline: none; }
+    .age-row[aria-pressed="true"] { background: #eef4fc; }
+    .swatch { width: 12px; height: 12px; border-radius: 3px; }
+    .risk-tag { font-size: .65rem; font-weight: 600; color: var(--bad-text); background: var(--bad-bg); border-radius: 999px; padding: .05rem .4rem; margin-left: .35rem; }
+
+    /* Шилдэг жагсаалт */
+    .bar-row { display: grid; grid-template-columns: minmax(0, 44%) 1fr auto; align-items: center; gap: .6rem; padding: .3rem .4rem; border-radius: .5rem; cursor: pointer; }
+    .bar-row:hover, .bar-row:focus-visible { background: var(--canvas); outline: none; }
+    .bar-label { font-size: .8rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .bar-rank { color: var(--muted); margin-right: .35rem; font-variant-numeric: tabular-nums; }
+    .bar-track { height: 12px; position: relative; }
+    .bar-fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 0 4px 4px 0; background: var(--series-1); min-width: 2px; transition: width .35s ease; }
+    .bar-row:hover .bar-fill { filter: brightness(1.12); }
+    .bar-value { font-size: .78rem; color: var(--ink-2); text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+
+    /* График */
+    .chart-wrap { position: relative; }
+    .chart-wrap svg { display: block; width: 100%; height: 260px; overflow: visible; }
+    .chart-wrap .grid-line { stroke: var(--grid); stroke-width: 1; }
+    .chart-wrap .axis-text { fill: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+    .tooltip { position: absolute; pointer-events: none; background: #111827; color: #fff; font-size: .75rem; padding: .45rem .6rem; border-radius: .5rem; box-shadow: 0 6px 20px rgba(0,0,0,.18); white-space: nowrap; z-index: 20; transform: translate(-50%, calc(-100% - 10px)); opacity: 0; transition: opacity .1s; }
+    .tooltip.show { opacity: 1; }
+    .tooltip .t-head { font-weight: 600; margin-bottom: .2rem; }
+    .tooltip .t-row { display: flex; align-items: center; gap: .45rem; justify-content: space-between; }
+    .tooltip .t-row i { width: 8px; height: 8px; border-radius: 2px; display: inline-block; }
+    .legend { display: flex; gap: 1rem; font-size: .75rem; color: var(--ink-2); }
+    .legend span { display: inline-flex; align-items: center; gap: .35rem; }
+    .legend i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+
+    /* Хүснэгт */
+    .rp-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: .82rem; }
+    .rp-table thead th { position: sticky; top: 0; z-index: 2; background: #fafaf9; color: var(--ink-2); font-weight: 600; font-size: .72rem; text-transform: uppercase; letter-spacing: .03em; padding: .6rem .75rem; border-bottom: 1px solid #e7e5e4; text-align: right; white-space: nowrap; user-select: none; }
+    .rp-table thead th.l { text-align: left; }
+    .rp-table thead th[data-sort] { cursor: pointer; }
+    .rp-table thead th[data-sort]:hover { color: var(--ink); }
+    .rp-table thead th .arrow { opacity: .35; margin-left: .2rem; font-size: .65rem; }
+    .rp-table thead th.sorted .arrow { opacity: 1; color: var(--series-1); }
+    .rp-table tbody td { padding: .55rem .65rem; border-bottom: 1px solid #f1f1ef; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+    .rp-table tbody td.l { text-align: left; }
+    .rp-table tbody tr { cursor: pointer; transition: background .1s; }
+    .rp-table tbody tr:hover { background: #f8fafc; }
+    .rp-table tfoot td { position: sticky; bottom: 0; background: #fafaf9; padding: .6rem .75rem; font-weight: 650; text-align: right; border-top: 1px solid #e7e5e4; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .rp-table tfoot td.l { text-align: left; }
+    .neg { color: var(--bad-text); }
+    .mini-stack { display: flex; width: 120px; height: 10px; gap: 1px; border-radius: 3px; overflow: hidden; background: #f1f1ef; margin-left: auto; }
+    .mini-stack > div { height: 100%; }
+    .group-chip { display: inline-block; font-size: .68rem; color: var(--ink-2); background: #f3f4f6; border-radius: 999px; padding: .05rem .45rem; margin-left: .35rem; max-width: 12rem; overflow: hidden; text-overflow: ellipsis; vertical-align: middle; }
+    .table-scroll { max-height: 70vh; overflow: auto; }
+    .name-cell { display: flex; align-items: center; gap: .1rem; max-width: 26rem; }
+    .name-cell > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+    .name-cell > span { flex-shrink: 0; }
+    .name-cell > span:first-child { flex-shrink: 1; }
+    .acct-cell { max-width: 13rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    /* Хуулгын drawer */
+    .drawer-backdrop { position: fixed; inset: 0; background: rgba(17,24,39,.35); backdrop-filter: blur(2px); z-index: 60; opacity: 0; pointer-events: none; transition: opacity .2s; }
+    .drawer-backdrop.open { opacity: 1; pointer-events: auto; }
+    .drawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(920px, 100vw); background: #fff; z-index: 61; transform: translateX(100%); transition: transform .25s cubic-bezier(.2,.8,.2,1); display: flex; flex-direction: column; box-shadow: -12px 0 40px rgba(0,0,0,.15); }
+    .drawer.open { transform: translateX(0); }
+    .skeleton { background: linear-gradient(90deg, #f1f1ef 25%, #e7e7e4 37%, #f1f1ef 63%); background-size: 400% 100%; animation: shimmer 1.2s ease infinite; border-radius: .4rem; height: 14px; }
+    @keyframes shimmer { 0% { background-position: 100% 0; } 100% { background-position: 0 0; } }
+    .fade-in { animation: fadeIn .35s ease both; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+    @media (prefers-reduced-motion: reduce) { .fade-in, .drawer, .bar-fill { animation: none; transition: none; } }
+
+    @media print {
+        #sidebar, #sidebar-open-button, #sidebar-overlay, header, footer, .no-print, #ai-chat-widget { display: none !important; }
+        main { margin: 0 !important; padding: 0 !important; }
+        body { background: #fff !important; }
+        .table-scroll { max-height: none; overflow: visible; }
+        .rp-card { box-shadow: none; break-inside: avoid; }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+{% load product_filters %}
+<div class="flex min-h-screen bg-gray-50">
+    {% include 'shop/_sidebar.html' with active_page=active_page %}
+
+    <main class="rp-root flex-1 p-3 lg:p-8 min-w-0 space-y-5">
+        {# Толгой #}
+        <div class="flex flex-wrap items-end justify-between gap-3">
+            <div>
+                <div class="text-xs font-medium text-gray-500 mb-1">Санхүү <span class="mx-1 text-gray-300">/</span> OpenDataRecPay</div>
+                <h1 class="text-2xl lg:text-3xl font-bold tracking-tight">{% if kind == 'receivable' %}📥{% else %}📤{% endif %} {{ cfg.title }}</h1>
+                <p class="text-sm text-gray-500 mt-1">
+                    {{ filters.date_from|date:'Y.m.d' }} – {{ filters.date_to|date:'Y.m.d' }}
+                    · {{ group_by_choices|get_item:filters.group_by }}
+                    · {{ report.kpis.count }} мөр
+                </p>
+            </div>
+            <div class="flex flex-wrap items-center gap-2 no-print">
+                <div class="seg" role="group" aria-label="Тайлан">
+                    <a href="{% url 'shop:receivable_report' %}?{{ query_string }}" {% if kind == 'receivable' %}aria-current="page"{% endif %}>Авлага</a>
+                    <a href="{% url 'shop:payable_report' %}?{{ query_string }}" {% if kind == 'payable' %}aria-current="page"{% endif %}>Өглөг</a>
+                </div>
+                <a href="{% if kind == 'receivable' %}{% url 'shop:receivable_export' %}{% else %}{% url 'shop:payable_export' %}{% endif %}?{{ query_string }}"
+                   class="inline-flex items-center gap-1.5 text-sm font-medium px-3.5 py-2 rounded-lg border border-gray-200 bg-white hover:bg-gray-50">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 3v12m0 0l-4-4m4 4l4-4M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>
+                    Excel
+                </a>
+                <button type="button" onclick="window.print()" class="inline-flex items-center gap-1.5 text-sm font-medium px-3.5 py-2 rounded-lg border border-gray-200 bg-white hover:bg-gray-50">🖨 Хэвлэх</button>
+            </div>
+        </div>
+
+        {# Шүүлт #}
+        <form id="rp-form" method="get" class="rp-card p-4 lg:p-5 space-y-4 no-print">
+            <div class="flex flex-wrap items-end gap-3">
+                <div class="max-w-full">
+                    <span class="rp-label">Хугацаа</span>
+                    <div class="seg" role="group" aria-label="Хугацааны бэлэн сонголт">
+                        <button type="button" data-preset="month">Энэ сар</button>
+                        <button type="button" data-preset="prev_month">Өмнөх сар</button>
+                        <button type="button" data-preset="quarter">Энэ улирал</button>
+                        <button type="button" data-preset="year">Энэ он</button>
+                        <button type="button" data-preset="prev_year">Өнгөрсөн он</button>
+                    </div>
+                </div>
+                <div class="flex flex-wrap items-end gap-2">
+                    <label><span class="rp-label">Эхлэх</span><input type="date" name="date_from" id="rp-from" value="{{ filters.date_from|date:'Y-m-d' }}" class="rp-field"></label>
+                    <span class="pb-2 text-gray-400">–</span>
+                    <label><span class="rp-label" title="Эцсийн үлдэгдлийг энэ огноогоор бодно">Дуусах</span><input type="date" name="date_to" id="rp-to" value="{{ filters.date_to|date:'Y-m-d' }}" class="rp-field"></label>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-[1.3fr_1fr_1fr_auto] gap-3 items-end">
+                <label class="block min-w-0">
+                    <span class="rp-label">Данс</span>
+                    <select name="account" id="rp-account" multiple>
+                        {% for a in options.accounts %}<option value="{{ a.id }}" {% if a.id in filters.accounts %}selected{% endif %}>{{ a.id }} · {{ a.name }}</option>{% endfor %}
+                    </select>
+                </label>
+                <label class="block min-w-0">
+                    <span class="rp-label">Харилцагчийн бүлэг</span>
+                    <select name="group" id="rp-group" multiple>
+                        {% for g in options.groups %}<option value="{{ g.id }}" {% if g.id in filters.groups %}selected{% endif %}>{{ g.id }}</option>{% endfor %}
+                    </select>
+                </label>
+                <label class="block min-w-0">
+                    <span class="rp-label">Хайлт</span>
+                    <span class="relative block">
+                        <svg class="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+                        <input type="search" name="q" value="{{ filters.q }}" placeholder="Нэр, код, бүлэг..." class="rp-field w-full pl-8">
+                    </span>
+                </label>
+                <div class="flex gap-2">
+                    <button type="submit" class="bg-primary text-white text-sm font-semibold px-5 py-2 rounded-lg hover:bg-green-700 transition">Шүүх</button>
+                    {% if is_filtered %}<a href="?date_from={{ filters.date_from|date:'Y-m-d' }}&date_to={{ filters.date_to|date:'Y-m-d' }}" class="text-sm px-3 py-2 rounded-lg text-gray-600 hover:bg-gray-100">Цэвэрлэх</a>{% endif %}
+                </div>
+            </div>
+
+            <details {% if filters.balance != 'nonzero' or filters.group_by != 'customer' or filters.aging_basis != 'doc' or filters.currency %}open{% endif %} class="group">
+                <summary class="text-sm font-medium text-gray-600 cursor-pointer select-none inline-flex items-center gap-1">
+                    <svg class="transition group-open:rotate-90" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+                    Нэмэлт тохиргоо
+                </summary>
+                <div class="flex flex-wrap items-end gap-4 mt-3">
+                    <div class="max-w-full">
+                        <span class="rp-label">Бүлэглэх</span>
+                        <div class="seg">
+                            {% for value, label in group_by_choices.items %}
+                            <label><input type="radio" name="group_by" value="{{ value }}" {% if filters.group_by == value %}checked{% endif %} data-autosubmit><span>{{ label }}</span></label>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    <div class="max-w-full">
+                        <span class="rp-label">Насжилтын суурь</span>
+                        <div class="seg">
+                            {% for value, label in aging_basis_choices.items %}
+                            <label><input type="radio" name="aging_basis" value="{{ value }}" {% if filters.aging_basis == value %}checked{% endif %} data-autosubmit><span>{{ label }}</span></label>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    <label>
+                        <span class="rp-label">Үлдэгдэл</span>
+                        <select name="balance" class="rp-field" data-autosubmit>
+                            {% for value, label in balance_choices.items %}<option value="{{ value }}" {% if filters.balance == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+                        </select>
+                    </label>
+                    <label>
+                        <span class="rp-label">Валют</span>
+                        <select name="currency" class="rp-field" data-autosubmit>
+                            <option value="">Бүгд</option>
+                            {% for c in options.currencies %}<option value="{{ c }}" {% if filters.currency == c %}selected{% endif %}>{{ c }}</option>{% endfor %}
+                        </select>
+                    </label>
+                </div>
+            </details>
+        </form>
+
+        {# Үзүүлэлтүүд #}
+        {% with k=report.kpis %}
+        <section class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3 lg:gap-4" aria-label="Үндсэн үзүүлэлт">
+            <div class="rp-card p-4 col-span-2 md:col-span-1 fade-in">
+                <div class="kpi-label">Эцсийн үлдэгдэл</div>
+                <div class="kpi-value rp-num mt-1" data-compact="{{ k.closing|stringformat:'f' }}"></div>
+                <div class="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 rp-sub">
+                    <span id="kpi-delta"></span>
+                    <span>эхэнд <b class="rp-num text-gray-700" data-compact="{{ k.opening|stringformat:'f' }}"></b></span>
+                </div>
+            </div>
+            <div class="rp-card p-4 fade-in" style="animation-delay:.04s">
+                <div class="kpi-label">{{ cfg.increase_label }}</div>
+                <div class="kpi-value rp-num mt-1" data-compact="{{ k.increase|stringformat:'f' }}"></div>
+                <div class="rp-sub mt-2">тухайн хугацаанд</div>
+            </div>
+            <div class="rp-card p-4 fade-in" style="animation-delay:.08s">
+                <div class="kpi-label">{{ cfg.decrease_label }}</div>
+                <div class="kpi-value rp-num mt-1" data-compact="{{ k.decrease|stringformat:'f' }}"></div>
+                <div class="rp-sub mt-2" id="kpi-collect"></div>
+            </div>
+            <div class="rp-card p-4 fade-in" style="animation-delay:.12s">
+                <div class="kpi-label">{{ k.risk_label }}</div>
+                <div class="kpi-value rp-num mt-1" data-compact="{{ k.risk|stringformat:'f' }}"></div>
+                <div class="mt-2 flex items-center gap-2">
+                    <div class="meter flex-1" role="img" aria-label="Эерэг үлдэгдлийн {{ k.risk_share|floatformat:1 }}%"><div style="width: {{ k.risk_share|stringformat:'.1f' }}%"></div></div>
+                    <span class="text-xs font-semibold rp-num text-gray-700">{{ k.risk_share|floatformat:1 }}%</span>
+                </div>
+            </div>
+            <div class="rp-card p-4 fade-in" style="animation-delay:.16s">
+                <div class="kpi-label">Үлдэгдэлтэй {% if filters.group_by == 'customer' %}харилцагч{% elif filters.group_by == 'account' %}данс{% else %}бүлэг{% endif %}</div>
+                <div class="kpi-value rp-num mt-1">{{ k.count_positive }}</div>
+                <div class="rp-sub mt-2">{{ k.count_risk }} нь эрсдэлтэй{% if k.negative %} · хасах үлдэгдэл <b class="rp-num text-gray-700" data-compact="{{ k.negative|stringformat:'f' }}"></b>{% endif %}</div>
+            </div>
+        </section>
+        {% endwith %}
+
+        {# Насжилт + шилдэг 10 #}
+        <section class="grid grid-cols-1 xl:grid-cols-5 gap-4">
+            <div class="rp-card p-5 xl:col-span-2">
+                <div class="flex items-start justify-between gap-2 mb-1">
+                    <div>
+                        <h3>Насжилтын шинжилгээ</h3>
+                        <p class="rp-sub">{{ aging_basis_choices|get_item:filters.aging_basis }} · FIFO · эерэг үлдэгдэл</p>
+                    </div>
+                </div>
+                <div id="aging-stack" class="stack mt-4" role="img" aria-label="Насжилтын хуваарилалт"></div>
+                <div id="aging-list" class="mt-4 space-y-0.5"></div>
+                <p class="rp-sub mt-3">Бүлэг дээр дарахад доорх жагсаалт тухайн бүлгийн дүнгээр эрэмбэлэгдэнэ.</p>
+            </div>
+            <div class="rp-card p-5 xl:col-span-3">
+                <div class="flex items-start justify-between gap-2">
+                    <div>
+                        <h3>Хамгийн их үлдэгдэлтэй 10</h3>
+                        <p class="rp-sub">Эцсийн үлдэгдлээр · дарахад {% if filters.group_by == 'customer' %}хуулга нээгдэнэ{% else %}харилцагчаар задарна{% endif %}</p>
+                    </div>
+                    <span class="rp-sub" id="top-share"></span>
+                </div>
+                <div id="top-list" class="mt-3 space-y-0.5"></div>
+            </div>
+        </section>
+
+        {# Динамик #}
+        <section class="rp-card p-5">
+            <div class="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                    <h3>Сүүлийн 12 сарын динамик</h3>
+                    <p class="rp-sub" id="trend-sub">Сар бүрийн эцсийн үлдэгдэл</p>
+                </div>
+                <div class="seg no-print" role="group" aria-label="Графикийн үзүүлэлт">
+                    <button type="button" data-trend="balance" aria-pressed="true">Үлдэгдэл</button>
+                    <button type="button" data-trend="flow" aria-pressed="false">Нэмэгдсэн ба төлөгдсөн</button>
+                </div>
+            </div>
+            <div class="legend mt-3" id="trend-legend"></div>
+            <div class="chart-wrap mt-2" id="trend-chart"><div class="tooltip" id="trend-tip"></div></div>
+        </section>
+
+        {# Жагсаалт #}
+        <section class="rp-card overflow-hidden">
+            <div class="flex flex-wrap items-center justify-between gap-3 p-4 border-b border-gray-100">
+                <div>
+                    <h3>{{ group_by_choices|get_item:filters.group_by }} задаргаа</h3>
+                    <p class="rp-sub" id="table-sub"></p>
+                </div>
+                <div class="flex items-center gap-2 no-print">
+                    <span class="relative">
+                        <svg class="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+                        <input type="search" id="table-search" placeholder="Жагсаалтаас хайх" class="rp-field pl-8 w-56">
+                    </span>
+                    <select id="page-size" class="rp-field" aria-label="Хуудсанд харуулах">
+                        <option value="25">25</option><option value="50" selected>50</option><option value="100">100</option><option value="100000">Бүгд</option>
+                    </select>
+                </div>
+            </div>
+            <div class="table-scroll">
+                <table class="rp-table" id="rp-table">
+                    <thead>
+                        <tr>
+                            <th class="l" data-sort="name">Нэр<span class="arrow">↕</span></th>
+                            {% if filters.group_by != 'account' %}<th class="l" data-sort="account">Данс<span class="arrow">↕</span></th>{% endif %}
+                            <th data-sort="closing">Эцсийн үлдэгдэл<span class="arrow">↕</span></th>
+                            <th data-sort="risk_ratio" title="Эерэг үлдэгдлийн насжилтын хуваарилалт">Насжилт<span class="arrow">↕</span></th>
+                            <th data-sort="risk">{{ report.kpis.risk_label }}<span class="arrow">↕</span></th>
+                            <th data-sort="opening">Эхний<span class="arrow">↕</span></th>
+                            <th data-sort="increase">Нэмэгдсэн<span class="arrow">↕</span></th>
+                            <th data-sort="decrease">Төлөгдсөн<span class="arrow">↕</span></th>
+                            <th data-sort="last_payment">Сүүлийн төлбөр<span class="arrow">↕</span></th>
+                        </tr>
+                    </thead>
+                    <tbody id="rp-tbody"></tbody>
+                    <tfoot><tr id="rp-tfoot"></tr></tfoot>
+                </table>
+            </div>
+            <div class="flex flex-wrap items-center justify-between gap-2 px-4 py-3 border-t border-gray-100 text-sm no-print">
+                <span class="rp-sub" id="page-info"></span>
+                <div class="flex gap-1" id="pager"></div>
+            </div>
+        </section>
+    </main>
+</div>
+
+{# Харилцагчийн хуулга #}
+<div class="drawer-backdrop" id="drawer-backdrop"></div>
+<aside class="drawer" id="drawer" aria-hidden="true" aria-labelledby="drawer-title" role="dialog">
+    <div class="flex items-start justify-between gap-3 p-5 border-b border-gray-100">
+        <div class="min-w-0">
+            <div class="rp-sub">Гүйлгээний хуулга · {{ filters.date_from|date:'Y.m.d' }} – {{ filters.date_to|date:'Y.m.d' }}</div>
+            <h2 id="drawer-title" class="text-lg font-bold truncate"></h2>
+            <div id="drawer-meta" class="rp-sub"></div>
+        </div>
+        <button type="button" id="drawer-close" class="p-2 rounded-lg hover:bg-gray-100" aria-label="Хаах">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+        </button>
+    </div>
+    <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 p-5 border-b border-gray-100" id="drawer-kpis"></div>
+    <div class="flex-1 overflow-auto" id="drawer-body"></div>
+</aside>
+
+{{ report.rows|json_script:"rp-rows" }}
+{{ report.trend|json_script:"rp-trend" }}
+{{ report.aging|json_script:"rp-aging" }}
+<script>
+(function () {
+    const ROWS = JSON.parse(document.getElementById('rp-rows').textContent);
+    const TREND = JSON.parse(document.getElementById('rp-trend').textContent);
+    const AGING = JSON.parse(document.getElementById('rp-aging').textContent);
+    const GROUP_BY = '{{ filters.group_by }}';
+    const HAS_ACCOUNT_COL = GROUP_BY !== 'account';
+    const KPI = { closing: {{ report.kpis.closing|stringformat:'f' }}, opening: {{ report.kpis.opening|stringformat:'f' }},
+                  increase: {{ report.kpis.increase|stringformat:'f' }}, decrease: {{ report.kpis.decrease|stringformat:'f' }} };
+    const LEDGER_URL = '{% if kind == "receivable" %}{% url "shop:receivable_ledger" %}{% else %}{% url "shop:payable_ledger" %}{% endif %}';
+    const QUERY = new URLSearchParams('{{ query_string|escapejs }}');
+    const AGE_COLORS = ['var(--age-0)', 'var(--age-1)', 'var(--age-2)', 'var(--age-3)', 'var(--age-4)'];
+    const BUCKETS = ['b0', 'b1', 'b2', 'b3', 'b4'];
+    const INC_LABEL = '{{ cfg.increase_label|escapejs }}', DEC_LABEL = '{{ cfg.decrease_label|escapejs }}';
+
+    // ---- Тоо форматлах ----
+    const nf = new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 });
+    const money = (v) => (v < 0 ? '−' : '') + '₮' + nf.format(Math.abs(Math.round(v)));
+    function compact(v) {
+        const a = Math.abs(v), s = v < 0 ? '−' : '';
+        if (a >= 1e9) return `${s}₮${(a / 1e9).toFixed(2)} тэрбум`;
+        if (a >= 1e6) return `${s}₮${(a / 1e6).toFixed(1)} сая`;
+        if (a >= 1e3) return `${s}₮${(a / 1e3).toFixed(0)} мянга`;
+        return `${s}₮${nf.format(Math.round(a))}`;
+    }
+    // Тэнхлэгийн бүх шошгыг хамгийн том утгын нэгжээр, алхамд хэрэгтэй нарийвчлалаар (5.0/10 биш 5/10)
+    function axisFormatter(ticks) {
+        const max = Math.max(...ticks.map(Math.abs));
+        const [div, unit] = max >= 1e9 ? [1e9, 'тэр'] : max >= 1e6 ? [1e6, 'сая'] : max >= 1e3 ? [1e3, 'мян'] : [1, ''];
+        const digits = ticks.some((t) => Math.abs(t / div - Math.round(t / div)) > 1e-9) ? 1 : 0;
+        return (v) => (v === 0 ? '0' : (v / div).toFixed(digits) + unit);
+    }
+    const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    function daysAgo(iso) {
+        if (!iso) return '';
+        const end = new Date('{{ filters.date_to|date:"Y-m-d" }}T00:00:00');
+        const d = Math.round((end - new Date(iso + 'T00:00:00')) / 86400000);
+        return d <= 0 ? 'өнөөдөр' : `${d} хоногийн өмнө`;
+    }
+    document.querySelectorAll('[data-money]').forEach((el) => { el.textContent = money(Number(el.dataset.money)); });
+    document.querySelectorAll('[data-compact]').forEach((el) => {
+        el.textContent = compact(Number(el.dataset.compact));
+        el.title = money(Number(el.dataset.compact));
+    });
+
+    // KPI: эхнийхээс өөрчлөлт, төлөлтийн хувь
+    (function () {
+        const delta = document.getElementById('kpi-delta');
+        if (Math.abs(KPI.opening) > 0.5) {
+            const pct = (KPI.closing - KPI.opening) / Math.abs(KPI.opening) * 100;
+            const cls = Math.abs(pct) < 0.05 ? 'flat' : (pct > 0 ? 'up' : 'down');
+            delta.innerHTML = `<span class="delta ${cls}">${pct > 0 ? '▲' : pct < 0 ? '▼' : '■'} ${Math.abs(pct).toFixed(1)}%</span>`;
+        }
+        const base = KPI.opening + KPI.increase;
+        const collect = document.getElementById('kpi-collect');
+        if (base > 0.5) collect.textContent = `эхний + нэмэгдсэний ${(KPI.decrease / base * 100).toFixed(1)}%`;
+    })();
+
+    // ---- Шүүлт: хугацааны бэлэн сонголт, автоматаар шүүх, олон сонголт ----
+    const form = document.getElementById('rp-form');
+    const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    document.querySelectorAll('[data-preset]').forEach((btn) => {
+        const today = new Date();
+        const y = today.getFullYear(), m = today.getMonth();
+        const ranges = {
+            month: [new Date(y, m, 1), today],
+            prev_month: [new Date(y, m - 1, 1), new Date(y, m, 0)],
+            quarter: [new Date(y, Math.floor(m / 3) * 3, 1), today],
+            year: [new Date(y, 0, 1), today],
+            prev_year: [new Date(y - 1, 0, 1), new Date(y - 1, 11, 31)],
+        };
+        const [f, t] = ranges[btn.dataset.preset];
+        if (document.getElementById('rp-from').value === iso(f) && document.getElementById('rp-to').value === iso(t)) btn.setAttribute('aria-pressed', 'true');
+        btn.addEventListener('click', () => {
+            document.getElementById('rp-from').value = iso(f);
+            document.getElementById('rp-to').value = iso(t);
+            form.submit();
+        });
+    });
+    form.querySelectorAll('[data-autosubmit]').forEach((el) => el.addEventListener('change', () => form.submit()));
+    if (window.Choices) {
+        const opts = { removeItemButton: true, searchResultLimit: 50, shouldSort: false, itemSelectText: '', noResultsText: 'Олдсонгүй', noChoicesText: 'Сонголт алга' };
+        new Choices('#rp-account', { ...opts, placeholderValue: 'Бүх данс' });
+        new Choices('#rp-group', { ...opts, placeholderValue: 'Бүх бүлэг' });
+    }
+
+    // ---- Насжилт ----
+    let bucketSort = null;
+    (function renderAging() {
+        const stack = document.getElementById('aging-stack');
+        const list = document.getElementById('aging-list');
+        const total = AGING.reduce((s, a) => s + a.amount, 0);
+        if (total <= 0.5) {
+            stack.outerHTML = '<p class="rp-sub mt-4">Эерэг үлдэгдэл алга.</p>';
+            return;
+        }
+        AGING.forEach((a, i) => {
+            if (a.amount > 0.5) {
+                const seg = document.createElement('div');
+                seg.style.cssText = `flex:${a.amount} 1 0; background:${AGE_COLORS[i]}`;
+                seg.title = `${a.label}: ${money(a.amount)} (${a.share.toFixed(1)}%)`;
+                seg.addEventListener('click', () => sortByBucket(i));
+                stack.append(seg);
+            }
+            const row = document.createElement('div');
+            row.className = 'age-row';
+            row.tabIndex = 0;
+            row.dataset.bucket = i;
+            row.innerHTML = `<span class="swatch" style="background:${AGE_COLORS[i]}"></span>
+                <span class="text-sm">${esc(a.label)}${a.risk ? '<span class="risk-tag">эрсдэлтэй</span>' : ''}</span>
+                <span class="text-sm rp-num font-medium" title="${money(a.amount)}">${compact(a.amount)}</span>
+                <span class="text-xs rp-num text-gray-500 text-right">${a.share.toFixed(1)}%</span>`;
+            row.addEventListener('click', () => sortByBucket(i));
+            row.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); sortByBucket(i); } });
+            list.append(row);
+        });
+    })();
+    function sortByBucket(i) {
+        bucketSort = i;
+        document.querySelectorAll('.age-row').forEach((r) => r.setAttribute('aria-pressed', String(Number(r.dataset.bucket) === i)));
+        state.sort = BUCKETS[i];
+        state.desc = true;
+        state.page = 0;
+        renderTable();
+        document.getElementById('rp-table').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
+    // ---- Шилдэг 10 ----
+    (function renderTop() {
+        const top = ROWS.filter((r) => r.closing > 0.5).slice(0, 10);
+        const list = document.getElementById('top-list');
+        if (!top.length) { list.innerHTML = '<p class="rp-sub">Эерэг үлдэгдэл алга.</p>'; return; }
+        const max = top[0].closing;
+        const positive = ROWS.reduce((s, r) => s + Math.max(r.closing, 0), 0);
+        const topSum = top.reduce((s, r) => s + r.closing, 0);
+        document.getElementById('top-share').textContent = `Нийт эерэг үлдэгдлийн ${(topSum / positive * 100).toFixed(1)}%`;
+        top.forEach((r, i) => {
+            const row = document.createElement('div');
+            row.className = 'bar-row';
+            row.tabIndex = 0;
+            row.innerHTML = `<div class="bar-label" title="${esc(r.name)} ${esc(r.code)}"><span class="bar-rank">${i + 1}</span>${esc(r.name)}${r.code && GROUP_BY === 'customer' ? `<span class="text-gray-400 text-xs ml-1">${esc(r.code)}</span>` : ''}</div>
+                <div class="bar-track"><div class="bar-fill" style="width:0%"></div></div>
+                <div class="bar-value" title="${money(r.closing)}">${compact(r.closing)}</div>`;
+            row.addEventListener('click', () => openRow(r));
+            row.addEventListener('keydown', (e) => { if (e.key === 'Enter') openRow(r); });
+            list.append(row);
+            requestAnimationFrame(() => { row.querySelector('.bar-fill').style.width = `${Math.max(r.closing / max * 100, 0.5)}%`; });
+        });
+    })();
+
+    // ---- Динамик график (SVG) ----
+    const svgNS = 'http://www.w3.org/2000/svg';
+    const el = (tag, attrs = {}) => { const n = document.createElementNS(svgNS, tag); Object.entries(attrs).forEach(([k, v]) => n.setAttribute(k, v)); return n; };
+    function niceTicks(min, max, count = 4) {
+        if (max === min) max = min + 1;
+        const span = max - min, step0 = span / count;
+        const mag = Math.pow(10, Math.floor(Math.log10(step0)));
+        const step = [1, 2, 2.5, 5, 10].map((m) => m * mag).find((s) => s >= step0);
+        const lo = Math.floor(min / step) * step, hi = Math.ceil(max / step) * step;
+        const ticks = [];
+        for (let v = lo; v <= hi + step / 2; v += step) ticks.push(v);
+        return ticks;
+    }
+    function drawTrend(mode) {
+        const wrap = document.getElementById('trend-chart');
+        wrap.querySelector('svg')?.remove();
+        const tip = document.getElementById('trend-tip');
+        const W = Math.max(wrap.clientWidth, 320), H = 260, M = { t: 14, r: 12, b: 28, l: 56 };
+        const iw = W - M.l - M.r, ih = H - M.t - M.b;
+        const svg = el('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': mode === 'balance' ? 'Сарын эцсийн үлдэгдэл' : 'Сарын нэмэгдсэн ба төлөгдсөн' });
+        const n = TREND.length, band = iw / n;
+        const values = mode === 'balance' ? TREND.map((t) => t.balance) : TREND.flatMap((t) => [t.increase, t.decrease]);
+        const ticks = niceTicks(Math.min(0, ...values), Math.max(0, ...values));
+        const y0 = ticks[0], y1 = ticks[ticks.length - 1];
+        const axisCompact = axisFormatter(ticks);
+        const y = (v) => M.t + ih - (v - y0) / (y1 - y0) * ih;
+        ticks.forEach((t) => {
+            svg.append(el('line', { x1: M.l, x2: W - M.r, y1: y(t), y2: y(t), class: 'grid-line' }));
+            const label = el('text', { x: M.l - 8, y: y(t) + 4, 'text-anchor': 'end', class: 'axis-text' });
+            label.textContent = axisCompact(t);
+            svg.append(label);
+        });
+        TREND.forEach((t, i) => {
+            if (n > 8 && i % 2 && i !== n - 1) return;
+            const label = el('text', { x: M.l + band * (i + .5), y: H - 8, 'text-anchor': 'middle', class: 'axis-text' });
+            label.textContent = t.label.slice(2);
+            svg.append(label);
+        });
+        const legend = document.getElementById('trend-legend');
+        const cx = (i) => M.l + band * (i + .5);
+        let hoverMarks = [];
+        if (mode === 'balance') {
+            legend.innerHTML = '';
+            document.getElementById('trend-sub').textContent = 'Сар бүрийн эцсийн үлдэгдэл';
+            const defs = el('defs');
+            const grad = el('linearGradient', { id: 'rp-area', x1: 0, x2: 0, y1: 0, y2: 1 });
+            grad.append(el('stop', { offset: '0%', 'stop-color': '#2a78d6', 'stop-opacity': .22 }), el('stop', { offset: '100%', 'stop-color': '#2a78d6', 'stop-opacity': 0 }));
+            defs.append(grad); svg.append(defs);
+            const pts = TREND.map((t, i) => [cx(i), y(t.balance)]);
+            const line = pts.map((p, i) => `${i ? 'L' : 'M'}${p[0].toFixed(1)},${p[1].toFixed(1)}`).join('');
+            svg.append(el('path', { d: `${line}L${pts[n - 1][0]},${y(Math.max(y0, 0))}L${pts[0][0]},${y(Math.max(y0, 0))}Z`, fill: 'url(#rp-area)' }));
+            svg.append(el('path', { d: line, fill: 'none', stroke: 'var(--series-1)', 'stroke-width': 2, 'stroke-linejoin': 'round', 'stroke-linecap': 'round' }));
+            const last = pts[n - 1];
+            svg.append(el('circle', { cx: last[0], cy: last[1], r: 4.5, fill: 'var(--series-1)', stroke: '#fff', 'stroke-width': 2 }));
+            const endLabel = el('text', { x: last[0] - 8, y: last[1] - 10, 'text-anchor': 'end', class: 'axis-text', style: 'fill:var(--ink);font-weight:600' });
+            endLabel.textContent = compact(TREND[n - 1].balance);
+            svg.append(endLabel);
+            const cross = el('line', { y1: M.t, y2: M.t + ih, stroke: 'var(--axis)', 'stroke-width': 1, visibility: 'hidden' });
+            const dot = el('circle', { r: 5, fill: 'var(--series-1)', stroke: '#fff', 'stroke-width': 2, visibility: 'hidden' });
+            svg.append(cross, dot);
+            hoverMarks = [cross, dot];
+            TREND.forEach((t, i) => {
+                const hit = el('rect', { x: M.l + band * i, y: M.t, width: band, height: ih, fill: 'transparent' });
+                hit.addEventListener('mouseenter', () => {
+                    cross.setAttribute('x1', cx(i)); cross.setAttribute('x2', cx(i)); cross.setAttribute('visibility', 'visible');
+                    dot.setAttribute('cx', cx(i)); dot.setAttribute('cy', y(t.balance)); dot.setAttribute('visibility', 'visible');
+                    const prev = i ? TREND[i - 1].balance : null;
+                    const ch = prev !== null && Math.abs(prev) > 0.5 ? ((t.balance - prev) / Math.abs(prev) * 100) : null;
+                    showTip(cx(i), y(t.balance), `<div class="t-head">${t.label}</div>
+                        <div class="t-row"><span><i style="background:var(--series-1)"></i> Үлдэгдэл</span><b>${money(t.balance)}</b></div>
+                        ${ch === null ? '' : `<div class="t-row" style="opacity:.8"><span>Өмнөх сараас</span><span>${ch >= 0 ? '+' : ''}${ch.toFixed(1)}%</span></div>`}`);
+                });
+                svg.append(hit);
+            });
+        } else {
+            legend.innerHTML = `<span><i style="background:var(--series-1)"></i>${esc(INC_LABEL)}</span><span><i style="background:var(--series-2)"></i>${esc(DEC_LABEL)}</span>`;
+            document.getElementById('trend-sub').textContent = 'Сар бүрийн нэмэгдсэн ба төлөгдсөн дүн';
+            const bw = Math.min((band - 10) / 2, 26);
+            const roundTop = (x, top, w, h, r) => {
+                if (h <= 0) return '';
+                r = Math.min(r, w / 2, h);
+                const b = top + h;
+                return `M${x},${b}V${top + r}Q${x},${top} ${x + r},${top}H${x + w - r}Q${x + w},${top} ${x + w},${top + r}V${b}Z`;
+            };
+            TREND.forEach((t, i) => {
+                const left = cx(i) - bw - 1;
+                [[t.increase, 'var(--series-1)', left], [t.decrease, 'var(--series-2)', cx(i) + 1]].forEach(([v, color, x]) => {
+                    const top = y(Math.max(v, 0)), h = y(0) - top;
+                    if (h > 0) svg.append(el('path', { d: roundTop(x, top, bw, h, 4), fill: color }));
+                });
+                const hit = el('rect', { x: M.l + band * i, y: M.t, width: band, height: ih, fill: 'transparent' });
+                hit.addEventListener('mouseenter', () => {
+                    showTip(cx(i), y(Math.max(t.increase, t.decrease)), `<div class="t-head">${t.label}</div>
+                        <div class="t-row"><span><i style="background:var(--series-1)"></i> ${esc(INC_LABEL)}</span><b>${money(t.increase)}</b></div>
+                        <div class="t-row"><span><i style="background:var(--series-2)"></i> ${esc(DEC_LABEL)}</span><b>${money(t.decrease)}</b></div>
+                        <div class="t-row" style="opacity:.8"><span>Цэвэр өөрчлөлт</span><span>${money(t.increase - t.decrease)}</span></div>`);
+                });
+                svg.append(hit);
+            });
+        }
+        svg.append(el('line', { x1: M.l, x2: W - M.r, y1: y(Math.max(y0, 0)), y2: y(Math.max(y0, 0)), stroke: 'var(--axis)' }));
+        svg.addEventListener('mouseleave', () => { tip.classList.remove('show'); hoverMarks.forEach((m) => m.setAttribute('visibility', 'hidden')); });
+        wrap.prepend(svg);
+        function showTip(x, yy, html) {
+            tip.innerHTML = html;
+            const scale = wrap.clientWidth / W;
+            tip.style.left = `${Math.min(Math.max(x * scale, 90), wrap.clientWidth - 90)}px`;
+            tip.style.top = `${yy * scale}px`;
+            tip.classList.add('show');
+        }
+    }
+    let trendMode = 'balance';
+    document.querySelectorAll('[data-trend]').forEach((btn) => btn.addEventListener('click', () => {
+        trendMode = btn.dataset.trend;
+        document.querySelectorAll('[data-trend]').forEach((b) => b.setAttribute('aria-pressed', String(b === btn)));
+        drawTrend(trendMode);
+    }));
+    drawTrend(trendMode);
+    let resizeTimer;
+    window.addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => drawTrend(trendMode), 150); });
+
+    // ---- Жагсаалт: эрэмбэлэх, хайх, хуудаслах ----
+    ROWS.forEach((r) => {
+        const pos = BUCKETS.reduce((s, b) => s + r[b], 0);
+        r.risk_ratio = pos > 0.5 ? r.risk / pos : 0;
+        r._search = `${r.name} ${r.code} ${r.group} ${r.account} ${r.account_ids}`.toLowerCase();
+    });
+    const state = { sort: 'closing', desc: true, q: '', page: 0, size: 50 };
+    function filtered() {
+        const q = state.q.trim().toLowerCase();
+        const list = q ? ROWS.filter((r) => r._search.includes(q)) : ROWS.slice();
+        const key = state.sort;
+        list.sort((a, b) => {
+            const va = a[key], vb = b[key];
+            const cmp = typeof va === 'string' ? String(va).localeCompare(String(vb), 'mn') : (va - vb);
+            return state.desc ? -cmp : cmp;
+        });
+        return list;
+    }
+    const cell = (v, extra = '') => `<td class="${v < -0.5 ? 'neg' : ''} ${extra}" title="${money(v)}">${Math.abs(v) < 0.5 ? '<span class="text-gray-300">—</span>' : money(v)}</td>`;
+    function renderTable() {
+        const list = filtered();
+        const pages = Math.max(1, Math.ceil(list.length / state.size));
+        state.page = Math.min(state.page, pages - 1);
+        const slice = list.slice(state.page * state.size, (state.page + 1) * state.size);
+        const tbody = document.getElementById('rp-tbody');
+        tbody.innerHTML = slice.map((r, i) => {
+            const pos = BUCKETS.reduce((s, b) => s + r[b], 0);
+            const ageBar = pos > 0.5
+                ? `<div class="mini-stack" title="${AGING.map((a, j) => `${a.label}: ${money(r[BUCKETS[j]])}`).join('\n')}">${BUCKETS.map((b, j) => r[b] > 0.5 ? `<div style="flex:${r[b]} 1 0;background:${AGE_COLORS[j]}"></div>` : '').join('')}</div>`
+                : '<span class="text-gray-300">—</span>';
+            const sub = GROUP_BY === 'customer' ? `<span class="text-gray-400 text-xs ml-1">${esc(r.code)}</span><span class="group-chip">${esc(r.group)}</span>`
+                : GROUP_BY === 'account' ? `<span class="text-gray-400 text-xs ml-1">${esc(r.code)} · ${r.customers} харилцагч</span>` : `<span class="text-gray-400 text-xs ml-1">${r.customers} харилцагч</span>`;
+            return `<tr data-i="${ROWS.indexOf(r)}" tabindex="0">
+                <td class="l"><div class="name-cell"><span class="font-medium text-gray-900" title="${esc(r.name)}">${esc(r.name)}</span>${sub}</div></td>
+                ${HAS_ACCOUNT_COL ? `<td class="l text-gray-600"><div class="acct-cell" title="${esc(r.account_ids)}">${esc(r.account)}</div></td>` : ''}
+                ${cell(r.closing, 'font-semibold text-gray-900')}
+                <td>${ageBar}</td>
+                ${cell(r.risk)}
+                ${cell(r.opening, 'text-gray-600')}${cell(r.increase, 'text-gray-600')}${cell(r.decrease, 'text-gray-600')}
+                <td class="text-gray-600">${r.last_payment ? `<span title="${r.last_payment}">${daysAgo(r.last_payment)}</span>` : '<span class="text-gray-300">—</span>'}</td>
+            </tr>`;
+        }).join('') || `<tr><td colspan="9" class="l" style="padding:2.5rem;text-align:center;color:var(--muted)">Шүүлтэд тохирох мөр алга</td></tr>`;
+        const sum = (k) => list.reduce((s, r) => s + r[k], 0);
+        document.getElementById('rp-tfoot').innerHTML = `<td class="l">Нийт · ${list.length} мөр</td>${HAS_ACCOUNT_COL ? '<td></td>' : ''}
+            <td>${money(sum('closing'))}</td><td></td><td>${money(sum('risk'))}</td>
+            <td>${money(sum('opening'))}</td><td>${money(sum('increase'))}</td><td>${money(sum('decrease'))}</td><td></td>`;
+        document.getElementById('table-sub').textContent = `${list.length} мөр · мөр дээр дарахад ${GROUP_BY === 'customer' ? 'гүйлгээний хуулга нээгдэнэ' : 'харилцагчаар задарна'}`;
+        document.getElementById('page-info').textContent = list.length ? `${state.page * state.size + 1}–${Math.min((state.page + 1) * state.size, list.length)} / ${list.length}` : '';
+        const pager = document.getElementById('pager');
+        pager.innerHTML = '';
+        if (pages > 1) {
+            const btn = (label, page, disabled, active) => {
+                const b = document.createElement('button');
+                b.type = 'button'; b.textContent = label; b.disabled = disabled;
+                b.className = `min-w-[2rem] px-2 py-1 rounded-md text-sm ${active ? 'bg-gray-900 text-white' : 'hover:bg-gray-100 text-gray-700'} disabled:opacity-30`;
+                b.addEventListener('click', () => { state.page = page; renderTable(); });
+                pager.append(b);
+            };
+            btn('‹', state.page - 1, state.page === 0, false);
+            const from = Math.max(0, Math.min(state.page - 2, pages - 5));
+            for (let p = from; p < Math.min(pages, from + 5); p++) btn(String(p + 1), p, false, p === state.page);
+            btn('›', state.page + 1, state.page >= pages - 1, false);
+        }
+        document.querySelectorAll('#rp-table thead th[data-sort]').forEach((th) => {
+            const on = th.dataset.sort === state.sort;
+            th.classList.toggle('sorted', on);
+            th.querySelector('.arrow').textContent = on ? (state.desc ? '↓' : '↑') : '↕';
+            th.setAttribute('aria-sort', on ? (state.desc ? 'descending' : 'ascending') : 'none');
+        });
+    }
+    document.querySelectorAll('#rp-table thead th[data-sort]').forEach((th) => th.addEventListener('click', () => {
+        const key = th.dataset.sort;
+        state.desc = state.sort === key ? !state.desc : !['name', 'account'].includes(key);
+        state.sort = key;
+        state.page = 0;
+        document.querySelectorAll('.age-row').forEach((r) => r.setAttribute('aria-pressed', 'false'));
+        renderTable();
+    }));
+    let searchTimer;
+    document.getElementById('table-search').addEventListener('input', (e) => {
+        clearTimeout(searchTimer);
+        searchTimer = setTimeout(() => { state.q = e.target.value; state.page = 0; renderTable(); }, 120);
+    });
+    document.getElementById('page-size').addEventListener('change', (e) => { state.size = Number(e.target.value); state.page = 0; renderTable(); });
+    const tbody = document.getElementById('rp-tbody');
+    tbody.addEventListener('click', (e) => { const tr = e.target.closest('tr[data-i]'); if (tr) openRow(ROWS[Number(tr.dataset.i)]); });
+    tbody.addEventListener('keydown', (e) => { const tr = e.target.closest('tr[data-i]'); if (tr && e.key === 'Enter') openRow(ROWS[Number(tr.dataset.i)]); });
+    renderTable();
+
+    // ---- Мөр нээх: харилцагч бол хуулга, данс/бүлэг бол харилцагчаар задлах ----
+    function openRow(r) {
+        if (GROUP_BY === 'customer') return openLedger(r);
+        const q = new URLSearchParams(QUERY);
+        q.set('group_by', 'customer');
+        if (GROUP_BY === 'account') { q.delete('account'); q.append('account', r.key); }
+        else { q.delete('group'); q.append('group', r.key); }
+        window.location.search = q.toString();
+    }
+    const drawer = document.getElementById('drawer'), backdrop = document.getElementById('drawer-backdrop');
+    let lastFocus = null;
+    function closeDrawer() {
+        drawer.classList.remove('open'); backdrop.classList.remove('open');
+        drawer.setAttribute('aria-hidden', 'true');
+        lastFocus?.focus();
+    }
+    document.getElementById('drawer-close').addEventListener('click', closeDrawer);
+    backdrop.addEventListener('click', closeDrawer);
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && drawer.classList.contains('open')) closeDrawer(); });
+    async function openLedger(r) {
+        lastFocus = document.activeElement;
+        document.getElementById('drawer-title').textContent = r.name;
+        document.getElementById('drawer-meta').textContent = `${r.code} · ${r.group} · ${r.account}`;
+        const kpi = (label, v, strong) => `<div><div class="rp-sub">${label}</div><div class="rp-num ${strong ? 'font-bold text-base' : 'font-semibold'} ${v < -0.5 ? 'neg' : ''}">${money(v)}</div></div>`;
+        document.getElementById('drawer-kpis').innerHTML = kpi('Эхний үлдэгдэл', r.opening) + kpi('Нэмэгдсэн', r.increase) + kpi('Төлөгдсөн', r.decrease) + kpi('Эцсийн үлдэгдэл', r.closing, true);
+        const body = document.getElementById('drawer-body');
+        body.innerHTML = `<div class="p-5 space-y-3">${Array.from({ length: 8 }, () => '<div class="skeleton"></div>').join('')}</div>`;
+        drawer.classList.add('open'); backdrop.classList.add('open');
+        drawer.setAttribute('aria-hidden', 'false');
+        document.getElementById('drawer-close').focus();
+        const q = new URLSearchParams(QUERY);
+        q.set('customer', r.key);
+        try {
+            const res = await fetch(`${LEDGER_URL}?${q}`, { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || res.status);
+            const rows = data.items.map((t) => `<tr>
+                <td class="l">${t.date}</td>
+                <td class="l"><div class="font-medium text-gray-900">${esc(t.number)}</div><div class="text-xs text-gray-500 whitespace-normal" style="max-width:22rem">${esc(t.desc)}</div></td>
+                <td class="l text-xs text-gray-600 whitespace-normal" style="max-width:10rem">${esc(t.account)}</td>
+                <td>${t.increase ? money(t.increase) : '<span class="text-gray-300">—</span>'}</td>
+                <td>${t.decrease ? money(t.decrease) : '<span class="text-gray-300">—</span>'}</td>
+                <td class="font-semibold ${t.balance < -0.5 ? 'neg' : ''}">${money(t.balance)}</td>
+            </tr>`).join('');
+            body.innerHTML = `<table class="rp-table">
+                <thead><tr><th class="l">Огноо</th><th class="l">Баримт</th><th class="l">Данс</th><th>Нэмэгдсэн</th><th>Төлөгдсөн</th><th>Үлдэгдэл</th></tr></thead>
+                <tbody style="cursor:default">
+                    <tr style="background:#fafaf9"><td class="l" colspan="5"><b>Эхний үлдэгдэл</b></td><td class="font-semibold">${money(data.opening)}</td></tr>
+                    ${rows || '<tr><td class="l" colspan="6" style="padding:2rem;text-align:center;color:var(--muted)">Энэ хугацаанд гүйлгээ алга</td></tr>'}
+                </tbody>
+            </table>${data.truncated ? '<p class="rp-sub p-4">Эхний 1000 гүйлгээг харуулав - хугацааг богиносгоно уу.</p>' : ''}`;
+        } catch (err) {
+            body.innerHTML = `<p class="p-5 text-sm" style="color:var(--bad-text)">Хуулга ачаалж чадсангүй (${esc(err.message)}).</p>`;
+        }
+    }
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,234 @@
+{% extends 'base.html' %}
+
+{% block title %}Цалингийн мэдээлэл - Euro Foods{% endblock %}
+
+{% block hide_mobile_menu %}hidden{% endblock %}
+
+{% block content %}
+{% load l10n %}
+<div class="flex min-h-screen bg-gray-50">
+    {% include 'shop/_sidebar.html' with active_page='my_payroll' %}
+
+    <main class="flex-1 p-2 lg:p-8 lg:ml-0">
+        <div class="mb-6">
+            <h1 class="text-2xl lg:text-3xl font-bold text-gray-900">💰 Цалингийн мэдээлэл</h1>
+            <p class="text-gray-600 mt-2">Таны цалингийн задаргаа{% if employee %} · {{ employee.name }}{% if employee.positionname %} ({{ employee.positionname }}){% endif %}{% endif %}{% if pay_type_label %} · Олгох хэлбэр: {{ pay_type_label }}{% endif %}</p>
+        </div>
+
+        {% if not employee %}
+        <div class="bg-white rounded-lg shadow p-6 text-gray-600">Таны бүртгэлтэй ажилтны мэдээлэл олдсонгүй.</div>
+        {% elif not has_profile %}
+        <div class="bg-yellow-50 border border-yellow-200 text-yellow-800 rounded-lg p-4">Таны цалингийн олгох хэлбэр (карт / бэлэн) тохируулагдаагүй байна. Нягтлан бодогчид хандана уу.</div>
+        {% else %}
+
+        {% include 'shop/_personal_period_filter.html' with url_name='shop:my_payroll' extra_name='sheet' extra_label='Цалингийн төрөл' extra_value=sheet extra_choices=sheet_choices %}
+
+        {% if mode == 'month' %}
+        {% if details and is_provisional %}
+        <div class="bg-blue-50 border border-blue-200 text-blue-800 rounded-lg p-4 mb-6 text-sm">
+            Энэ сарын цалин хараахан баталгаажаагүй тул <b>урьдчилсан тооцоо</b>{% if is_current_month %} (өнөөдрийг хүртэлх ирцээр){% endif %} юм. Нягтлан бодогч сарыг хаасны дараа эцсийн дүн гарна.
+        </div>
+        {% endif %}
+
+        {% if not details %}
+        <div class="bg-white rounded-lg shadow p-6 text-gray-500">{{ month_label }}-д цалингийн мэдээлэл алга байна.</div>
+        {% else %}
+        <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+            <div class="bg-white rounded-lg shadow p-4">
+                <div class="text-sm text-gray-500">Бодогдсон нийт цалин</div>
+                <div class="text-2xl font-bold text-gray-900">{{ month_total.gross|floatformat:'0g' }}₮</div>
+            </div>
+            <div class="bg-white rounded-lg shadow p-4">
+                <div class="text-sm text-gray-500">Татвар, шимтгэл</div>
+                <div class="text-2xl font-bold text-red-600">{{ month_total.total_tax|floatformat:'0g' }}₮</div>
+            </div>
+            <div class="bg-white rounded-lg shadow p-4">
+                <div class="text-sm text-gray-500">Суутгал</div>
+                <div class="text-2xl font-bold {% if month_total.deductions_total %}text-red-600{% else %}text-gray-900{% endif %}">{{ month_total.deductions_total|floatformat:'0g' }}₮</div>
+            </div>
+            <div class="bg-white rounded-lg shadow p-4 ring-2 ring-primary">
+                <div class="text-sm text-gray-500">Олгох дүн</div>
+                <div class="text-2xl font-bold text-primary">{{ month_total.payout|floatformat:'0g' }}₮</div>
+                {% if month_total.advance %}
+                <div class="mt-1 pt-1 border-t text-sm text-gray-600">Урьдчилгаатай нийт: <b class="text-gray-900">{{ month_total.payout_with_advance|floatformat:'0g' }}₮</b></div>
+                <div class="text-xs text-gray-500">Урьдчилгаа {{ month_total.advance|floatformat:'0g' }}₮</div>
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 {% if details|length > 1 %}xl:grid-cols-2{% endif %} gap-6">
+            {% for d in details %}
+            {% with r=d.row %}
+            <div class="bg-white rounded-lg shadow p-6">
+                <div class="flex items-baseline justify-between mb-4">
+                    <h2 class="text-lg font-bold text-gray-900">{% if d.is_card %}💳{% else %}💵{% endif %} {{ d.label }}</h2>
+                    <span class="text-sm text-gray-500">{{ month_label }}</span>
+                </div>
+
+                <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5 text-center">
+                    <div class="bg-gray-50 rounded-lg p-2">
+                        <div class="text-xs text-gray-500">Ажиллавал зохих</div>
+                        <div class="font-semibold">{{ r.required_days|floatformat:'-1' }} хоног</div>
+                        {% if not r.is_shift %}<div class="text-xs text-gray-500">{{ r.required_hours|floatformat:'-1' }} цаг</div>{% endif %}
+                    </div>
+                    <div class="bg-gray-50 rounded-lg p-2">
+                        <div class="text-xs text-gray-500">Ажилласан</div>
+                        <div class="font-semibold">{{ r.worked_days|floatformat:'-1' }} хоног</div>
+                        {% if not r.is_shift %}<div class="text-xs text-gray-500">{{ r.worked_hours|floatformat:'-1' }} цаг</div>{% endif %}
+                    </div>
+                    <div class="bg-gray-50 rounded-lg p-2">
+                        <div class="text-xs text-gray-500">Бямбад ажилласан</div>
+                        <div class="font-semibold">{{ r.saturday_hours|floatformat:'-1' }} цаг</div>
+                    </div>
+                    <div class="bg-gray-50 rounded-lg p-2">
+                        <div class="text-xs text-gray-500">Ажилласан хувь</div>
+                        <div class="font-semibold">{% if r.required_hours %}{% widthratio r.worked_hours r.required_hours 100 %}%{% else %}-{% endif %}</div>
+                    </div>
+                </div>
+
+                <table class="w-full text-sm">
+                    <tbody>
+                        <tr><td colspan="3" class="pt-1 pb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">Цалин</td></tr>
+                        {% for label, value in d.base %}
+                        {% if value or forloop.first %}
+                        <tr class="border-t"><td class="py-2 text-gray-700" colspan="2">{{ label }}</td><td class="py-2 text-right whitespace-nowrap">{{ value|floatformat:'-2g' }}</td></tr>
+                        {% endif %}
+                        {% endfor %}
+                        <tr class="border-t bg-gray-50 font-semibold"><td class="py-2 px-1" colspan="2">Нийт цалин</td><td class="py-2 px-1 text-right whitespace-nowrap">{{ r.nominal_salary|floatformat:'-2g' }}</td></tr>
+
+                        <tr><td colspan="3" class="pt-4 pb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">Бодолт</td></tr>
+                        {% for label, value, note in d.calc %}
+                        <tr class="border-t">
+                            <td class="py-2 text-gray-700">{{ label }}</td>
+                            <td class="py-2 text-xs text-gray-500 text-right pr-3">{{ note }}</td>
+                            <td class="py-2 text-right whitespace-nowrap">{{ value|floatformat:'-2g' }}</td>
+                        </tr>
+                        {% endfor %}
+                        <tr class="border-t bg-gray-50 font-semibold"><td class="py-2 px-1" colspan="2">Бодогдсон нийт цалин</td><td class="py-2 px-1 text-right whitespace-nowrap">{{ r.gross|floatformat:'-2g' }}</td></tr>
+
+                        {% if d.taxes %}
+                        <tr><td colspan="3" class="pt-4 pb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">Татвар, шимтгэл</td></tr>
+                        {% for label, value, note in d.taxes %}
+                        <tr class="border-t">
+                            <td class="py-2 text-gray-700">{{ label }}</td>
+                            <td class="py-2 text-xs text-gray-500 text-right pr-3">{{ note }}</td>
+                            <td class="py-2 text-right whitespace-nowrap text-red-600">−{{ value|floatformat:'-2g' }}</td>
+                        </tr>
+                        {% endfor %}
+                        {% endif %}
+
+                        {% if d.deductions %}
+                        <tr><td colspan="3" class="pt-4 pb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">Суутгал</td></tr>
+                        {% for label, value in d.deductions %}
+                        <tr class="border-t"><td class="py-2 text-gray-700" colspan="2">{{ label }}</td><td class="py-2 text-right whitespace-nowrap text-red-600">−{{ value|floatformat:'-2g' }}</td></tr>
+                        {% endfor %}
+                        {% endif %}
+
+                        {% if d.benefits %}
+                        <tr><td colspan="3" class="pt-4 pb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">Тэтгэмж</td></tr>
+                        {% for label, value in d.benefits %}
+                        <tr class="border-t"><td class="py-2 text-gray-700" colspan="2">{{ label }}</td><td class="py-2 text-right whitespace-nowrap text-green-700">+{{ value|floatformat:'-2g' }}</td></tr>
+                        {% endfor %}
+                        {% endif %}
+
+                        <tr class="border-t-2 border-gray-300 font-semibold"><td class="py-2" colspan="2">Гарт олгох</td><td class="py-2 text-right whitespace-nowrap">{{ r.net_pay|floatformat:'-2g' }}</td></tr>
+                        {% if r.deposit %}
+                        <tr class="border-t"><td class="py-2 text-gray-700" colspan="2">Хадгаламж</td><td class="py-2 text-right whitespace-nowrap text-red-600">−{{ r.deposit|floatformat:'-2g' }}</td></tr>
+                        {% endif %}
+                        <tr class="border-t-2 border-primary bg-green-50 font-bold text-primary">
+                            <td class="py-3 px-1" colspan="2">{% if d.is_card %}Картанд орох{% else %}Бэлнээр олгох{% endif %}</td>
+                            <td class="py-3 px-1 text-right whitespace-nowrap text-lg">{{ r.payout|floatformat:'-2g' }}₮</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            {% endwith %}
+            {% endfor %}
+        </div>
+        {% endif %}
+
+        {% else %}
+        {# ---------- Жилээр ---------- #}
+        <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+            <div class="bg-white rounded-lg shadow p-4">
+                <div class="text-sm text-gray-500">{{ year|unlocalize }} оны бодогдсон цалин</div>
+                <div class="text-2xl font-bold text-gray-900">{{ year_total.gross|floatformat:'0g' }}₮</div>
+            </div>
+            <div class="bg-white rounded-lg shadow p-4">
+                <div class="text-sm text-gray-500">Татвар, суутгал</div>
+                <div class="text-2xl font-bold text-red-600">{{ year_total.total_tax|add:year_total.deductions_total|floatformat:'0g' }}₮</div>
+            </div>
+            <div class="bg-white rounded-lg shadow p-4 ring-2 ring-primary">
+                <div class="text-sm text-gray-500">Нийт олгосон</div>
+                <div class="text-2xl font-bold text-primary">{{ year_total.payout|floatformat:'0g' }}₮</div>
+            </div>
+            <div class="bg-white rounded-lg shadow p-4">
+                <div class="text-sm text-gray-500">Сарын дундаж олголт</div>
+                <div class="text-2xl font-bold text-gray-900">{{ year_avg_payout|floatformat:'0g' }}₮</div>
+                <div class="text-xs text-gray-500">{{ year_months_count }} сарын</div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-lg shadow p-6">
+            <h2 class="text-lg font-bold text-gray-900 mb-4">{{ year|unlocalize }} оны цалин сараар</h2>
+            {% if not year_rows %}
+            <p class="text-gray-500">Энэ онд цалингийн мэдээлэл алга байна.</p>
+            {% else %}
+            <div class="overflow-x-auto">
+                <table class="min-w-full text-sm border border-gray-200">
+                    <thead>
+                        <tr class="bg-gray-100 text-left align-bottom">
+                            <th class="px-3 py-2 font-semibold text-gray-700">Сар</th>
+                            <th class="px-3 py-2 font-semibold text-gray-700 text-right">Ажилласан хоног</th>
+                            <th class="px-3 py-2 font-semibold text-gray-700 text-right">Бодогдсон нийт цалин</th>
+                            <th class="px-3 py-2 font-semibold text-gray-700 text-right">Үүнээс борлуулалтын нэмэгдэл</th>
+                            <th class="px-3 py-2 font-semibold text-gray-700 text-right">Татвар, шимтгэл</th>
+                            <th class="px-3 py-2 font-semibold text-gray-700 text-right">Суутгал</th>
+                            <th class="px-3 py-2 font-semibold text-gray-700 text-right">Тэтгэмж</th>
+                            <th class="px-3 py-2 font-semibold text-gray-700 text-right">Хадгаламж</th>
+                            {% for label in sheet_columns %}<th class="px-3 py-2 font-semibold text-gray-700 text-right">{{ label }}</th>{% endfor %}
+                            <th class="px-3 py-2 font-semibold text-gray-900 text-right bg-gray-200">Олгох дүн</th>
+                            <th class="px-3 py-2"></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for r in year_rows %}
+                        <tr class="border-t {% if r.empty %}text-gray-400{% endif %}">
+                            <td class="px-3 py-2 whitespace-nowrap">{{ r.label }}{% if r.provisional %} <span class="text-xs text-blue-600">(урьдчилсан)</span>{% endif %}</td>
+                            <td class="px-3 py-2 text-right">{{ r.worked_days|floatformat:'-1' }}</td>
+                            <td class="px-3 py-2 text-right">{{ r.gross|floatformat:'0g' }}</td>
+                            <td class="px-3 py-2 text-right">{{ r.sales_bonus|floatformat:'0g' }}</td>
+                            <td class="px-3 py-2 text-right">{{ r.total_tax|floatformat:'0g' }}</td>
+                            <td class="px-3 py-2 text-right">{{ r.deductions_total|floatformat:'0g' }}</td>
+                            <td class="px-3 py-2 text-right">{{ r.benefits_total|floatformat:'0g' }}</td>
+                            <td class="px-3 py-2 text-right">{{ r.deposit|floatformat:'0g' }}</td>
+                            {% for value in r.by_sheet %}<td class="px-3 py-2 text-right">{% if value is None %}-{% else %}{{ value|floatformat:'0g' }}{% endif %}</td>{% endfor %}
+                            <td class="px-3 py-2 text-right font-semibold bg-gray-50">{% if r.empty %}-{% else %}{{ r.payout|floatformat:'0g' }}{% endif %}</td>
+                            <td class="px-3 py-2 whitespace-nowrap"><a href="?view=month&year={{ year|unlocalize }}&month={{ r.month }}{% if sheet != 'all' %}&sheet={{ sheet }}{% endif %}" class="text-primary underline">Задаргаа</a></td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                    <tfoot>
+                        <tr class="border-t-2 border-gray-300 font-semibold">
+                            <td class="px-3 py-2">Нийт</td>
+                            <td class="px-3 py-2 text-right">{{ year_total.worked_days|floatformat:'-1' }}</td>
+                            <td class="px-3 py-2 text-right">{{ year_total.gross|floatformat:'0g' }}</td>
+                            <td class="px-3 py-2 text-right">{{ year_total.sales_bonus|floatformat:'0g' }}</td>
+                            <td class="px-3 py-2 text-right">{{ year_total.total_tax|floatformat:'0g' }}</td>
+                            <td class="px-3 py-2 text-right">{{ year_total.deductions_total|floatformat:'0g' }}</td>
+                            <td class="px-3 py-2 text-right">{{ year_total.benefits_total|floatformat:'0g' }}</td>
+                            <td class="px-3 py-2 text-right">{{ year_total.deposit|floatformat:'0g' }}</td>
+                            {% for value in year_total.by_sheet %}{% if sheet_columns %}<td class="px-3 py-2 text-right">{{ value|floatformat:'0g' }}</td>{% endif %}{% endfor %}
+                            <td class="px-3 py-2 text-right bg-gray-50">{{ year_total.payout|floatformat:'0g' }}</td>
+                            <td></td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+            {% endif %}
+        </div>
+        {% endif %}
+        {% endif %}
+    </main>
+</div>
+{% endblock %}

@@ -1,0 +1,5 @@
+<div class="pr-print-head">
+    <div class="pr-print-company">{{ setting.company_name }}</div>
+    <div class="pr-print-title">{{ month_label }}ын {% if is_card %}картын{% else %}бэлэн{% endif %} цалин</div>
+    <div class="pr-print-approve">Батлав: Захирал ....................... /{% if is_card %}{{ setting.card_approver }}{% else %}{{ setting.cash_approver }}{% endif %}/</div>
+</div>

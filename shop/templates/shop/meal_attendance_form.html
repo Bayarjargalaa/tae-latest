@@ -10,7 +10,7 @@
 @media print {
     @page { size: A4; margin: 8mm; }
 
-    #sidebar, #mobile-menu-button, #sidebar-overlay, header, footer, .no-print, .print-hide-empty { display: none !important; }
+    #sidebar, #sidebar-open-button, #sidebar-overlay, header, footer, .no-print, .print-hide-empty { display: none !important; }
     html, body { height: auto !important; }
     main { margin: 0 !important; padding: 0 !important; }
     body { background: white !important; font-size: 10px !important; }
@@ -97,6 +97,8 @@
         <form method="post" class="bg-white rounded-lg shadow p-6">
             {% csrf_token %}
             <input type="hidden" name="date" value="{{ selected_date|date:'Y-m-d' }}">
+            {# Хоолгүй өдөр ч орцны formset-ийн management form заавал байх ёстой, эс бөгөөс хадгалагдахгүй #}
+            {{ ingredient_formset.management_form }}
 
             {% if menu_number is None %}
             <div class="bg-yellow-50 text-yellow-800 rounded-lg p-3 mb-4 no-print">
@@ -104,7 +106,6 @@
                 Орцын мэдээлэлгүйгээр зөвхөн ажилчдын нэрсийг доор бүртгэж болно.
             </div>
             {% else %}
-            {{ ingredient_formset.management_form }}
             <div id="meal-groups-grid" class="meal-groups-grid grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
                 {% for meal, ing_forms in meal_ingredient_groups %}
                 <div class="border rounded-lg p-4 min-w-0" data-meal-card>

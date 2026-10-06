@@ -1,0 +1,29 @@
+{% load l10n %}{# Цалингийн тайлангийн нэг мөрийн нүднүүд. g - бүлэг (эсвэл карт/бэлэнгийн дэд мөр), sub - дэд мөр эсэх #}
+<td class="px-3 py-2 whitespace-nowrap {% if sub %}pl-8 text-gray-600{% endif %}" data-v="{{ g.label }}">{% if sub %}<span class="inline-block w-2 h-2 rounded-sm mr-1.5" style="background: var(--series-{{ g.key }})"></span>{{ g.label }}{% elif g.drill_url %}<a href="{{ g.drill_url }}" class="text-primary hover:underline">{{ g.label }}</a>{% else %}{{ g.label }}{% endif %}</td>
+{% if group == 'employee' %}
+<td class="px-3 py-2 whitespace-nowrap text-gray-600" data-v="{{ g.position }}">{% if not sub %}{{ g.position }}{% endif %}</td>
+{% else %}
+<td class="px-3 py-2 text-right" data-v="{{ g.employee_count|unlocalize }}">{{ g.employee_count }}</td>
+{% endif %}
+{% if split_columns %}
+{% for v, is_total in g.split_cells %}
+<td class="px-3 py-2 text-right whitespace-nowrap {% if not forloop.counter|divisibleby:2 and not forloop.last %}border-l border-gray-200{% endif %} {% if is_total %}font-semibold bg-gray-50{% elif forloop.revcounter <= 3 %}bg-gray-50{% endif %} {% if v is None %}text-gray-300{% endif %}" data-v="{% if v is None %}0{% else %}{{ v|unlocalize }}{% endif %}">{% if v is None %}-{% else %}{{ v|floatformat:'0g' }}{% endif %}</td>
+{% endfor %}
+{% elif layout == 'pivot' %}
+{% for v in g.pivot %}
+{% if v is not None %}<td class="px-3 py-2 text-right whitespace-nowrap" data-v="{{ v|unlocalize }}">{{ v|floatformat:'0g' }}</td>
+{% else %}<td class="px-3 py-2 text-right text-gray-300" data-v="0">-</td>{% endif %}
+{% endfor %}
+<td class="px-3 py-2 text-right whitespace-nowrap {% if not sub %}font-semibold{% endif %} bg-gray-50" data-v="{{ g.metric_value|unlocalize }}">{{ g.metric_value|floatformat:'0g' }}</td>
+{% else %}
+{% for value in g.metric_list %}
+<td class="px-3 py-2 text-right whitespace-nowrap {% if forloop.counter == payout_index %}{% if not sub %}font-semibold{% endif %} bg-gray-50{% endif %}" data-v="{{ value|unlocalize }}">{% if forloop.first %}{{ value|floatformat:'-1g' }}{% else %}{{ value|floatformat:'0g' }}{% endif %}</td>
+{% endfor %}
+<td class="px-3 py-2 text-right whitespace-nowrap" data-v="{{ g.avg_payout|unlocalize }}">{{ g.avg_payout|floatformat:'0g' }}</td>
+<td class="px-3 py-2 text-right whitespace-nowrap" data-v="{{ g.share|unlocalize }}">
+    <div class="flex items-center justify-end gap-2">
+        {% if not sub %}<span class="hidden sm:block h-1.5 bg-gray-100 rounded w-12"><span class="block h-1.5 rounded" style="width: {{ g.share|floatformat:'0'|unlocalize }}%; max-width: 100%; background: var(--series-card)"></span></span>{% endif %}
+        {{ g.share|floatformat:'1' }}%
+    </div>
+</td>
+{% endif %}

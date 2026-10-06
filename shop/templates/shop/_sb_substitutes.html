@@ -1,0 +1,149 @@
+{% load l10n %}
+{# Нярав орлолт - үндсэн нярав байхгүй өдрүүд (sales_bonus.html-ийн Нярав tab) #}
+<style>
+    .cal { display: grid; grid-template-columns: repeat(7, minmax(0, 2.6rem)); gap: .3rem; }
+    .cal .dow { font-size: .65rem; font-weight: 600; color: var(--muted); text-align: center; text-transform: uppercase; }
+    .cal label { position: relative; display: grid; place-items: center; height: 2.3rem; border-radius: .55rem; border: 1px solid #e5e7eb;
+                 font-size: .82rem; font-variant-numeric: tabular-nums; cursor: pointer; background: #fff; user-select: none; }
+    .cal label:hover { border-color: #93c5fd; }
+    .cal label.weekend { color: var(--muted); background: #fafaf9; }
+    .cal input { position: absolute; opacity: 0; pointer-events: none; }
+    .cal label span { position: absolute; inset: -1px; border-radius: .55rem; display: grid; place-items: center; }
+    .cal input:checked + span { background: var(--accent); color: #fff; font-weight: 600; }
+    .cal input:focus-visible + span { outline: 2px solid #1c4f8f; outline-offset: 2px; }
+    /* Өөр орлолтод бүртгэгдсэн өдөр - сонгох боломжгүй */
+    .cal label.taken { cursor: not-allowed; background: repeating-linear-gradient(135deg, #fff4d6 0 4px, #fff 4px 8px); color: #8a5a00; border-color: #f2d48a; }
+    .cal label.taken:hover { border-color: #f2d48a; }
+</style>
+<div class="sb-card p-4 lg:p-5" id="sub-panel">
+    <div class="flex flex-wrap items-start justify-between gap-3 mb-3">
+        <div>
+            <h3 class="font-semibold">Нярав орлолт</h3>
+            <p class="sb-sub mt-0.5">Үндсэн нярав: <b class="text-gray-700">{{ main_storekeepers|join:", "|default:"тохируулаагүй" }}</b>.
+                Үндсэн нярав байхгүй (амарсан г.м.) өдрүүдэд орлосон хүнийг бүртгэнэ - тэр өдрүүдийн борлуулалт, буцаалт бүтнээр орлогчид очно.
+                Нэг өдөр нэг л хүн нярав хийнэ (орлолтуудын өдөр давхцахгүй). Бүртгэл өөрчлөгдөхөд энэ сарын хадгалсан бодолтууд автоматаар дахин бодогдоно.</p>
+        </div>
+        <button type="button" id="sub-new" class="text-sm font-medium px-3 py-1.5 rounded-lg border border-gray-200 hover:bg-gray-50">+ Орлолт бүртгэх</button>
+    </div>
+
+    {% if substitutes %}
+    <div class="overflow-x-auto mb-3">
+        <table class="sb-table">
+            <thead><tr><th class="l">Орлосон ажилтан</th><th class="l">Өдрүүд</th><th class="l">Тайлбар</th><th></th></tr></thead>
+            <tbody>
+                {% for s in substitutes %}
+                <tr>
+                    <td class="l font-medium">{{ s.name }} <span class="sb-sub">{{ s.code }}</span></td>
+                    <td class="l" style="white-space:normal"><span class="sb-num" data-days="{{ s.dates|join:',' }}"></span> <span class="sb-sub">({{ s.dates|length }} өдөр)</span></td>
+                    <td class="l text-gray-600" style="white-space:normal">{{ s.note|default:'—' }}</td>
+                    <td class="whitespace-nowrap">
+                        <button type="button" class="text-xs text-blue-700 hover:underline mr-2" data-sub-edit="{{ s.id }}">Засах</button>
+                        <form method="post" class="inline" onsubmit="return confirm('Энэ орлолтыг устгах уу? Өдрүүд нь үндсэн няравт буцна.')">
+                            {% csrf_token %}
+                            <input type="hidden" name="action" value="substitute_delete"><input type="hidden" name="substitute_id" value="{{ s.id }}">
+                            <input type="hidden" name="tab" value="storekeeper"><input type="hidden" name="year" value="{{ year|unlocalize }}"><input type="hidden" name="month" value="{{ month }}">
+                            <button type="submit" class="text-xs text-red-700 hover:underline">Устгах</button>
+                        </form>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+
+    <form method="post" id="sub-form" class="border-t border-gray-100 pt-4 grid grid-cols-1 lg:grid-cols-[1fr_auto] gap-5" {% if substitutes %}hidden{% endif %}>
+        {% csrf_token %}
+        <input type="hidden" name="action" value="substitute_save">
+        <input type="hidden" name="substitute_id" id="sub-id" value="">
+        <input type="hidden" name="tab" value="storekeeper"><input type="hidden" name="year" value="{{ year|unlocalize }}"><input type="hidden" name="month" value="{{ month }}">
+        <div class="space-y-3">
+            <label class="block text-sm"><span class="text-xs font-semibold text-gray-500 uppercase">Орлосон ажилтан</span>
+                <select name="employee_code" id="sub-employee" required class="mt-1 w-full text-sm border border-gray-200 rounded-lg px-2 py-2 bg-white">
+                    <option value="">Сонгох...</option>
+                    {% for code, name, position in all_employees %}<option value="{{ code }}">{{ name }} · {{ position|default:'-' }}</option>{% endfor %}
+                </select></label>
+            <label class="block text-sm"><span class="text-xs font-semibold text-gray-500 uppercase">Тайлбар</span>
+                <input type="text" name="note" id="sub-note" maxlength="200" placeholder="жиш: ээлжийн амралт" class="mt-1 w-full text-sm border border-gray-200 rounded-lg px-2 py-2"></label>
+            <div class="flex gap-2 pt-1">
+                <button type="submit" class="bg-primary text-white text-sm font-semibold px-5 py-2 rounded-lg hover:bg-green-700">💾 Хадгалах</button>
+                <button type="button" id="sub-cancel" class="text-sm px-3 py-2 rounded-lg text-gray-600 hover:bg-gray-100">Болих</button>
+            </div>
+        </div>
+        <div>
+            <div class="flex items-center justify-between mb-2">
+                <span class="text-xs font-semibold text-gray-500 uppercase">Орлосон өдрүүд</span>
+                <span class="sb-sub"><b id="sub-count">0</b> өдөр · <button type="button" id="sub-clear" class="text-blue-700 hover:underline">арилгах</button></span>
+            </div>
+            <div class="cal" role="group" aria-label="Өдрүүд">
+                <span class="dow">Да</span><span class="dow">Мя</span><span class="dow">Лх</span><span class="dow">Пү</span><span class="dow">Ба</span><span class="dow">Бя</span><span class="dow">Ня</span>
+                {% for d in month_days %}
+                <label class="{% if d.dow >= 6 %}weekend{% endif %}" {% if forloop.first %}style="grid-column-start: {{ d.dow }}"{% endif %} title="{{ d.iso }}">
+                    <input type="checkbox" name="dates" value="{{ d.iso }}"><span>{{ d.day }}</span>
+                </label>
+                {% endfor %}
+            </div>
+            <p class="sb-sub mt-2"><i style="display:inline-block;width:10px;height:10px;border-radius:3px;vertical-align:middle;background:repeating-linear-gradient(135deg,#fff4d6 0 3px,#fff 3px 6px);border:1px solid #f2d48a"></i> өөр орлолтод бүртгэгдсэн - сонгох боломжгүй</p>
+        </div>
+    </form>
+</div>
+{{ substitutes|json_script:"sb-subs" }}
+<script>
+(function () {
+    const SUBS = JSON.parse(document.getElementById('sb-subs').textContent);
+    const form = document.getElementById('sub-form');
+    const boxes = [...form.querySelectorAll('input[name=dates]')];
+    // Өдрүүдийг товч бичих: 5, 6, 7, 12 -> 5–7, 12
+    function compact(dates) {
+        const days = dates.map((d) => +d.slice(-2)).sort((a, b) => a - b), out = [];
+        for (let i = 0; i < days.length; i++) {
+            let j = i;
+            while (j + 1 < days.length && days[j + 1] === days[j] + 1) j++;
+            out.push(j > i ? `${days[i]}–${days[j]}` : `${days[i]}`);
+            i = j;
+        }
+        return out.join(', ');
+    }
+    document.querySelectorAll('[data-days]').forEach((el) => { el.textContent = compact(el.dataset.days ? el.dataset.days.split(',') : []); });
+    const count = () => { document.getElementById('sub-count').textContent = boxes.filter((b) => b.checked).length; };
+    // Бусад орлолтод бүртгэгдсэн өдрийг идэвхгүй болгоно (өдрүүд давхцахгүй)
+    function markTaken(exceptId) {
+        const taken = {};
+        SUBS.filter((s) => s.id !== exceptId).forEach((s) => s.dates.forEach((d) => { taken[d] = s.name; }));
+        boxes.forEach((b) => {
+            const who = taken[b.value];
+            b.disabled = !!who;
+            if (who) b.checked = false;
+            b.parentElement.classList.toggle('taken', !!who);
+            b.parentElement.title = who ? `${b.value} - ${who} орлосон` : b.value;
+        });
+    }
+    function open(sub) {
+        form.hidden = false;
+        document.getElementById('sub-id').value = sub ? sub.id : '';
+        document.getElementById('sub-employee').value = sub ? sub.code : '';
+        document.getElementById('sub-note').value = sub ? sub.note : '';
+        boxes.forEach((b) => { b.checked = !!sub && sub.dates.includes(b.value); });
+        markTaken(sub ? sub.id : null);
+        count();
+        document.getElementById('sub-employee').focus();
+    }
+    boxes.forEach((b) => b.addEventListener('change', count));
+    document.getElementById('sub-new').addEventListener('click', () => open(null));
+    // Болих: маягтыг цэвэрлээд хаана ("+ Орлолт бүртгэх"-ээр дахин нээнэ)
+    document.getElementById('sub-cancel').addEventListener('click', () => {
+        form.reset();
+        document.getElementById('sub-id').value = '';
+        markTaken(null);
+        count();
+        form.hidden = true;
+        document.getElementById('sub-new').focus();
+    });
+    document.getElementById('sub-clear').addEventListener('click', () => { boxes.forEach((b) => { b.checked = false; }); count(); });
+    document.querySelectorAll('[data-sub-edit]').forEach((btn) => btn.addEventListener('click', () => open(SUBS.find((s) => s.id === +btn.dataset.subEdit))));
+    form.addEventListener('submit', (e) => {
+        if (!boxes.some((b) => b.checked)) { e.preventDefault(); alert('Дор хаяж нэг өдөр сонгоно уу.'); }
+    });
+    markTaken(null);
+})();
+</script>

@@ -1,0 +1,931 @@
+{% extends 'base.html' %}
+
+{% block title %}Борлуулалтын нэмэгдэл - Euro Foods{% endblock %}
+
+{% block hide_mobile_menu %}hidden{% endblock %}
+
+{% block extra_css %}
+<style>
+    .sb-root { --ink: #111827; --ink-2: #4b5563; --muted: #6b7280; --hairline: rgba(17,24,39,.08); --accent: #2a78d6;
+               --accent-soft: #eef4fc; --good-text: #006300; --good-bg: #e8f5e9; --bad-text: #b42323; --bad-bg: #fdecec;
+               --warn-text: #8a5a00; --warn-bg: #fff4d6; color: var(--ink); }
+    .sb-card { background: #fff; border: 1px solid var(--hairline); border-radius: 1rem; box-shadow: 0 1px 2px rgba(0,0,0,.04); }
+    .sb-sub { font-size: .75rem; color: var(--muted); }
+    .sb-num { font-variant-numeric: tabular-nums; }
+    .kpi-value { font-size: clamp(1.05rem, 1.5vw, 1.45rem); font-weight: 650; letter-spacing: -.01em; line-height: 1.2; }
+
+    /* Tab */
+    .tabs { display: flex; gap: .25rem; overflow-x: auto; border-bottom: 1px solid #e7e5e4; scrollbar-width: none; }
+    .tabs::-webkit-scrollbar { display: none; }
+    .tab { display: inline-flex; align-items: center; gap: .5rem; padding: .7rem 1rem; font-size: .875rem; font-weight: 500; color: var(--ink-2);
+           border-bottom: 2px solid transparent; margin-bottom: -1px; white-space: nowrap; }
+    .tab:hover { color: var(--ink); }
+    .tab[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--accent); font-weight: 600; }
+    .tab .badge { font-size: .7rem; font-weight: 600; background: #f1f1ef; color: var(--ink-2); border-radius: 999px; padding: .05rem .5rem; }
+    .tab[aria-selected="true"] .badge { background: var(--accent-soft); color: #1c4f8f; }
+    .tab .tab-total { font-size: .72rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+    /* Ажилтны карт */
+    .emp { transition: box-shadow .15s, border-color .15s; }
+    .emp.dirty { border-color: #f2c94c; box-shadow: 0 0 0 3px rgba(242,201,76,.18); }
+    .avatar { width: 2.5rem; height: 2.5rem; border-radius: 999px; display: grid; place-items: center; font-weight: 700; font-size: .9rem;
+              background: var(--accent-soft); color: #1c4f8f; flex-shrink: 0; }
+    .chip { display: inline-flex; align-items: center; gap: .25rem; font-size: .68rem; font-weight: 600; padding: .1rem .5rem; border-radius: 999px; background: #f3f4f6; color: var(--ink-2); }
+    .chip.card { background: #eef4fc; color: #1c4f8f; } .chip.cash { background: var(--good-bg); color: var(--good-text); } .chip.mixed { background: #f3eefe; color: #4a3aa7; }
+    .chip.none { background: var(--warn-bg); color: var(--warn-text); }
+    .status { display: inline-flex; align-items: center; gap: .3rem; font-size: .7rem; color: var(--muted); }
+    .status i { width: 7px; height: 7px; border-radius: 999px; background: #9ca3af; }
+    .status.saved i { background: #0ca30c; } .status.dirty i { background: #fab219; }
+    .sb-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: .82rem; }
+    .sb-table th { font-size: .68rem; font-weight: 600; text-transform: uppercase; letter-spacing: .03em; color: var(--muted); text-align: right; padding: .4rem .5rem; border-bottom: 1px solid #f1f1ef; white-space: nowrap; }
+    .sb-table th.l, .sb-table td.l { text-align: left; }
+    .sb-table td { padding: .35rem .5rem; text-align: right; border-bottom: 1px solid #f6f6f4; font-variant-numeric: tabular-nums; white-space: nowrap; vertical-align: middle; }
+    .sb-table tr.sum td { border-bottom: 0; border-top: 1px solid #e7e5e4; font-weight: 600; }
+    .sb-table tr.minus td.amt { color: var(--bad-text); }
+    .sb-table tr.final td { font-weight: 700; font-size: .95rem; border-top: 2px solid var(--ink); border-bottom: 0; }
+    .in { width: 100%; min-width: 0; border: 1px solid transparent; background: #f7f7f5; border-radius: .45rem; padding: .3rem .45rem; text-align: right;
+          font-variant-numeric: tabular-nums; font-size: .82rem; transition: background .1s, border-color .1s; }
+    .in:hover { background: #f1f1ef; }
+    .in:focus { outline: none; background: #fff; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(42,120,214,.15); }
+    .in.override { background: #fff8e6; border-color: #f2d48a; }
+    .in::placeholder { color: #6b7280; opacity: 1; }
+    .in-rate { width: 4.6rem; }
+    .in-days { width: 4rem; }
+    .in-money { width: 9.5rem; }
+    .reset { font-size: .7rem; color: var(--accent); margin-left: .2rem; visibility: hidden; }
+    .reset.show { visibility: visible; }
+    .icon-btn { color: #9ca3af; padding: .2rem; border-radius: .35rem; }
+    .icon-btn:hover { color: var(--bad-text); background: var(--bad-bg); }
+    .switch { position: relative; width: 2.1rem; height: 1.2rem; border-radius: 999px; background: #d1d5db; transition: background .15s; flex-shrink: 0; }
+    .switch::after { content: ''; position: absolute; top: 2px; left: 2px; width: calc(1.2rem - 4px); height: calc(1.2rem - 4px); border-radius: 999px; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.2); transition: transform .15s; }
+    .switch[aria-checked="true"] { background: #0ca30c; }
+    .switch[aria-checked="true"]::after { transform: translateX(.9rem); }
+    .seg { display: inline-flex; padding: 3px; gap: 2px; background: #f1f1ef; border-radius: .6rem; }
+    .seg button { font-size: .75rem; padding: .25rem .65rem; border-radius: .45rem; color: var(--ink-2); font-weight: 500; }
+    .seg button[aria-pressed="true"] { background: #fff; color: var(--ink); box-shadow: 0 1px 2px rgba(0,0,0,.1); }
+    .alloc { display: grid; grid-template-columns: 1fr 1fr; gap: .5rem; }
+    .alloc > div { background: #fafaf9; border-radius: .6rem; padding: .5rem .7rem; }
+    .savebar { position: sticky; bottom: 0; z-index: 30; transform: translateY(120%); transition: transform .2s ease; }
+    .savebar.show { transform: none; }
+    .formula { font-size: .78rem; color: var(--ink-2); background: #fafaf9; border: 1px dashed #e7e5e4; border-radius: .75rem; padding: .6rem .85rem; }
+    .formula b { color: var(--ink); font-weight: 600; }
+
+    /* Хэвлэх - ажилтан бүр тусдаа хуудсанд (Excel загвараар) */
+    #sb-print { display: none; }
+    @media print {
+        @page { size: A4 portrait; margin: 14mm; }
+        /* Хэвлэх хуудсыг body-н шууд хүүхэд болгож (printPeople), бусдыг display:none - нуусан агуулга хоосон хуудас үүсгэхгүй */
+        body > *:not(#sb-print) { display: none !important; }
+        html, body { background: #fff !important; }
+        #sb-print { display: block; background: #fff; }
+        .st-page { break-after: page; font-family: Calibri, Arial, sans-serif; color: #000; font-size: 13pt; }
+        .st-page:last-child { break-after: auto; }
+        .st-head { display: flex; justify-content: space-between; margin-bottom: 8mm; }
+        .st-title { font-weight: 700; font-size: 15pt; margin-bottom: 4mm; display: flex; justify-content: space-between; }
+        .st-table { width: 100%; border-collapse: collapse; }
+        .st-table td { border: 1px solid #000; padding: 2mm 3mm; }
+        .st-table td.r { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+        .st-table td.c { text-align: center; white-space: nowrap; }
+        .st-table tr.b td { font-weight: 700; }
+        .st-table tr.total td { font-weight: 700; border-top: 2px solid #000; font-size: 14pt; }
+        .st-who { display: flex; justify-content: space-between; margin-bottom: 1mm; }
+        .st-sign { margin-top: 8mm; }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+{% load l10n product_filters %}
+<div class="flex min-h-screen bg-gray-50">
+    {% include 'shop/_sidebar.html' with active_page=active_page %}
+
+    <main class="sb-root flex-1 p-3 lg:p-8 min-w-0 space-y-5">
+        <div class="flex flex-wrap items-end justify-between gap-3">
+            <div>
+                <div class="text-xs font-medium text-gray-500 mb-1">Хүний нөөц <span class="mx-1 text-gray-300">/</span> Цалин</div>
+                <h1 class="text-2xl lg:text-3xl font-bold tracking-tight">🎯 Борлуулалтын нэмэгдэл</h1>
+                <p class="text-sm text-gray-500 mt-1">{{ period_label }} · бодсон дүн цалин бодолтын "Нэмэгдэл цалин /Борлуулалт/" баганад орно</p>
+            </div>
+            <div class="flex flex-wrap items-center gap-2">
+                <form method="get" class="flex items-center gap-1 bg-white border border-gray-200 rounded-lg p-1">
+                    <a href="?year={{ prev_month.year|unlocalize }}&month={{ prev_month.month }}" class="px-2 py-1 rounded-md hover:bg-gray-100" title="Өмнөх сар" data-keep-hash>←</a>
+                    <select name="year" class="text-sm px-1 py-1 bg-transparent" aria-label="Он" onchange="this.form.submit()">
+                        {% for y in years %}<option value="{{ y|unlocalize }}" {% if y == year %}selected{% endif %}>{{ y|unlocalize }}</option>{% endfor %}
+                    </select>
+                    <select name="month" class="text-sm px-1 py-1 bg-transparent" aria-label="Сар" onchange="this.form.submit()">
+                        {% for num, label in months %}<option value="{{ num }}" {% if num == month %}selected{% endif %}>{{ label }}</option>{% endfor %}
+                    </select>
+                    <a href="?year={{ next_month.year|unlocalize }}&month={{ next_month.month }}" class="px-2 py-1 rounded-md hover:bg-gray-100" title="Дараагийн сар" data-keep-hash>→</a>
+                </form>
+                <button type="button" id="print-tab" class="inline-flex items-center gap-1.5 text-sm font-medium px-3.5 py-2 rounded-lg border border-gray-200 bg-white hover:bg-gray-50">🖨 Хэвлэх</button>
+                <a href="{% url 'shop:payroll_card' %}?year={{ year|unlocalize }}&month={{ month }}" class="text-sm font-medium px-3.5 py-2 rounded-lg border border-gray-200 bg-white hover:bg-gray-50">💳 Картын цалин</a>
+                <a href="{% url 'shop:payroll_cash' %}?year={{ year|unlocalize }}&month={{ month }}" class="text-sm font-medium px-3.5 py-2 rounded-lg border border-gray-200 bg-white hover:bg-gray-50">💵 Бэлэн цалин</a>
+            </div>
+        </div>
+
+        {% if messages %}
+        <div class="space-y-2">
+            {% for message in messages %}
+            <div class="p-3 rounded-lg text-sm {% if message.tags == 'error' %}bg-red-100 text-red-800{% else %}bg-green-100 text-green-800{% endif %}">{{ message }}</div>
+            {% endfor %}
+        </div>
+        {% endif %}
+
+        {# Нэгтгэл #}
+        <section class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3" aria-label="Нэгтгэл">
+            {% for t in tabs %}
+            <button type="button" class="sb-card p-4 text-left hover:border-blue-200" data-goto="{{ t.key }}">
+                <div class="text-xs font-medium text-gray-600">{{ t.label }}</div>
+                <div class="kpi-value sb-num mt-1" data-tab-total="{{ t.key }}">—</div>
+                <div class="sb-sub mt-1">{{ t.people|length }} ажилтан</div>
+            </button>
+            {% endfor %}
+            <div class="sb-card p-4">
+                <div class="text-xs font-medium text-gray-600">💳 Картад</div>
+                <div class="kpi-value sb-num mt-1" id="sum-card">—</div>
+                <div class="sb-sub mt-1">картын цалин бодолтод</div>
+            </div>
+            <div class="sb-card p-4">
+                <div class="text-xs font-medium text-gray-600">💵 Бэлэнд</div>
+                <div class="kpi-value sb-num mt-1" id="sum-cash">—</div>
+                <div class="sb-sub mt-1">нийт <b class="text-gray-800 sb-num" id="sum-all"></b></div>
+            </div>
+        </section>
+
+        {# Tab-ууд #}
+        <div class="sb-card overflow-hidden">
+            <div class="tabs px-3" role="tablist" aria-label="Нэмэгдлийн хүснэгт">
+                {% for t in tabs %}
+                <button type="button" class="tab" role="tab" id="tab-{{ t.key }}" aria-controls="panel-{{ t.key }}" data-tab="{{ t.key }}">
+                    {{ t.label }} <span class="badge">{{ t.people|length }}</span> <span class="tab-total" data-tab-total-small="{{ t.key }}"></span>
+                </button>
+                {% endfor %}
+                <button type="button" class="tab" role="tab" id="tab-settings" aria-controls="panel-settings" data-tab="settings">⚙ Тохиргоо</button>
+            </div>
+
+            {% for t in tabs %}
+            <section class="p-4 lg:p-5 space-y-4" role="tabpanel" id="panel-{{ t.key }}" aria-labelledby="tab-{{ t.key }}" hidden>
+                <div class="flex flex-wrap items-start justify-between gap-3">
+                    <div class="formula max-w-3xl">
+                        {% if t.key == 'storekeeper' %}
+                        <b>Нэмэгдэл</b> = (ажилласан өдрүүдийн борлуулалт − буцаалт) × хувь + <b>тооллого</b>. Борлуулалт = борлуулалтын бүртгэл (OpenDataSale), буцаалт = борлуулалтын буцаалт, өдрөөр.
+                        Үндсэн нярав байхгүй өдрүүдэд орлосон хүний өдрүүдийн дүн доорх бүртгэлээр тэр хүнд очно.
+                        {% elif t.key == 'altjin_seller' %}
+                        <b>Нэмэгдэл</b> = дэлгүүрийн агуулахын (борлуулалт − буцаалт) дүнд шатлалын хувь{% if settings.altjin.mode == 'flat' %} (хүрсэн шатны хувь нийт дүнд){% else %} (шат бүрийн хувь тэр шатанд орсон хэсэгт){% endif %}:
+                        {% for t in settings.altjin.tiers %}{% if t.upto is None %}түүнээс дээш{% else %}{{ t.upto|floatformat:'0g' }} хүртэл{% endif %} <b>{{ t.rate|floatformat:'-2' }}%</b>{% if not forloop.last %}, {% endif %}{% endfor %}.
+                        Шатлалыг ⚙ Тохиргооноос өөрчилнө.
+                        {% elif t.key == 'distributor' %}
+                        <b>Нэмэгдэл</b> = түгээлтийн дүн × биелсэн шалгуурын хувь + туслахгүй өдөр × {{ settings.distributor.solo_day|floatformat:'-2g' }}₮ + хамт өдөр × {{ settings.distributor.helper_day|floatformat:'-2g' }}₮. Түгээлт = OpenDataDelivery, түгээгчээр. Сар бүр нэмсэн / хассан нь зөвхөн тухайн сард үйлчилнэ; өөр албан тушаалтай, ажлаас гарсан ажилтныг ч нэмж болно.
+                        {% else %}
+                        <b>Нийт нэмэгдэл</b> = Σ (борлуулалт − буцаалт) × сувгийн хувь. Нийт нэмэгдлийн {{ settings.deduction_base_pct|floatformat:'-1' }}%-аас <b>тасралтын хувиар</b> хасаж, <b>төлөвлөгөөт барааны биелэлтээр</b> олгоно.
+                        {% endif %}
+                        Хоосон нүд = өгөгдлөөс автомат; бичвэл гараар засагдана (<span style="background:#fff8e6;border:1px solid #f2d48a;border-radius:.3rem;padding:0 .3rem">шар</span>).
+                    </div>
+                    <form method="post" class="flex items-center gap-2">
+                        {% csrf_token %}
+                        {# Түгээгчид зөвхөн тухайн сард нэмнэ (байнгын түгээгч албан тушаалаараа автоматаар орно) #}
+                        <input type="hidden" name="action" value="{% if t.key == 'distributor' %}month_add{% else %}add_member{% endif %}">
+                        <input type="hidden" name="scheme" value="{{ t.key }}">
+                        <input type="hidden" name="tab" value="{{ t.key }}">
+                        <input type="hidden" name="year" value="{{ year|unlocalize }}"><input type="hidden" name="month" value="{{ month }}">
+                        <select name="employee_code" required class="text-sm border border-gray-200 rounded-lg px-2 py-1.5 bg-white {% if t.key == 'distributor' %}max-w-[22rem]{% else %}max-w-[14rem]{% endif %}" aria-label="Нэмэх ажилтан">
+                            <option value="">+ Ажилтан нэмэх...</option>
+                            {% if t.key == 'distributor' %}
+                            {% for code, name, info in month_editable.distributor.candidates %}<option value="{{ code }}">{{ name }} · {{ info }}</option>{% endfor %}
+                            {% else %}
+                            {% for code, name, position in available_employees %}<option value="{{ code }}">{{ name }} · {{ position|default:'-' }}</option>{% endfor %}
+                            {% endif %}
+                        </select>
+                        <button type="submit" class="text-sm font-medium px-3 py-1.5 rounded-lg border border-gray-200 hover:bg-gray-50">Нэмэх</button>
+                    </form>
+                </div>
+                {% if t.key == 'storekeeper' %}{% include 'shop/_sb_substitutes.html' %}{% endif %}
+                {% if t.key == 'distributor' and month_editable.distributor.excluded %}
+                <div class="flex flex-wrap items-center gap-2 text-sm text-gray-600">
+                    <span>Энэ сард хасагдсан:</span>
+                    {% for code, name in month_editable.distributor.excluded %}
+                    <form method="post" class="inline-flex items-center gap-1 bg-gray-100 rounded-full pl-2.5 pr-1 py-0.5">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="month_add"><input type="hidden" name="scheme" value="distributor">
+                        <input type="hidden" name="employee_code" value="{{ code }}"><input type="hidden" name="tab" value="distributor">
+                        <input type="hidden" name="year" value="{{ year|unlocalize }}"><input type="hidden" name="month" value="{{ month }}">
+                        {{ name }} <button type="submit" class="text-xs text-primary hover:underline px-1" title="Энэ сард буцааж нэмэх">буцаах</button>
+                    </form>
+                    {% endfor %}
+                </div>
+                {% endif %}
+                <div class="grid grid-cols-1 2xl:grid-cols-2 gap-4" data-cards="{{ t.key }}">
+                    {% if not t.people %}<p class="sb-sub py-8 text-center 2xl:col-span-2">Энэ хүснэгтэд ажилтан алга. Дээрээс нэмнэ үү.</p>{% endif %}
+                </div>
+            </section>
+            {% endfor %}
+
+            <section class="p-4 lg:p-6" role="tabpanel" id="panel-settings" aria-labelledby="tab-settings" hidden>
+                <form method="post" class="grid grid-cols-1 lg:grid-cols-3 gap-6 max-w-5xl">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="settings"><input type="hidden" name="tab" value="settings">
+                    <input type="hidden" name="year" value="{{ year|unlocalize }}"><input type="hidden" name="month" value="{{ month }}">
+                    <div class="space-y-3">
+                        <h3 class="font-semibold">ХТ, Борлуулагч</h3>
+                        <label class="flex items-center justify-between gap-3 text-sm">Тасралт, биелэлт нөлөөлөх хэсэг (нийт нэмэгдлийн %)
+                            <input type="number" step="0.01" min="0" max="100" name="deduction_base_pct" value="{{ settings.deduction_base_pct|unlocalize }}" class="in in-rate"></label>
+                        <label class="flex items-center justify-between gap-3 text-sm">Борлуулагчийн хугацаа: өмнөх сарын хэдний өдрөөс
+                            <input type="number" step="1" min="1" max="28" name="cash_seller_start_day" value="{{ settings.cash_seller_start_day|unlocalize }}" class="in in-rate"></label>
+                        <p class="sb-sub">21 гэвэл өмнөх сарын 21-нээс энэ сарын 20 хүртэл; 1 гэвэл хуанлийн сар.</p>
+                        <h3 class="font-semibold pt-2">Шинэ сувгийн анхдагч хувь (%)</h3>
+                        <label class="flex items-center justify-between gap-3 text-sm">Нярав <input type="number" step="0.001" min="0" name="rate_storekeeper" value="{{ settings.default_rates.storekeeper|unlocalize }}" class="in in-rate"></label>
+                        <label class="flex items-center justify-between gap-3 text-sm">Худалдааны төлөөлөгч <input type="number" step="0.001" min="0" name="rate_sales_rep" value="{{ settings.default_rates.sales_rep|unlocalize }}" class="in in-rate"></label>
+                        <label class="flex items-center justify-between gap-3 text-sm">Борлуулагч <input type="number" step="0.001" min="0" name="rate_cash_seller" value="{{ settings.default_rates.cash_seller|unlocalize }}" class="in in-rate"></label>
+                        <p class="sb-sub">Эдгээр нь шинээр нэмэх сувгийн анхдагч хувь. ХТ, борлуулагч бүрийн хувийг доорх "Ажилтан бүрийн суваг ба нэмэгдлийн хувь" хэсэгт тохируулна.</p>
+                    </div>
+                    <div class="space-y-3">
+                        <h3 class="font-semibold">Түгээгч</h3>
+                        {% for c in settings.distributor.criteria %}
+                        <label class="flex items-center justify-between gap-3 text-sm">{{ c.label }} (%) <input type="number" step="0.001" min="0" name="criteria_{{ c.key }}" value="{{ c.rate|unlocalize }}" class="in in-rate"></label>
+                        {% endfor %}
+                        <label class="flex items-center justify-between gap-3 text-sm">Туслахгүй өдрийн мөнгө (₮) <input type="number" step="0.01" min="0" name="solo_day" value="{{ settings.distributor.solo_day|floatformat:'-2u' }}" class="in in-money"></label>
+                        <label class="flex items-center justify-between gap-3 text-sm">Хамт (туслахтай) өдрийн мөнгө (₮) <input type="number" step="0.01" min="0" name="helper_day" value="{{ settings.distributor.helper_day|floatformat:'-2u' }}" class="in in-money"></label>
+
+                        <h3 class="font-semibold pt-4">Алтжин худалдагч</h3>
+                        <label class="flex items-center justify-between gap-3 text-sm">Дэлгүүрийн агуулах
+                            <select name="altjin_warehouse" class="in" style="text-align:left;max-width:14rem">
+                                {% for wid, wname in warehouses %}<option value="{{ wid }}" {% if wid == settings.altjin.warehouse_id %}selected{% endif %}>{{ wname }}</option>{% endfor %}
+                            </select></label>
+                        <table class="sb-table">
+                            <thead><tr><th class="l">Цэвэр борлуулалт (хүртэл, ₮)</th><th>Хувь</th></tr></thead>
+                            <tbody>
+                                {% for t in altjin_tier_rows %}
+                                <tr>
+                                    <td class="l"><input type="number" step="1" min="0" name="altjin_upto" value="{% if t.upto is not None %}{{ t.upto|floatformat:'0u' }}{% endif %}" placeholder="{% if t.rate == '' %}шинэ шат{% else %}түүнээс дээш{% endif %}" class="in in-money" style="text-align:left"></td>
+                                    <td><span class="inline-flex items-center gap-1"><input type="number" step="0.001" min="0" name="altjin_rate" value="{{ t.rate|unlocalize }}" class="in in-rate"><span class="text-gray-400">%</span></span></td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                        <p class="sb-sub">Дээд хязгаарыг хоосон үлдээсэн шат = "түүнээс дээш". Хувийг хоосон болгосон мөр хасагдана.</p>
+                        <fieldset class="space-y-1.5 text-sm">
+                            <label class="flex items-start gap-2"><input type="radio" name="altjin_mode" value="marginal" class="mt-1" {% if settings.altjin.mode != 'flat' %}checked{% endif %}>
+                                <span><b>Шатлалаар</b> - шат бүрийн хувь зөвхөн тэр шатанд орсон хэсэгт<br><span class="sb-sub">30 сая: 20 сая × 1% + 10 сая × 2% = 400,000₮</span></span></label>
+                            <label class="flex items-start gap-2"><input type="radio" name="altjin_mode" value="flat" class="mt-1" {% if settings.altjin.mode == 'flat' %}checked{% endif %}>
+                                <span><b>Нийт дүнд</b> - хүрсэн шатны хувь бүх дүнд<br><span class="sb-sub">30 сая: 30 сая × 2% = 600,000₮</span></span></label>
+                        </fieldset>
+                    </div>
+                    <div class="space-y-3">
+                        <h3 class="font-semibold">Өгөгдлийн эх үүсвэр</h3>
+                        <ul class="text-sm text-gray-600 space-y-1.5 list-disc pl-5">
+                            <li><b>ХТ, борлуулагчийн борлуулалт</b>: дансны авлагын (1201xx) кредит талын нийлбэр, харилцагчийн борлуулалтын сувгаар</li>
+                            <li><b>Няравын борлуулалт</b>: борлуулалтын бүртгэл (OpenDataSale), ажилласан өдрүүдээр</li>
+                            <li><b>Буцаалт</b>: борлуулалтын буцаалт, сувгаар</li>
+                            <li><b>Түгээлт</b>: OpenDataDelivery, түгээгчээр; өдөр = түгээлт хийсэн өдөр</li>
+                            <li><b>Алтжин худалдагч</b>: сонгосон агуулахын борлуулалт (OpenDataSale) - буцаалт, хуанлийн сараар</li>
+                            <li>ХТ-ийн суваг = өөрийн нэртэй суваг (жиш: ХТ Мөнхжаргал)</li>
+                        </ul>
+                        <button type="submit" class="bg-primary text-white text-sm font-semibold px-5 py-2 rounded-lg hover:bg-green-700">💾 Тохиргоо хадгалах</button>
+                    </div>
+                </form>
+
+                {# Ажилтан бүрийн суваг ба хувь #}
+                <form method="post" class="mt-8 pt-6 border-t border-gray-100" id="rates-form">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="member_rates"><input type="hidden" name="tab" value="settings">
+                    <input type="hidden" name="year" value="{{ year|unlocalize }}"><input type="hidden" name="month" value="{{ month }}">
+                    <div class="flex flex-wrap items-end justify-between gap-3 mb-4">
+                        <div>
+                            <h3 class="font-semibold">Ажилтан бүрийн суваг ба нэмэгдлийн хувь</h3>
+                            <p class="sb-sub mt-0.5">Худалдааны төлөөлөгч, борлуулагч бүрийн хувь өөр тул энд тус тусад нь тохируулна. Хадгалаагүй (автомат) сарууд эдгээр хувиар бодогдоно.</p>
+                        </div>
+                        <div class="flex flex-wrap items-center gap-3">
+                            <label class="inline-flex items-center gap-2 text-sm text-gray-700"><input type="checkbox" name="apply_month" value="1" checked class="rounded">
+                                {% for num, label in months %}{% if num == month %}{{ label }}{% endif %}{% endfor %}ын хадгалсан бодолтод ч хэрэглэх</label>
+                            <button type="submit" class="bg-primary text-white text-sm font-semibold px-5 py-2 rounded-lg hover:bg-green-700">💾 Хувь хадгалах</button>
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 gap-4">
+                        {% for t in rate_tabs %}{% for p in t.people %}
+                        <div class="border border-gray-200 rounded-xl p-4" data-rate-member="{{ p.code }}">
+                            <div class="flex items-center justify-between gap-2 mb-2">
+                                <div class="min-w-0"><div class="font-semibold truncate">{{ p.name }}</div><div class="sb-sub">{{ t.label }} · {{ p.code }}</div></div>
+                                <span class="chip">{{ p.member_channels|length }} суваг</span>
+                            </div>
+                            <table class="sb-table">
+                                <thead><tr><th class="l">Суваг</th><th>Хувь</th><th></th></tr></thead>
+                                <tbody data-rate-rows>
+                                    {% for c in p.member_channels %}
+                                    <tr>
+                                        <td class="l"><select name="ch_{{ p.code }}" class="in" style="text-align:left">
+                                            {% for ch in channel_list %}<option value="{{ ch }}" {% if ch == c.channel %}selected{% endif %}>{{ ch }}</option>{% endfor %}
+                                        </select></td>
+                                        <td><span class="inline-flex items-center gap-1"><input type="number" step="0.001" min="0" name="rate_{{ p.code }}" value="{{ c.rate }}" class="in in-rate" aria-label="{{ c.channel }} хувь"><span class="text-gray-400">%</span></span></td>
+                                        <td><button type="button" class="icon-btn" data-rate-remove aria-label="Мөр хасах" title="Хасах">✕</button></td>
+                                    </tr>
+                                    {% empty %}
+                                    <tr data-empty><td class="l text-gray-400" colspan="3">Суваг тохируулаагүй</td></tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                            {# Хоосон байхад ч ажилтны талбар илгээгдэх (бүх мөрийг хассан бол хадгалагдана) #}
+                            <input type="hidden" name="ch_{{ p.code }}" value=""><input type="hidden" name="rate_{{ p.code }}" value="">
+                            <button type="button" class="mt-2 text-xs font-medium text-blue-700 hover:underline" data-rate-add data-code="{{ p.code }}"
+                                    data-default="{% if t.key == 'sales_rep' %}{{ settings.default_rates.sales_rep|unlocalize }}{% else %}{{ settings.default_rates.cash_seller|unlocalize }}{% endif %}">+ Суваг нэмэх</button>
+                        </div>
+                        {% endfor %}{% endfor %}
+                    </div>
+                </form>
+                <template id="rate-channel-options">{% for ch in channel_list %}<option value="{{ ch }}">{{ ch }}</option>{% endfor %}</template>
+            </section>
+        </div>
+
+        <form method="post" id="save-form" class="savebar">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="save">
+            <input type="hidden" name="year" value="{{ year|unlocalize }}"><input type="hidden" name="month" value="{{ month }}">
+            <input type="hidden" name="tab" id="save-tab">
+            <input type="hidden" name="payload" id="save-payload">
+            <div class="mx-auto max-w-3xl flex items-center justify-between gap-3 bg-gray-900 text-white rounded-2xl shadow-2xl px-5 py-3 mb-3">
+                <span class="text-sm"><b id="dirty-count">0</b> ажилтны бодолт хадгалаагүй - хадгалахад цалин бодолтод орно</span>
+                <div class="flex gap-2">
+                    <button type="button" id="discard" class="text-sm px-3 py-1.5 rounded-lg hover:bg-white/10">Буцаах</button>
+                    <button type="submit" class="text-sm font-semibold px-4 py-1.5 rounded-lg bg-white text-gray-900 hover:bg-gray-100">💾 Хадгалах</button>
+                </div>
+            </div>
+        </form>
+    </main>
+</div>
+
+<div id="sb-print" aria-hidden="true"></div>
+{{ state_json|json_script:"sb-state" }}
+<script>
+(function () {
+    const STATE = JSON.parse(document.getElementById('sb-state').textContent);
+    const S = STATE.settings;
+    const PERIOD = '{{ period_label|escapejs }}';
+    const APPROVER = '{{ setting.card_approver|escapejs }}';
+    const nf = new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 });
+    const nf2 = new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const round2 = (v) => Math.round((Number(v) || 0) * 100) / 100;
+    // Бутархайтай бол 2 оронтой (1,234.50), бүхэл бол оронгүй (1,234) - серверийн floatformat:'-2g'-тэй адил
+    const money = (v) => { const a = Math.abs(round2(v)); return (v < 0 ? '−' : '') + (Number.isInteger(a) ? nf : nf2).format(a); };
+    const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const num = (v) => (v === null || v === undefined || v === '' ? null : Number(v));
+    const pct = (v) => `${Number(v).toLocaleString('en-US', { maximumFractionDigits: 3 })}%`;
+    const PAY = { card: ['card', 'Карт'], cash: ['cash', 'Бэлэн'], mixed: ['mixed', 'Хосолсон'], '': ['none', 'Олгох хэлбэргүй'] };
+    const initials = (name) => (name || '?').replace(/[^\p{L}]/gu, ' ').trim().slice(0, 2).toUpperCase();
+
+    // ---- Анхны төлөв: хадгалсан оруулсан утга эсвэл серверийн анхдагч мөрүүд ----
+    const people = [];
+    STATE.tabs.forEach((t) => t.people.forEach((p) => {
+        const r = p.result, inp = p.inputs || {};
+        const st = { code: p.code, key: `${p.code}|${t.key}`, name: p.name, scheme: t.key, pay_type: p.pay_type || '', dirty: false,
+                     is_substitute: !!p.is_substitute, is_month_extra: !!p.is_month_extra, saved: !!p.saved,
+                     cash_amount: p.cash_amount || 0, cash_from_prev: !!p.cash_from_prev, adjustment: num(inp.adjustment), note: inp.note || '', result: r };
+        if (t.key === 'altjin_seller') {
+            Object.assign(st, { sales: num(inp.sales), returns: num(inp.returns),
+                                auto: { sales: Number(r.auto_sales) || 0, returns: Number(r.auto_returns) || 0 } });
+        } else if (t.key === 'distributor') {
+            Object.assign(st, { delivery_amount: num(inp.delivery_amount), criteria: { ...(inp.criteria || {}) },
+                                solo_days: num(inp.solo_days), helper_days: num(inp.helper_days),
+                                delivery_auto: r.delivery_auto, days_auto: r.days_auto });
+        } else {
+            st.lines = r.lines.map((l) => ({ channel: l.channel, rate: l.rate, sales: l.sales_override ? l.sales : null, returns: l.returns_override ? l.returns : null }));
+            if (t.key === 'storekeeper') {
+                st.inventory = num(inp.inventory);
+                st.sk_auto = { sales: r.lines[0]?.auto_sales || 0, returns: r.lines[0]?.auto_returns || 0 };
+            }
+            else {
+                st.deduction_pct = num(inp.deduction_pct); st.plan_pct = num(inp.plan_pct);
+                st.transfers = (inp.transfers || []).map((x) => ({ channel: x.channel, amount: num(x.amount), rate: Number(x.rate) || 0 }));
+            }
+        }
+        st.initial = JSON.stringify(payloadOf(st));
+        people.push(st);
+    }));
+
+    const channelsOf = (scheme) => (scheme === 'cash_seller' ? STATE.channels_cash_seller : STATE.channels);
+    // Сувгаас шилжүүлэг: p-ийн сувгаас бусад ажилтны авсан дүн / сувгийн эзэд
+    const transfersOut = (p, channel) => people.filter((q) => q !== p && q.scheme === p.scheme)
+        .flatMap((q) => (q.transfers || []).filter((x) => x.channel === channel && x.amount).map((x) => ({ name: q.name, amount: x.amount })));
+    const ownersOf = (p, channel) => people.filter((q) => q !== p && q.scheme === p.scheme && (q.lines || []).some((l) => l.channel === channel));
+    // Шилжүүлэг өөрчлөгдөхөд сувгийн эзний картыг шинэчилнэ
+    function rerenderOwners(p, extra) {
+        const chs = new Set([...(p.transfers || []).map((x) => x.channel), ...(extra ? [extra] : [])]);
+        people.filter((q) => q !== p && q.scheme === p.scheme && (q.lines || []).some((l) => chs.has(l.channel))).forEach(rerender);
+    }
+    function autoOf(p, channel) {
+        if (p.scheme === 'storekeeper') return p.sk_auto;  // ажилласан өдрүүдээр серверт бодсон
+        return channelsOf(p.scheme)[channel] || { sales: 0, returns: 0 };
+    }
+
+    // Шатлалын нэмэгдэл (shop.services.sales_bonus.tier_bonus-тэй адил)
+    function tierBonus(net, tiers, mode) {
+        const sorted = [...tiers].sort((a, b) => (a.upto === null) - (b.upto === null) || (a.upto || 0) - (b.upto || 0));
+        const rows = [];
+        let lower = 0;
+        net = Math.max(net, 0);
+        for (let i = 0; i < sorted.length; i++) {
+            const t = sorted[i], upper = t.upto === null ? null : Number(t.upto), rate = Number(t.rate) || 0;
+            if (mode === 'flat') {
+                if (upper === null || net <= upper || i === sorted.length - 1) {
+                    rows.push({ from: lower, to: upper, rate, base: net, bonus: net * rate / 100, active: true });
+                    break;
+                }
+            } else {
+                const part = Math.max((upper === null ? net : Math.min(net, upper)) - lower, 0);
+                rows.push({ from: lower, to: upper, rate, base: part, bonus: part * rate / 100, active: part > 0 });
+            }
+            if (upper === null) break;
+            lower = upper;
+        }
+        return rows;
+    }
+    const tierLabel = (t) => (t.to === null ? `${money(t.from)}-с дээш` : `${money(t.from)} - ${money(t.to)}`);
+
+    // ---- Тооцоо (shop.services.sales_bonus.compute-тэй адил) ----
+    function compute(p) {
+        const out = { lines: [] };
+        let total = 0;
+        if (p.scheme === 'altjin_seller') {
+            out.sales = p.sales ?? p.auto.sales;
+            out.returns = p.returns ?? p.auto.returns;
+            out.net = out.sales - out.returns;
+            out.tiers = tierBonus(out.net, S.altjin.tiers, S.altjin.mode);
+            total = out.tiers.reduce((s, t) => s + t.bonus, 0);
+            out.subtotal = total;
+        } else if (p.scheme === 'distributor') {
+            const amount = p.delivery_amount ?? p.delivery_auto;
+            out.amount = amount;
+            out.criteria = S.distributor.criteria.map((c) => {
+                const met = p.criteria[c.key] ?? true;
+                const v = met ? amount * c.rate / 100 : 0;
+                total += v;
+                return { ...c, met, amount: v };
+            });
+            out.solo_days = p.solo_days ?? p.days_auto;
+            out.helper_days = p.helper_days ?? 0;
+            out.solo = out.solo_days * S.distributor.solo_day;
+            out.helper = out.helper_days * S.distributor.helper_day;
+            total += out.solo + out.helper;
+            out.subtotal = total;
+        } else {
+            let sub = 0;
+            p.lines.forEach((l) => {
+                const a = autoOf(p, l.channel);
+                const sales = l.sales ?? a.sales, returns = l.returns ?? a.returns;
+                const outs = transfersOut(p, l.channel);
+                const transferred = outs.reduce((s, x) => s + x.amount, 0);
+                const net = sales - returns - transferred;
+                const bonus = net * (Number(l.rate) || 0) / 100;
+                sub += bonus;
+                out.lines.push({ ...l, auto: a, salesV: sales, returnsV: returns, outs, transferred, net, bonus });
+            });
+            out.transfers = (p.transfers || []).map((x) => {
+                const bonus = (x.amount || 0) * (Number(x.rate) || 0) / 100;
+                sub += bonus;
+                return { ...x, bonus, owner: ownersOf(p, x.channel).map((q) => q.name).join(', ') };
+            });
+            out.subtotal = sub;
+            total = sub;
+            if (p.scheme === 'storekeeper') {
+                out.inventory = p.inventory ?? 0;
+                total += out.inventory;
+            } else {
+                const base = sub * S.deduction_base_pct / 100;
+                out.deduction_pct = p.deduction_pct ?? 0;
+                out.plan_pct = p.plan_pct ?? 100;
+                out.base = base;
+                out.deduction = base * out.deduction_pct / 100;
+                out.plan_part = base * out.plan_pct / 100;
+                out.plan_loss = base - out.plan_part;
+                total = sub - out.deduction - out.plan_loss;
+            }
+        }
+        out.adjustment = p.adjustment ?? 0;
+        out.total = round2(total + out.adjustment);
+        // Карт / бэлэнд хуваарилах
+        if (p.pay_type === 'cash') { out.cash = out.total; out.card = 0; }
+        else if (p.pay_type === 'mixed') { out.cash = Math.min(Math.max(round2(p.cash_amount || 0), 0), Math.max(out.total, 0)); out.card = round2(out.total - out.cash); }
+        else { out.card = out.total; out.cash = 0; }
+        return out;
+    }
+
+    function payloadOf(p) {
+        const base = { code: p.code, scheme: p.scheme, adjustment: p.adjustment, note: p.note, cash_amount: p.cash_amount };
+        if (p.scheme === 'altjin_seller') return { ...base, sales: p.sales, returns: p.returns };
+        if (p.scheme === 'distributor') return { ...base, delivery_amount: p.delivery_amount, criteria: p.criteria, solo_days: p.solo_days, helper_days: p.helper_days };
+        const extra = p.scheme === 'storekeeper' ? { inventory: p.inventory }
+            : { deduction_pct: p.deduction_pct, plan_pct: p.plan_pct, transfers: (p.transfers || []).map((x) => ({ channel: x.channel, amount: x.amount, rate: x.rate })) };
+        return { ...base, ...extra, lines: p.lines.map((l) => ({ channel: l.channel, rate: l.rate, sales: l.sales, returns: l.returns })) };
+    }
+
+    // ---- Карт зурах ----
+    const input = (attrs, value, placeholder, cls) => `<input type="number" inputmode="decimal" class="in ${cls || ''} ${!/in-rate/.test(cls || '') && value !== null && value !== undefined && value !== '' ? 'override' : ''}" ${attrs}
+        value="${value ?? ''}" placeholder="${placeholder}">`;
+    function card(p) {
+        const c = compute(p);
+        const [payCls, payLabel] = PAY[p.pay_type] || PAY[''];
+        let body = '';
+        if (p.scheme === 'altjin_seller') {
+            body = `<div class="flex items-center gap-2 mb-2 text-xs text-gray-600">📅 Хугацаа: <b class="text-gray-900">${esc(STATE.periods[p.scheme])}</b>
+                    <span class="sb-sub">· ${S.altjin.mode === 'flat' ? 'хүрсэн шатны хувь нийт дүнд' : 'шатлалаар (шат бүрт орсон хэсэгт)'}</span></div>
+                <div class="overflow-x-auto"><table class="sb-table">
+                <tbody>
+                <tr><td class="l">Борлуулалт<div class="sb-sub">автомат: ${money(p.auto.sales)}</div></td><td colspan="2"></td>
+                    <td>${input('data-f="sales" step="0.01"', p.sales, money(p.auto.sales), 'in-money')}</td></tr>
+                <tr><td class="l">Буцаалт<div class="sb-sub">автомат: ${money(p.auto.returns)}</div></td><td colspan="2"></td>
+                    <td>${input('data-f="returns" step="0.01"', p.returns, money(p.auto.returns), 'in-money')}</td></tr>
+                <tr class="sum"><td class="l" colspan="3">Цэвэр борлуулалт</td><td data-o="net">${money(c.net)}</td></tr>
+                ${c.tiers.map((t, i) => `<tr class="${t.active ? '' : 'text-gray-400'}"><td class="l">${tierLabel(t)}</td><td class="text-gray-500">${pct(t.rate)}</td>
+                    <td class="text-gray-600" data-o="tbase-${i}">${money(t.base)}</td><td class="amt" data-o="tbonus-${i}">${money(t.bonus)}</td></tr>`).join('')}
+                <tr class="sum"><td class="l" colspan="3">Нийт нэмэгдэл</td><td data-o="subtotal">${money(c.subtotal)}</td></tr>
+                ${adjRows(p, c, 4)}
+                </tbody></table></div>`;
+        } else if (p.scheme === 'distributor') {
+            body = `<table class="sb-table">
+                <tbody>
+                <tr><td class="l">Түгээлтийн дүн<div class="sb-sub">автомат: ${money(p.delivery_auto)}</div></td><td colspan="2"></td>
+                    <td>${input('data-f="delivery_amount" step="0.01"', p.delivery_amount, money(p.delivery_auto), 'in-money')}</td></tr>
+                ${c.criteria.map((k) => `<tr><td class="l"><span class="inline-flex items-center gap-2"><button type="button" class="switch" role="switch" aria-checked="${k.met}" data-crit="${esc(k.key)}" aria-label="${esc(k.label)} биелсэн"></button>${esc(k.label)}</span></td>
+                    <td class="text-gray-500">${pct(k.rate)}</td><td></td><td class="amt ${k.met ? '' : 'text-gray-300'}" data-o="crit-${esc(k.key)}">${money(k.amount)}</td></tr>`).join('')}
+                <tr><td class="l">Туслахгүй</td><td class="text-gray-500">${money(S.distributor.solo_day)}</td>
+                    <td>${input('data-f="solo_days" step="1" min="0"', p.solo_days, p.days_auto, 'in-days')}<div class="sb-sub">өдөр</div></td><td class="amt" data-o="solo">${money(c.solo)}</td></tr>
+                <tr><td class="l">Хамт (туслахтай)</td><td class="text-gray-500">${money(S.distributor.helper_day)}</td>
+                    <td>${input('data-f="helper_days" step="1" min="0"', p.helper_days, 0, 'in-days')}<div class="sb-sub">өдөр</div></td><td class="amt" data-o="helper">${money(c.helper)}</td></tr>
+                ${adjRows(p, c, 4)}
+                </tbody></table>`;
+        } else if (p.scheme === 'storekeeper') {
+            const r = p.result, l = c.lines[0];
+            const shared = r.shared_days || [];
+            body = `<div class="flex flex-wrap items-center gap-2 mb-2 text-xs text-gray-600">
+                    <span>Нярав хийсэн: <b class="text-gray-900">${(+r.days_worked).toLocaleString('en-US', { maximumFractionDigits: 2 })}</b> өдөр
+                    / ${STATE.days.length}${shared.length ? ` (${shared.length} өдөр хэд хэдэн үндсэн няравт хуваасан)` : ''}</span>
+                    ${daysStrip(r.worked_dates || [], shared)}</div>
+                <div class="overflow-x-auto"><table class="sb-table">
+                <thead><tr><th class="l"></th><th>Борлуулалт</th><th>Буцаалт</th><th>Цэвэр</th><th>Хувь</th><th>Нэмэгдэл</th><th></th></tr></thead>
+                <tbody>
+                <tr data-line="0">
+                    <td class="l font-medium">Ажилласан өдрүүдийн</td>
+                    <td>${input('data-lf="sales" step="0.01"', l.sales, money(l.auto.sales), 'in-money')}</td>
+                    <td>${input('data-lf="returns" step="0.01"', l.returns, money(l.auto.returns), 'in-money')}</td>
+                    <td class="text-gray-600" data-o="net-0">${money(l.net)}</td>
+                    <td><span class="inline-flex items-center gap-1">${input('data-lf="rate" step="0.001" min="0"', l.rate, '0', 'in-rate')}<span class="text-gray-400">%</span></span></td>
+                    <td class="font-medium" data-o="bonus-0">${money(l.bonus)}</td><td></td>
+                </tr>
+                <tr class="sum"><td class="l" colspan="5">Нэмэгдэл</td><td data-o="subtotal">${money(c.subtotal)}</td><td></td></tr>
+                <tr><td class="l" colspan="4">Тооллого</td><td colspan="2">${input('data-f="inventory" step="0.01"', p.inventory, '0', 'in-money')}</td><td></td></tr>
+                ${adjRows(p, c, 7, true)}
+                </tbody></table></div>`;
+        } else {
+            const used = new Set(p.lines.map((l) => l.channel));
+            const delivery = false;
+            const options = Object.keys(channelsOf(p.scheme)).filter((ch) => !used.has(ch)).map((ch) => `<option value="${esc(ch)}">${esc(ch)}</option>`).join('');
+            body = `<div class="flex items-center gap-2 mb-2 text-xs text-gray-600">📅 Хугацаа: <b class="text-gray-900">${esc(STATE.periods[p.scheme])}</b>
+                    ${p.scheme === 'cash_seller' ? '<span class="sb-sub">(өмнөх сарын ' + S.cash_seller_start_day + '-нээс)</span>' : ''}</div>
+                <div class="overflow-x-auto"><table class="sb-table">
+                <thead><tr><th class="l">Данс / суваг</th><th>Борлуулалт</th><th>Буцаалт</th><th>Цэвэр</th><th>Хувь</th><th>Нэмэгдэл</th><th></th></tr></thead>
+                <tbody>
+                ${c.lines.map((l, i) => `<tr data-line="${i}">
+                    <td class="l"><div class="font-medium" style="max-width:15rem;overflow:hidden;text-overflow:ellipsis" title="${esc(accountLabel(l.channel, p.scheme))}">${esc(accountLabel(l.channel, p.scheme))}</div>
+                        <div class="sb-sub" style="max-width:15rem;overflow:hidden;text-overflow:ellipsis">суваг: ${esc(l.channel)}</div></td>
+                    <td>${input('data-lf="sales" step="0.01"', l.sales, money(l.auto.sales), 'in-money')}</td>
+                    <td>${input('data-lf="returns" step="0.01"', l.returns, money(l.auto.returns), 'in-money')}</td>
+                    <td class="text-gray-600" data-o="net-${i}">${money(l.net)}</td>
+                    <td><span class="inline-flex items-center gap-1">${input('data-lf="rate" step="0.001" min="0"', l.rate, '0', 'in-rate')}<span class="text-gray-400">%</span></span></td>
+                    <td class="font-medium" data-o="bonus-${i}">${money(l.bonus)}</td>
+                    <td>${delivery ? '' : `<button type="button" class="icon-btn" data-remove="${i}" aria-label="${esc(l.channel)} мөрийг хасах" title="Хасах">✕</button>`}</td>
+                </tr>${l.outs.map((x) => `<tr class="minus"><td class="l"><span class="sb-sub">⇄ Шилжүүлсэн: ${esc(x.name)}</span></td>
+                    <td class="amt">−${money(x.amount)}</td><td colspan="5"></td></tr>`).join('')}`).join('') || '<tr><td class="l text-gray-400" colspan="7">Суваг нэмнэ үү</td></tr>'}
+                ${c.transfers.map((x, i) => `<tr data-tr="${i}" class="transfer">
+                    <td class="l"><div class="font-medium" style="max-width:15rem;overflow:hidden;text-overflow:ellipsis" title="${esc(accountLabel(x.channel, p.scheme))}">⇄ ${esc(accountLabel(x.channel, p.scheme))}</div>
+                        <div class="sb-sub" style="max-width:15rem;overflow:hidden;text-overflow:ellipsis">шилжүүлсэн${x.owner ? ' · сувгийн эзэн: ' + esc(x.owner) : ''}</div></td>
+                    <td>${input('data-tf="amount" step="0.01" min="0"', x.amount, 'Дүн', 'in-money')}</td><td></td>
+                    <td class="text-gray-600" data-o="tnet-${i}">${money(x.amount || 0)}</td>
+                    <td><span class="inline-flex items-center gap-1">${input('data-tf="rate" step="0.001" min="0"', x.rate, '0', 'in-rate')}<span class="text-gray-400">%</span></span></td>
+                    <td class="font-medium" data-o="tbonus-${i}">${money(x.bonus)}</td>
+                    <td><button type="button" class="icon-btn" data-remove-transfer="${i}" aria-label="Шилжүүлгийг хасах" title="Хасах">✕</button></td></tr>`).join('')}
+                ${delivery ? '' : `<tr><td class="l" colspan="7"><div class="flex flex-wrap gap-2">
+                    <select class="text-xs border border-dashed border-gray-300 rounded-lg px-2 py-1 bg-white text-gray-600" data-add-channel aria-label="Суваг нэмэх"><option value="">+ Суваг нэмэх...</option>${options}</select>
+                    ${transferOptions(p) ? `<select class="text-xs border border-dashed border-gray-300 rounded-lg px-2 py-1 bg-white text-gray-600" data-add-transfer aria-label="Өөр ажилтны сувгаас шилжүүлэх"><option value="">⇄ Өөр ${p.scheme === 'cash_seller' ? 'борлуулагчийн' : 'ХТ-ийн'} сувгаас дүн шилжүүлэх...</option>${transferOptions(p)}</select>` : ''}
+                </div></td></tr>`}
+                <tr class="sum"><td class="l" colspan="5">Нийт нэмэгдэл</td><td data-o="subtotal">${money(c.subtotal)}</td><td></td></tr>
+                ${`<tr class="minus"><td class="l" colspan="3">Хасагдах дүн <span class="sb-sub">(нийт × ${S.deduction_base_pct}% × тасралтын хувь)</span></td>
+                        <td colspan="2"><span class="inline-flex items-center gap-1">${input('data-f="deduction_pct" step="0.01" min="0" max="100"', p.deduction_pct, '0', 'in-rate')}<span class="text-gray-400">%</span></span></td><td class="amt" data-o="deduction">${c.deduction ? '−' + money(c.deduction) : '—'}</td><td></td></tr>
+                   <tr class="minus"><td class="l" colspan="3">Төлөвлөгөөт барааны биелэлт <span class="sb-sub">(${S.deduction_base_pct}% хэсэг: <span data-o="plan_part">${money(c.plan_part)}</span>)</span></td>
+                        <td colspan="2"><span class="inline-flex items-center gap-1">${input('data-f="plan_pct" step="0.01" min="0" max="100"', p.plan_pct, '100', 'in-rate')}<span class="text-gray-400">%</span></span></td><td class="amt" data-o="plan_loss">${c.plan_loss > 0.5 ? '−' + money(c.plan_loss) : '—'}</td><td></td></tr>`}
+                ${adjRows(p, c, 7, true)}
+                </tbody></table></div>`;
+        }
+        const allocCash = p.pay_type === 'mixed'
+            ? `<input type="number" inputmode="decimal" step="0.01" min="0" class="in in-money mt-1" data-f="cash_amount" value="${p.cash_amount || ''}" placeholder="0" aria-label="Бэлэнд хуваарилах">${p.cash_from_prev ? '<div class="sb-sub mt-0.5">өмнөх сараас</div>' : ''}`
+            : `<div class="sb-num font-semibold mt-1" data-o="cash">${money(c.cash)}</div>`;
+        return `<article class="sb-card emp p-4 lg:p-5 ${p.dirty ? 'dirty' : ''}" data-key="${esc(p.key)}">
+            <header class="flex items-start justify-between gap-3 mb-3">
+                <div class="flex items-center gap-3 min-w-0">
+                    <div class="avatar" aria-hidden="true">${esc(initials(p.name))}</div>
+                    <div class="min-w-0">
+                        <div class="font-semibold truncate">${esc(p.name)}</div>
+                        <div class="flex flex-wrap items-center gap-1.5 mt-0.5"><span class="sb-sub">${esc(p.code)}</span><span class="chip ${payCls}">${payLabel}</span>
+                            ${p.is_substitute ? '<span class="chip" style="background:#fff4d6;color:#8a5a00">Орлогч</span>' : ''}
+                            ${p.is_month_extra ? '<span class="chip" style="background:#e8f1ff;color:#1d4ed8">Энэ сард нэмсэн</span>' : ''}
+                            <span class="status ${statusOf(p)[0]}" data-status><i></i><span>${statusOf(p)[1]}</span></span></div>
+                    </div>
+                </div>
+                <div class="text-right shrink-0">
+                    <div class="sb-sub">Нэмэгдэл</div>
+                    <div class="text-xl font-bold sb-num" data-o="total">${money(c.total)}</div>
+                    <div class="flex gap-1 justify-end mt-1">
+                        <button type="button" class="text-xs text-gray-500 hover:text-gray-900 px-1.5 py-0.5 rounded hover:bg-gray-100" data-print-one title="Энэ ажилтны хуудсыг хэвлэх">🖨</button>
+                        ${p.scheme === 'distributor'
+                            ? '<button type="button" class="text-xs text-gray-500 hover:text-red-700 px-1.5 py-0.5 rounded hover:bg-red-50" data-month-remove title="Энэ сарын бодолтоос хасах">Хасах</button>'
+                            : p.is_substitute ? '' : '<button type="button" class="text-xs text-gray-500 hover:text-red-700 px-1.5 py-0.5 rounded hover:bg-red-50" data-remove-member title="Хүснэгтээс хасах">Хасах</button>'}
+                    </div>
+                </div>
+            </header>
+            ${body}
+            <div class="alloc mt-3">
+                <div><div class="sb-sub">💳 Картад хуваарилах</div><div class="sb-num font-semibold mt-1" data-o="card">${money(c.card)}</div></div>
+                <div><div class="sb-sub">💵 Бэлэнд хуваарилах</div>${allocCash}</div>
+            </div>
+            ${p.pay_type === '' ? '<p class="text-xs mt-2" style="color:var(--warn-text)">Цалингийн тохиргоонд олгох хэлбэр сонгоогүй тул цалин бодолтод харагдахгүй.</p>' : ''}
+            ${p.pay_type === 'mixed' && c.cash > c.total ? '<p class="text-xs mt-2" style="color:var(--bad-text)">Бэлэн дүн нийт нэмэгдлээс их байна.</p>' : ''}
+        </article>`;
+    }
+    // Шилжүүлж болох сувгууд: ижил хүснэгтийн бусад ажилтны сувгууд (аль хэдийн шилжүүлсэн, өөрийнхөөс бусад)
+    function transferOptions(p) {
+        const own = new Set([...p.lines.map((l) => l.channel), ...(p.transfers || []).map((x) => x.channel)]);
+        const seen = new Set();
+        return people.filter((q) => q !== p && q.scheme === p.scheme).flatMap((q) => q.lines.map((l) => [l.channel, q.name]))
+            .filter(([ch]) => !own.has(ch) && !seen.has(ch) && seen.add(ch))
+            .map(([ch, name]) => `<option value="${esc(ch)}">${esc(ch)} (${esc(name)})</option>`).join('');
+    }
+    // Сувгийн кредит орсон дансны нэр(үүд) - тухайн сард кредитгүй бол сувгийн нэр
+    function accountLabel(channel, scheme) {
+        const accounts = channelsOf(scheme)[channel]?.accounts || [];
+        return accounts.length ? accounts.map((a) => a.name).join(', ') : channel;
+    }
+    function daysStrip(worked, shared) {
+        const set = new Set(worked), half = new Set(shared);
+        return `<span class="inline-flex gap-px align-middle" aria-hidden="true">${STATE.days.map((d) =>
+            `<i title="${d.iso}${half.has(d.iso) ? ' (хуваасан)' : set.has(d.iso) ? '' : ' (ажиллаагүй)'}" style="display:inline-block;width:5px;height:12px;border-radius:1px;background:${half.has(d.iso) ? '#9ec5f4' : set.has(d.iso) ? '#2a78d6' : '#e5e7eb'}"></i>`).join('')}</span>`;
+    }
+    function adjRows(p, c, span, inTable) {
+        const cols = inTable ? span - 2 : span - 1;
+        return `<tr><td class="l" colspan="${cols}"><div class="flex items-center gap-2"><span class="shrink-0">Гараар нэмэх / хасах</span>
+                    <input type="text" class="in flex-1" style="text-align:left;max-width:22rem" data-f="note" value="${esc(p.note)}" placeholder="Тайлбар (заавал биш)" aria-label="Нэмэх / хасах тайлбар"></div></td>
+                <td style="min-width:9.5rem">${input('data-f="adjustment" step="0.01"', p.adjustment, '0', 'in-money')}</td>${inTable ? '<td></td>' : ''}</tr>
+            <tr class="final"><td class="l" colspan="${cols}">${p.scheme === 'distributor' ? 'Дүн' : 'Борлуулалтын нэмэгдэл'}</td><td data-o="total">${money(c.total)}</td>${inTable ? '<td></td>' : ''}</tr>`;
+    }
+    const statusOf = (p) => (p.dirty ? ['dirty', 'Хадгалаагүй'] : p.saved ? ['saved', 'Хадгалсан'] : ['', 'Хадгалаагүй (автомат)']);
+
+    function renderAll() {
+        STATE.tabs.forEach((t) => {
+            const box = document.querySelector(`[data-cards="${t.key}"]`);
+            const list = people.filter((p) => p.scheme === t.key);
+            if (list.length) box.innerHTML = list.map(card).join('');
+        });
+        renderTotals();
+    }
+    function rerender(p) {
+        const el = document.querySelector(`.emp[data-key="${CSS.escape(p.key)}"]`);
+        const active = document.activeElement;
+        const focusKey = active && el && el.contains(active) ? [active.dataset.f, active.dataset.lf, active.closest('tr')?.dataset.line] : null;
+        const caret = focusKey && active.selectionStart !== undefined ? (() => { try { return active.selectionStart; } catch (e) { return null; } })() : null;
+        el.outerHTML = card(p);
+        if (focusKey) {
+            const fresh = document.querySelector(`.emp[data-key="${CSS.escape(p.key)}"]`);
+            const sel = focusKey[0] ? `[data-f="${focusKey[0]}"]` : `tr[data-line="${focusKey[2]}"] [data-lf="${focusKey[1]}"]`;
+            const target = fresh.querySelector(sel);
+            if (target) { target.focus(); try { if (caret !== null) target.setSelectionRange(caret, caret); } catch (e) { /* number input */ } }
+        }
+        renderTotals();
+    }
+    function renderTotals() {
+        let card = 0, cash = 0, all = 0;
+        STATE.tabs.forEach((t) => {
+            const sum = people.filter((p) => p.scheme === t.key).reduce((s, p) => { const c = compute(p); card += c.card; cash += c.cash; return s + c.total; }, 0);
+            all += sum;
+            document.querySelectorAll(`[data-tab-total="${t.key}"]`).forEach((e) => { e.textContent = '₮' + money(sum); });
+            document.querySelectorAll(`[data-tab-total-small="${t.key}"]`).forEach((e) => { e.textContent = sum ? '₮' + money(sum) : ''; });
+        });
+        document.getElementById('sum-card').textContent = '₮' + money(card);
+        document.getElementById('sum-cash').textContent = '₮' + money(cash);
+        document.getElementById('sum-all').textContent = '₮' + money(all);
+        const pending = pendingPeople().length;
+        document.getElementById('dirty-count').textContent = pending;
+        document.getElementById('save-form').classList.toggle('show', pending > 0);
+    }
+    // Хадгалах мөрүүд: өөрчилсөн + огт хадгалаагүй автомат бодолт (0-ээс өөр) - эс бөгөөс автомат нэмэгдэл
+    // цалин бодолтод орохгүй үлддэг
+    function pendingPeople() { return people.filter((p) => p.dirty || (!p.saved && compute(p).total !== 0)); }
+    function touch(p) {
+        p.dirty = JSON.stringify(payloadOf(p)) !== p.initial;
+        rerender(p);
+    }
+    function refresh(p) {
+        p.dirty = JSON.stringify(payloadOf(p)) !== p.initial;
+        const el = document.querySelector(`.emp[data-key="${CSS.escape(p.key)}"]`);
+        const c = compute(p);
+        const set = (key, text) => el.querySelectorAll(`[data-o="${key}"]`).forEach((n) => { n.textContent = text; });
+        set('total', money(c.total)); set('card', money(c.card)); set('cash', money(c.cash));
+        if (p.scheme === 'altjin_seller') {
+            // Шатны тоо / идэвхтэй шат өөрчлөгдөж болох тул бүтнээр нь дахин зурна
+            rerender(p);
+            return;
+        } else if (p.scheme === 'distributor') {
+            c.criteria.forEach((k) => set(`crit-${k.key}`, money(k.amount)));
+            set('solo', money(c.solo)); set('helper', money(c.helper));
+        } else {
+            c.lines.forEach((l, i) => { set(`net-${i}`, money(l.net)); set(`bonus-${i}`, money(l.bonus)); });
+            (c.transfers || []).forEach((x, i) => { set(`tnet-${i}`, money(x.amount || 0)); set(`tbonus-${i}`, money(x.bonus)); });
+            set('subtotal', money(c.subtotal));
+            if (p.scheme !== 'storekeeper') {
+                set('deduction', c.deduction ? '−' + money(c.deduction) : '—');
+                set('plan_part', money(c.plan_part));
+                set('plan_loss', c.plan_loss > 0.5 ? '−' + money(c.plan_loss) : '—');
+            }
+        }
+        el.classList.toggle('dirty', p.dirty);
+        const st = el.querySelector('[data-status]');
+        const [cls, label] = statusOf(p);
+        st.className = `status ${cls}`; st.querySelector('span').textContent = label;
+        renderTotals();
+    }
+
+    // ---- Үйлдлүүд (event delegation) ----
+    const find = (el) => people.find((p) => p.key === el.closest('.emp')?.dataset.key);
+    document.addEventListener('input', (e) => {
+        const p = find(e.target); if (!p) return;
+        const t = e.target;
+        if (t.dataset.f) {
+            if (t.dataset.f === 'note') p.note = t.value;
+            else if (t.dataset.f === 'cash_amount') p.cash_amount = Number(t.value) || 0;
+            else p[t.dataset.f] = num(t.value);
+        } else if (t.dataset.lf) {
+            const line = p.lines[Number(t.closest('tr').dataset.line)];
+            line[t.dataset.lf] = t.dataset.lf === 'rate' ? (t.value === '' ? 0 : Number(t.value)) : num(t.value);
+        } else if (t.dataset.tf) {
+            const x = p.transfers[Number(t.closest('tr').dataset.tr)];
+            x[t.dataset.tf] = t.dataset.tf === 'rate' ? (t.value === '' ? 0 : Number(t.value)) : num(t.value);
+            refresh(p);
+            if (t.dataset.tf === 'amount') rerenderOwners(p);
+            return;
+        } else return;
+        if (t.dataset.f !== 'cash_amount' && t.dataset.f !== 'note' && !t.classList.contains('in-rate')) t.classList.toggle('override', t.value !== '');
+        refresh(p);
+    });
+    document.addEventListener('change', (e) => {
+        const p = find(e.target); if (!p) return;
+        if (e.target.matches('[data-add-channel]') && e.target.value) {
+            p.lines.push({ channel: e.target.value, rate: S.default_rates[p.scheme] ?? 0, sales: null, returns: null });
+            touch(p);
+        } else if (e.target.matches('[data-add-transfer]') && e.target.value) {
+            // Хувь анхдагчаар: сувгийн эзний тэр сувгийн хувь
+            const ch = e.target.value;
+            const ownerLine = ownersOf(p, ch).flatMap((q) => q.lines).find((l) => l.channel === ch);
+            p.transfers = p.transfers || [];
+            p.transfers.push({ channel: ch, amount: null, rate: Number(ownerLine?.rate ?? p.lines[0]?.rate ?? 0) });
+            touch(p);
+            document.querySelector(`.emp[data-key="${CSS.escape(p.key)}"] tr[data-tr="${p.transfers.length - 1}"] [data-tf="amount"]`)?.focus();
+        }
+    });
+    document.addEventListener('click', (e) => {
+        const btn = e.target.closest('button'); if (!btn) return;
+        if (btn.dataset.goto || btn.dataset.tab) { selectTab(btn.dataset.goto || btn.dataset.tab); return; }
+        const p = find(btn); if (!p) return;
+        if (btn.dataset.crit) { p.criteria[btn.dataset.crit] = btn.getAttribute('aria-checked') !== 'true'; touch(p); }
+        else if (btn.dataset.remove !== undefined) { p.lines.splice(Number(btn.dataset.remove), 1); touch(p); }
+        else if (btn.dataset.removeTransfer !== undefined) {
+            const [x] = p.transfers.splice(Number(btn.dataset.removeTransfer), 1);
+            touch(p); rerenderOwners(p, x?.channel);
+        }
+        else if (btn.hasAttribute('data-print-one')) { printPeople([p]); }
+        else if (btn.hasAttribute('data-month-remove')) {
+            if (!confirm(`${p.name}-г зөвхөн энэ сарын бодолтоос хасах уу? (Энэ сарын хадгалсан нэмэгдэл цалин бодолтоос хасагдана)`)) return;
+            const f = document.createElement('form');
+            f.method = 'post';
+            f.innerHTML = `<input type="hidden" name="csrfmiddlewaretoken" value="${document.querySelector('[name=csrfmiddlewaretoken]').value}">
+                <input name="action" value="month_remove"><input name="employee_code" value="${esc(p.code)}"><input name="scheme" value="${p.scheme}"><input name="tab" value="${p.scheme}">
+                <input name="year" value="{{ year|unlocalize }}"><input name="month" value="{{ month }}">`;
+            document.body.append(f); f.submit();
+        }
+        else if (btn.hasAttribute('data-remove-member')) {
+            if (!confirm(`${p.name}-г энэ хүснэгтээс хасах уу? (Энэ сарын нэмэгдэл нь цалин бодолтоос хасагдана, өмнөх сарууд хэвээр)`)) return;
+            const f = document.createElement('form');
+            f.method = 'post';
+            f.innerHTML = `<input type="hidden" name="csrfmiddlewaretoken" value="${document.querySelector('[name=csrfmiddlewaretoken]').value}">
+                <input name="action" value="remove_member"><input name="employee_code" value="${esc(p.code)}"><input name="tab" value="${p.scheme}">
+                <input name="year" value="{{ year|unlocalize }}"><input name="month" value="{{ month }}">`;
+            document.body.append(f); f.submit();
+        }
+    });
+    // Тохиргоо: ажилтны сувгийн мөр нэмэх / хасах
+    document.getElementById('rates-form').addEventListener('click', (e) => {
+        const add = e.target.closest('[data-rate-add]');
+        const remove = e.target.closest('[data-rate-remove]');
+        if (add) {
+            const box = add.closest('[data-rate-member]');
+            const tbody = box.querySelector('[data-rate-rows]');
+            tbody.querySelector('[data-empty]')?.remove();
+            const used = [...tbody.querySelectorAll('select')].map((s) => s.value);
+            const tr = document.createElement('tr');
+            tr.innerHTML = `<td class="l"><select name="ch_${add.dataset.code}" class="in" style="text-align:left">${document.getElementById('rate-channel-options').innerHTML}</select></td>
+                <td><span class="inline-flex items-center gap-1"><input type="number" step="0.001" min="0" name="rate_${add.dataset.code}" value="${add.dataset.default}" class="in in-rate" aria-label="Хувь"><span class="text-gray-400">%</span></span></td>
+                <td><button type="button" class="icon-btn" data-rate-remove aria-label="Мөр хасах" title="Хасах">✕</button></td>`;
+            const select = tr.querySelector('select');
+            const free = [...select.options].find((o) => !used.includes(o.value));
+            if (free) select.value = free.value;
+            tbody.append(tr);
+            select.focus();
+        } else if (remove) {
+            remove.closest('tr').remove();
+        }
+    });
+    document.getElementById('discard').addEventListener('click', () => { if (confirm('Хадгалаагүй өөрчлөлтийг буцаах уу?')) window.location.reload(); });
+    document.getElementById('save-form').addEventListener('submit', () => {
+        document.getElementById('save-payload').value = JSON.stringify(pendingPeople().map(payloadOf));
+        document.getElementById('save-tab').value = currentTab;
+        people.forEach((p) => { p.dirty = false; });
+    });
+    window.addEventListener('beforeunload', (e) => { if (people.some((p) => p.dirty)) { e.preventDefault(); e.returnValue = ''; } });
+
+    // ---- Tab ----
+    let currentTab = 'storekeeper';
+    function selectTab(key) {
+        currentTab = key;
+        document.querySelectorAll('[role=tab]').forEach((t) => t.setAttribute('aria-selected', String(t.dataset.tab === key)));
+        document.querySelectorAll('[role=tabpanel]').forEach((p) => { p.hidden = p.id !== `panel-${key}`; });
+        history.replaceState(null, '', `#${key}`);
+        document.querySelectorAll('[data-keep-hash]').forEach((a) => { a.hash = key; });
+        document.getElementById('print-tab').disabled = key === 'settings';
+    }
+    document.querySelector('[role=tablist]').addEventListener('keydown', (e) => {
+        if (!['ArrowLeft', 'ArrowRight'].includes(e.key)) return;
+        const tabs = [...document.querySelectorAll('[role=tab]')];
+        const i = tabs.findIndex((t) => t.dataset.tab === currentTab);
+        const next = tabs[(i + (e.key === 'ArrowRight' ? 1 : tabs.length - 1)) % tabs.length];
+        selectTab(next.dataset.tab); next.focus();
+    });
+    const initial = location.hash.slice(1);
+    const firstWithPeople = STATE.tabs.find((t) => t.people.length)?.key || 'storekeeper';
+    selectTab(document.getElementById(`panel-${initial}`) ? initial : firstWithPeople);
+    renderAll();
+
+    // ---- Хэвлэх: ажилтан бүрийн тооцооны хуудас (Excel загвартай адил) ----
+    const SCHEME_TITLE = { storekeeper: 'Нярав', sales_rep: 'Худалдааны төлөөлөгч', cash_seller: 'Борлуулагч', distributor: 'Түгээгч', altjin_seller: 'Алтжин худалдагч' };
+    function statement(p) {
+        const c = compute(p);
+        const r = (label, mid, value, cls = '') => `<tr class="${cls}"><td>${label}</td><td class="c">${mid ?? ''}</td><td class="r">${value}</td></tr>`;
+        let rows = '';
+        if (p.scheme === 'altjin_seller') {
+            rows += r('Борлуулалт', '', nf2.format(c.sales));
+            if (Math.abs(c.returns) > 0.005) rows += r('Буцаалт', '', nf2.format(c.returns));
+            rows += r('Цэвэр борлуулалт', '', nf2.format(c.net), 'b');
+            c.tiers.forEach((t) => { rows += r(`${tierLabel(t)}${S.altjin.mode === 'flat' ? '' : ` <span style="font-size:90%">(${money(t.base)})</span>`}`, pct(t.rate), t.bonus ? nf2.format(t.bonus) : '-'); });
+        } else if (p.scheme === 'distributor') {
+            rows += r('Түгээлтийн дүн', '', nf2.format(c.amount));
+            c.criteria.forEach((k) => { rows += r(esc(k.label), pct(k.rate), k.met ? money(k.amount) : '-'); });
+            rows += r('Туслахгүй', `${money(S.distributor.solo_day)} × ${c.solo_days}`, money(c.solo));
+            rows += r('Хамт', `${money(S.distributor.helper_day)} × ${c.helper_days}`, c.helper ? money(c.helper) : '-');
+        } else {
+            c.lines.forEach((l, i) => {
+                const label = esc(accountLabel(l.channel, p.scheme));
+                rows += r(label, '', nf2.format(l.salesV));
+                if (Math.abs(l.returnsV) > 0.005) rows += r('Буцаалт', '', nf2.format(l.returnsV));
+                if (l.outs.length) {
+                    l.outs.forEach((x) => { rows += r(`Шилжүүлсэн: ${esc(x.name)}`, '', '−' + nf2.format(x.amount)); });
+                    rows += r('Үлдэгдэл', '', nf2.format(l.net));
+                }
+                rows += r('Нэмэгдэл', pct(l.rate), nf2.format(l.bonus), 'b');
+            });
+            (c.transfers || []).forEach((x) => {
+                rows += r(`${esc(accountLabel(x.channel, p.scheme))}<br><span style="font-size:90%">шилжүүлсэн${x.owner ? ` - сувгийн эзэн: ${esc(x.owner)}` : ''}</span>`, '', nf2.format(x.amount || 0));
+                rows += r('Нэмэгдэл', pct(x.rate), nf2.format(x.bonus), 'b');
+            });
+            if (p.scheme === 'storekeeper') rows += r('Тооллого', '', c.inventory ? nf2.format(c.inventory) : '-', 'b');
+            else {
+                rows += r('НИЙТ НЭМЭГДЭЛ', '', nf2.format(c.subtotal), 'b');
+                rows += r(`ХАСАГДАХ ДҮН /Нийт нэмэгдэл *${S.deduction_base_pct}%*тасралтын хувь/`, pct(c.deduction_pct), c.deduction ? nf2.format(c.deduction) : '-', 'b');
+                rows += r('Төлөвлөгөөт барааны биелэлтийн хувь', pct(c.plan_pct), nf2.format(c.plan_part));
+            }
+        }
+        if (c.adjustment) rows += r(esc(p.note || 'Нэмэх / хасах'), '', nf2.format(c.adjustment));
+        rows += r(p.scheme === 'storekeeper' ? 'НИЙТ НЭМЭГДЭЛ' : p.scheme === 'distributor' ? 'Дүн' : 'БОРЛУУЛАЛТЫН НЭМЭГДЭЛ', '', money(c.total), 'total');
+        return `<section class="st-page">
+            <div class="st-head"><span>Хянасан: Захирал:......................./${esc(APPROVER)}/</span><span>${esc(STATE.periods[p.scheme] || PERIOD)}</span></div>
+            ${p.scheme === 'distributor' ? '<div class="st-title"><span>Түгээлтийн тайлан</span></div>' : ''}
+            <div class="st-who"><span>${SCHEME_TITLE[p.scheme]}</span><b>${esc(p.name)}</b></div>
+            <table class="st-table">${rows}</table>
+            <div class="st-sign">Танилцсан......................../${esc(p.name)}/</div>
+        </section>`;
+    }
+    function printPeople(list) {
+        const box = document.getElementById('sb-print');
+        if (box.parentElement !== document.body) document.body.append(box);
+        box.innerHTML = list.map(statement).join('');
+        window.print();
+    }
+    document.getElementById('print-tab').addEventListener('click', () => {
+        const list = people.filter((p) => p.scheme === currentTab);
+        if (list.length) printPeople(list);
+    });
+})();
+</script>
+{% endblock %}

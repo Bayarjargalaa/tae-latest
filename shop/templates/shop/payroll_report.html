@@ -1,0 +1,342 @@
+{% extends 'base.html' %}
+
+{% block title %}Цалингийн тайлан - Euro Foods{% endblock %}
+
+{% block hide_mobile_menu %}hidden{% endblock %}
+
+{% block content %}
+{% load l10n %}
+<style>
+    .viz-root { --surface-1: #ffffff; --grid: #e5e7eb; --axis: #6b7280; --text-primary: #111827; --text-secondary: #4b5563;
+                --series-card: #2a78d6; --series-cash: #eb6834; }
+    .rp-table th.sortable { cursor: pointer; user-select: none; }
+    .rp-table th.sortable:hover { background: #e5e7eb; }
+    .rp-table th[data-dir="asc"]::after { content: ' ▲'; font-size: 9px; }
+    .rp-table th[data-dir="desc"]::after { content: ' ▼'; font-size: 9px; }
+    .rp-table td:first-child, .rp-table th:first-child { position: sticky; left: 0; background: inherit; z-index: 1; }
+    .rp-table tbody tr { background: #fff; }
+    .rp-table tr.rp-sub td { padding-top: 0.25rem; padding-bottom: 0.25rem; }
+    .rp-table tbody.rp-group:hover tr { background: #f9fafb; }
+    .rp-table thead tr, .rp-table tfoot tr { background: #f3f4f6; }
+    .seg input:checked + span { background: #2E7D32; color: #fff; }
+    #rp-tooltip { pointer-events: none; }
+</style>
+<div class="flex min-h-screen bg-gray-50">
+    {% include 'shop/_sidebar.html' with active_page='payroll_report' %}
+
+    <main class="flex-1 p-2 lg:p-8 lg:ml-0 min-w-0">
+        <div class="flex flex-wrap items-center justify-between gap-2 mb-6">
+            <div>
+                <h1 class="text-2xl lg:text-3xl font-bold text-gray-900">📊 Цалингийн тайлан</h1>
+                <p class="text-gray-600 mt-2">{{ period_label }} · {{ sheet_label }} · {{ group_by_label }}{% if layout == 'pivot' %} · {{ metric_label }} сараар{% endif %}</p>
+            </div>
+            <div class="flex gap-2">
+                <a href="{% url 'shop:payroll_card' %}" class="bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50 transition whitespace-nowrap">💳 Картын цалин</a>
+                <a href="{% url 'shop:payroll_cash' %}" class="bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50 transition whitespace-nowrap">💵 Бэлэн цалин</a>
+                <a href="{{ export_url }}" class="bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50 transition whitespace-nowrap">⬇ Excel</a>
+            </div>
+        </div>
+
+        <form method="get" id="rp-form" class="bg-white rounded-lg shadow p-4 mb-4 space-y-4">
+            <div class="flex flex-wrap items-end gap-4">
+                <div>
+                    <span class="block text-sm font-medium mb-1">Хугацаа</span>
+                    <div class="flex items-center gap-2">
+                        <input type="month" name="from" value="{{ date_from }}" max="{{ max_month }}" class="border border-gray-300 rounded-lg px-3 py-2" onchange="this.form.submit()">
+                        <span class="text-gray-400">—</span>
+                        <input type="month" name="to" value="{{ date_to }}" max="{{ max_month }}" class="border border-gray-300 rounded-lg px-3 py-2" onchange="this.form.submit()">
+                    </div>
+                </div>
+                <div class="flex flex-wrap gap-1 pb-1">
+                    {% for label, url in presets %}<a href="{{ url }}" class="text-sm px-3 py-1.5 rounded-full border border-gray-300 hover:bg-gray-50">{{ label }}</a>{% endfor %}
+                </div>
+                <div>
+                    <span class="block text-sm font-medium mb-1">Цалингийн төрөл</span>
+                    <div class="inline-flex rounded-lg border border-gray-300 overflow-hidden">
+                        <label class="seg cursor-pointer"><input type="radio" name="sheet" value="all" class="sr-only" {% if sheet == 'all' %}checked{% endif %} onchange="this.form.submit()"><span class="block px-4 py-2 hover:bg-gray-50">Нийлүүлсэн</span></label>
+                        <label class="seg cursor-pointer border-l border-gray-300"><input type="radio" name="sheet" value="card" class="sr-only" {% if sheet == 'card' %}checked{% endif %} onchange="this.form.submit()"><span class="block px-4 py-2 hover:bg-gray-50">Карт</span></label>
+                        <label class="seg cursor-pointer border-l border-gray-300"><input type="radio" name="sheet" value="cash" class="sr-only" {% if sheet == 'cash' %}checked{% endif %} onchange="this.form.submit()"><span class="block px-4 py-2 hover:bg-gray-50">Бэлэн</span></label>
+                    </div>
+                </div>
+                <label class="inline-flex items-center gap-2 pb-2 text-sm {% if not split_available %}text-gray-400 cursor-not-allowed{% else %}cursor-pointer{% endif %}"
+                       {% if not split_available %}title="Нийлүүлсэн цалингийн төрөлд, цалингийн төрлөөс бусдаар бүлэглэхэд"{% endif %}>
+                    <input type="checkbox" name="split" value="1" class="w-4 h-4 accent-green-700" {% if split %}checked{% endif %} {% if not split_available %}disabled{% endif %} onchange="this.form.submit()">
+                    Карт, бэлэнг тусдаа {% if layout == 'pivot' %}баганаар{% else %}мөрөөр{% endif %}
+                </label>
+            </div>
+
+            <div class="flex flex-wrap items-end gap-4">
+                <div>
+                    <label for="rp-group" class="block text-sm font-medium mb-1">Бүлэглэх</label>
+                    <select id="rp-group" name="group" class="border border-gray-300 rounded-lg px-3 py-2" onchange="this.form.submit()">
+                        {% for key, label in dimensions %}<option value="{{ key }}" {% if key == group %}selected{% endif %}>{{ label }}</option>{% endfor %}
+                    </select>
+                </div>
+                <div>
+                    <span class="block text-sm font-medium mb-1">Харагдац</span>
+                    <div class="inline-flex rounded-lg border border-gray-300 overflow-hidden {% if group == 'month' %}opacity-50{% endif %}">
+                        <label class="seg cursor-pointer"><input type="radio" name="layout" value="total" class="sr-only" {% if layout == 'total' %}checked{% endif %} onchange="this.form.submit()"><span class="block px-4 py-2 hover:bg-gray-50">Нийт дүн</span></label>
+                        <label class="seg cursor-pointer border-l border-gray-300" {% if group == 'month' %}title="Сараар бүлэглэсэн үед шаардлагагүй"{% endif %}><input type="radio" name="layout" value="pivot" class="sr-only" {% if layout == 'pivot' %}checked{% endif %} {% if group == 'month' %}disabled{% endif %} onchange="this.form.submit()"><span class="block px-4 py-2 hover:bg-gray-50">Сараар задлах</span></label>
+                    </div>
+                </div>
+                <div>
+                    <label for="rp-metric" class="block text-sm font-medium mb-1">Үзүүлэлт <span class="text-gray-400 font-normal">(график{% if layout == 'pivot' %}, хүснэгт{% endif %})</span></label>
+                    <select id="rp-metric" name="metric" class="border border-gray-300 rounded-lg px-3 py-2" onchange="this.form.submit()">
+                        {% for key, label, hint in metrics %}<option value="{{ key }}" {% if key == metric %}selected{% endif %} {% if hint %}title="{{ hint }}"{% endif %}>{{ label }}</option>{% endfor %}
+                    </select>
+                </div>
+            </div>
+
+            <div class="flex flex-wrap items-end gap-3 pt-3 border-t">
+                {% for fo in filter_options %}
+                <div>
+                    <label for="rp-f-{{ fo.dim }}" class="block text-xs font-medium text-gray-600 mb-1">{{ fo.label }}</label>
+                    <select id="rp-f-{{ fo.dim }}" name="f_{{ fo.dim }}" class="border border-gray-300 rounded-lg px-2 py-1.5 text-sm max-w-[12rem] {% if fo.value is not None %}border-primary ring-1 ring-primary{% endif %}" onchange="this.form.submit()">
+                        <option value="" {% if fo.value is None %}selected{% endif %}>Бүгд</option>
+                        {% for key, label in fo.options %}<option value="{{ key }}" {% if key == fo.value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+                    </select>
+                </div>
+                {% endfor %}
+                <div>
+                    <label for="rp-q" class="block text-xs font-medium text-gray-600 mb-1">Ажилтан хайх</label>
+                    <input id="rp-q" type="search" name="q" value="{{ q }}" placeholder="Нэр эсвэл код" class="border border-gray-300 rounded-lg px-2 py-1.5 text-sm w-44">
+                </div>
+                <button type="submit" class="bg-primary text-white px-5 py-1.5 rounded-lg hover:bg-green-700 transition text-sm">Шүүх</button>
+            </div>
+
+            {% if active_filters %}
+            <div class="flex flex-wrap items-center gap-2">
+                {% for f in active_filters %}
+                <a href="{{ f.remove_url }}" class="inline-flex items-center gap-1 text-sm bg-green-50 text-green-900 border border-green-200 rounded-full px-3 py-1 hover:bg-green-100" title="Шүүлтүүрийг хасах">{{ f.label }}: <b>{{ f.value }}</b> ✕</a>
+                {% endfor %}
+                <a href="{{ clear_filters_url }}" class="text-sm text-gray-500 underline">Бүгдийг арилгах</a>
+            </div>
+            {% endif %}
+        </form>
+
+        <div class="mb-6 text-sm {% if open_months %}text-blue-800 bg-blue-50 border border-blue-200{% else %}text-gray-700 bg-gray-100 border border-gray-200{% endif %} rounded-lg px-4 py-2">
+            {% if open_months %}
+            🔓 {{ months_count }} сараас <b>{{ open_months }}</b> нь хаагдаагүй тул ажилтны одоогийн мэдээллээр бодсон <b>урьдчилсан</b> дүн (график дээр бүдэг баганаар).
+            Эцсийн тайлан гаргахын тулд цалин бодолтын хуудаснаас сарыг хаана уу.
+            {% else %}
+            🔒 Бүх {{ months_count }} сар хаагдсан - хаасан үеийн бодолтоор.
+            {% endif %}
+            {% if truncated %}<br>⚠️ Хугацаа хамгийн ихдээ {{ max_months }} сар - сүүлийн {{ max_months }} сарыг харууллаа.{% endif %}
+        </div>
+
+        {% if not total %}
+        <div class="bg-white rounded-lg shadow p-6 text-gray-500">Сонгосон нөхцөлд цалингийн мэдээлэл алга байна.</div>
+        {% else %}
+
+        <div class="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
+            <div class="bg-white rounded-lg shadow p-4 ring-2 ring-primary">
+                <div class="text-sm text-gray-500">Олгох дүн</div>
+                <div class="text-2xl font-bold text-primary">{{ total.payout|floatformat:'0g' }}₮</div>
+                <div class="text-xs text-gray-500">Урьдчилгаатай: {{ kpi.payout_with_advance|floatformat:'0g' }}₮</div>
+            </div>
+            <div class="bg-white rounded-lg shadow p-4">
+                <div class="text-sm text-gray-500">Бодогдсон нийт цалин</div>
+                <div class="text-2xl font-bold text-gray-900">{{ total.gross|floatformat:'0g' }}₮</div>
+                <div class="text-xs text-gray-500">Үүнээс нэмэгдэл {{ total.sales_bonus|floatformat:'0g' }}₮</div>
+            </div>
+            <div class="bg-white rounded-lg shadow p-4">
+                <div class="text-sm text-gray-500">Байгууллагын зардал</div>
+                <div class="text-2xl font-bold text-gray-900">{{ total.employer_cost|floatformat:'0g' }}₮</div>
+                <div class="text-xs text-gray-500">НДШ байгууллага {{ total.ndsh_employer|floatformat:'0g' }}₮</div>
+            </div>
+            <div class="bg-white rounded-lg shadow p-4">
+                <div class="text-sm text-gray-500">Татвар (НДШ + ХХОАТ)</div>
+                <div class="text-2xl font-bold text-gray-900">{{ kpi.tax|floatformat:'0g' }}₮</div>
+                <div class="text-xs text-gray-500">НДШ {{ total.ndsh_employee|floatformat:'0g' }} · ХХОАТ {{ total.pit|floatformat:'0g' }}</div>
+            </div>
+            <div class="bg-white rounded-lg shadow p-4 col-span-2 lg:col-span-1">
+                <div class="text-sm text-gray-500">Ажилтан</div>
+                <div class="text-2xl font-bold text-gray-900">{{ total.employee_count }}</div>
+                <div class="text-xs text-gray-500">Дундаж олголт {{ total.avg_payout|floatformat:'0g' }}₮ / сар</div>
+            </div>
+        </div>
+
+        {% if months_count > 1 %}
+        <div class="viz-root bg-white rounded-lg shadow p-4 lg:p-6 mb-6">
+            <div class="flex flex-wrap items-baseline justify-between gap-2 mb-2">
+                <h2 class="text-lg font-bold text-gray-900">{{ metric_label }} сараар</h2>
+                {% if sheet == 'all' %}
+                <div class="flex items-center gap-4 text-sm text-gray-600" aria-label="Тайлбар">
+                    <span class="inline-flex items-center gap-1.5"><span class="inline-block w-3 h-3 rounded-sm" style="background:var(--series-card)"></span>Карт</span>
+                    <span class="inline-flex items-center gap-1.5"><span class="inline-block w-3 h-3 rounded-sm" style="background:var(--series-cash)"></span>Бэлэн</span>
+                    <span class="inline-flex items-center gap-1.5"><span class="inline-block w-3 h-3 rounded-sm opacity-40" style="background:var(--axis)"></span>Урьдчилсан</span>
+                </div>
+                {% endif %}
+            </div>
+            <div id="rp-chart" class="relative" style="height: 260px;">
+                <div id="rp-tooltip" class="hidden absolute z-10 bg-white border border-gray-200 shadow-lg rounded-lg px-3 py-2 text-xs text-gray-700"></div>
+            </div>
+        </div>
+        {% endif %}
+
+        <div class="bg-white rounded-lg shadow p-4 lg:p-6">
+            <div class="flex flex-wrap items-baseline justify-between gap-2 mb-3">
+                <h2 class="text-lg font-bold text-gray-900">{{ group_by_label }}{% if layout == 'pivot' %} - {{ metric_label }}{% endif %}{% if split %} (карт, бэлэн тусдаа){% endif %} <span class="text-sm font-normal text-gray-500">({{ groups|length }} мөр)</span></h2>
+                <span class="text-xs text-gray-500">Баганын толгой дээр дарж эрэмбэлнэ{% if group != 'employee' %} · мөрийн нэр дээр дарж тухайн бүлгийн ажилчдыг харна{% endif %}</span>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="rp-table min-w-full text-sm border border-gray-200" id="rp-table">
+                    <thead>
+                        <tr class="text-left align-bottom">
+                            <th class="sortable px-3 py-2 font-semibold text-gray-700" data-type="text" data-col="0" {% if split_columns %}rowspan="2"{% endif %}>{{ group_label }}</th>
+                            {% if group == 'employee' %}
+                            <th class="sortable px-3 py-2 font-semibold text-gray-700" data-type="text" data-col="1" {% if split_columns %}rowspan="2"{% endif %}>Албан тушаал</th>
+                            {% else %}
+                            <th class="sortable px-3 py-2 font-semibold text-gray-700 text-right" data-type="num" data-col="1" {% if split_columns %}rowspan="2"{% endif %}>Ажилтан</th>
+                            {% endif %}
+                            {% if split_columns %}
+                            {% for label in month_labels %}<th class="px-3 py-1 font-semibold text-gray-700 text-center whitespace-nowrap border-l border-gray-300" colspan="2">{{ label }}</th>{% endfor %}
+                            <th class="px-3 py-1 font-semibold text-gray-900 text-center bg-gray-200 border-l border-gray-300" colspan="3">Нийт</th>
+                        </tr>
+                        <tr class="align-bottom">
+                            {% for label, col, is_total in split_headers %}
+                            <th class="sortable px-3 py-1 text-xs font-semibold text-right whitespace-nowrap {% if is_total %}bg-gray-200 text-gray-900{% else %}text-gray-600{% endif %} {% if label == 'Карт' %}border-l border-gray-300{% endif %}" data-type="num" data-col="{{ col }}">
+                                {% if label != 'Нийт' %}<span class="inline-block w-2 h-2 rounded-sm mr-1" style="background: var(--series-{% if label == 'Карт' %}card{% else %}cash{% endif %})"></span>{% endif %}{{ label }}</th>
+                            {% endfor %}
+                            {% elif layout == 'pivot' %}
+                            {% for label in month_labels %}<th class="sortable px-3 py-2 font-semibold text-gray-700 text-right whitespace-nowrap" data-type="num">{{ label }}</th>{% endfor %}
+                            <th class="sortable px-3 py-2 font-semibold text-gray-900 text-right bg-gray-200" data-type="num">Нийт</th>
+                            {% else %}
+                            {% for key, label, hint in metrics %}
+                            <th class="sortable px-3 py-2 font-semibold text-right {% if key == 'payout' %}text-gray-900 bg-gray-200{% else %}text-gray-700{% endif %}" data-type="num" {% if hint %}title="{{ hint }}"{% endif %}>{{ label }}</th>
+                            {% endfor %}
+                            <th class="sortable px-3 py-2 font-semibold text-gray-700 text-right" data-type="num" title="Олгох дүн / ажилтан-сар">Дундаж олголт</th>
+                            <th class="sortable px-3 py-2 font-semibold text-gray-700 text-right" data-type="num" title="Нийт олгох дүнд эзлэх хувь">Хувь</th>
+                            {% endif %}
+                        </tr>
+                    </thead>
+                    {% for g in groups %}
+                    <tbody class="rp-group">
+                        <tr class="border-t {% if g.parts %}font-medium{% endif %}">{% include 'shop/_payroll_report_row.html' with sub=False %}</tr>
+                        {% for part in g.parts %}<tr class="rp-sub text-xs">{% include 'shop/_payroll_report_row.html' with g=part sub=True %}</tr>{% endfor %}
+                    </tbody>
+                    {% endfor %}
+                    <tfoot>
+                        <tr class="border-t-2 border-gray-300 font-semibold">{% include 'shop/_payroll_report_row.html' with g=total sub=False %}</tr>
+                        {% for part in total.parts %}<tr class="text-xs">{% include 'shop/_payroll_report_row.html' with g=part sub=True %}</tr>{% endfor %}
+                    </tfoot>
+                </table>
+            </div>
+        </div>
+        {% endif %}
+    </main>
+</div>
+
+{{ chart_data|json_script:'rp-chart-data' }}
+<script>
+// Хүснэгтийг баганын толгойгоор эрэмбэлнэ (data-v утгаар). Бүлэг бүр карт/бэлэнгийн дэд мөртэйгөө нэг tbody - хамт хөдөлнө
+(function () {
+    const table = document.getElementById('rp-table');
+    if (!table) return;
+    table.querySelectorAll('th.sortable').forEach((th, index) => {
+        th.addEventListener('click', () => {
+            const dir = th.dataset.dir === 'desc' ? 'asc' : 'desc';
+            table.querySelectorAll('th.sortable').forEach((h) => delete h.dataset.dir);
+            th.dataset.dir = dir;
+            const num = th.dataset.type === 'num';
+            const groups = Array.from(table.tBodies);
+            groups.sort((a, b) => {
+                const col = th.dataset.col !== undefined ? +th.dataset.col : index;
+                const x = a.rows[0].cells[col].dataset.v || '', y = b.rows[0].cells[col].dataset.v || '';
+                const cmp = num ? (parseFloat(x) || 0) - (parseFloat(y) || 0) : x.localeCompare(y, 'mn');
+                return dir === 'asc' ? cmp : -cmp;
+            });
+            groups.forEach((g) => table.insertBefore(g, table.tFoot));
+        });
+    });
+})();
+
+// Сарын график: давхарласан багана (карт доор, бэлэн дээр), хаагдаагүй сар бүдэг, hover-т tooltip
+(function () {
+    const host = document.getElementById('rp-chart');
+    if (!host) return;
+    const data = JSON.parse(document.getElementById('rp-chart-data').textContent);
+    const tooltip = document.getElementById('rp-tooltip');
+    const css = getComputedStyle(host.closest('.viz-root'));
+    const color = { card: css.getPropertyValue('--series-card').trim(), cash: css.getPropertyValue('--series-cash').trim() };
+    const sheetLabel = { card: 'Карт', cash: 'Бэлэн' };
+    const fmt = (v) => Math.round(v).toLocaleString('en-US');
+    const short = (v) => Math.abs(v) >= 1e9 ? (v / 1e9).toFixed(1).replace(/\.0$/, '') + ' тэрбум'
+        : Math.abs(v) >= 1e6 ? (v / 1e6).toFixed(1).replace(/\.0$/, '') + ' сая'
+        : Math.abs(v) >= 1e3 ? Math.round(v / 1e3) + ' мян' : String(Math.round(v));
+    const NS = 'http://www.w3.org/2000/svg';
+    const el = (tag, attrs) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); return e; };
+
+    function draw() {
+        host.querySelectorAll('svg').forEach((s) => s.remove());
+        const W = host.clientWidth, H = host.clientHeight;
+        const pad = { l: 64, r: 8, t: 12, b: 28 };
+        const months = data.months;
+        const stackTotal = (m) => data.sheets.reduce((s, k) => s + Math.max(m[k], 0), 0);
+        const max = Math.max(1, ...months.map(stackTotal));
+        // "Сайхан" дээд хязгаар ба 4 хуваарь
+        const step = Math.pow(10, Math.floor(Math.log10(max / 4)));
+        const tick = [1, 2, 2.5, 5, 10].map((f) => f * step).find((t) => t * 4 >= max) || step * 10;
+        const top = tick * 4;
+        const y = (v) => pad.t + (H - pad.t - pad.b) * (1 - v / top);
+        const svg = el('svg', { width: W, height: H, role: 'img', 'aria-label': data.metric + ' сараар' });
+
+        for (let i = 0; i <= 4; i++) {
+            const v = tick * i, yy = y(v);
+            svg.appendChild(el('line', { x1: pad.l, x2: W - pad.r, y1: yy, y2: yy, stroke: 'var(--grid)', 'stroke-width': 1 }));
+            const t = el('text', { x: pad.l - 8, y: yy + 4, 'text-anchor': 'end', 'font-size': 11, fill: 'var(--text-secondary)' });
+            t.textContent = short(v);
+            svg.appendChild(t);
+        }
+
+        const band = (W - pad.l - pad.r) / months.length;
+        const barW = Math.max(6, Math.min(48, band * 0.6));
+        const labelEvery = Math.ceil(months.length / Math.floor((W - pad.l) / 56));
+        months.forEach((m, i) => {
+            const cx = pad.l + band * i + band / 2;
+            let base = 0;
+            const g = el('g', { opacity: m.closed ? 1 : 0.45 });
+            const visible = data.sheets.filter((s) => m[s] > 0);
+            data.sheets.forEach((s) => {
+                const v = Math.max(m[s], 0);
+                if (!v) return;
+                const y0 = y(base), y1 = y(base + v);
+                const isTop = s === visible[visible.length - 1];
+                // Давхаргын хооронд 2px зай (surface), зөвхөн дээд талын үзүүр 4px дугуй
+                const h = Math.max(0, y0 - y1 - (base > 0 ? 2 : 0));
+                const r = isTop ? Math.min(4, h / 2, barW / 2) : 0;
+                const x0 = cx - barW / 2, yt = y1, yb = yt + h;
+                const d = `M${x0},${yb} L${x0},${yt + r} Q${x0},${yt} ${x0 + r},${yt} L${x0 + barW - r},${yt} Q${x0 + barW},${yt} ${x0 + barW},${yt + r} L${x0 + barW},${yb} Z`;
+                g.appendChild(el('path', { d, fill: color[s] }));
+                base += v;
+            });
+            svg.appendChild(g);
+            if (i % labelEvery === 0) {
+                const t = el('text', { x: cx, y: H - 8, 'text-anchor': 'middle', 'font-size': 11, fill: 'var(--text-secondary)' });
+                t.textContent = months.length > 12 ? m.label.slice(2) : m.label;
+                svg.appendChild(t);
+            }
+            // Hover-ийн талбай баганаас том (бүтэн зурвас)
+            const hit = el('rect', { x: pad.l + band * i, y: pad.t, width: band, height: H - pad.t - pad.b, fill: 'transparent' });
+            hit.addEventListener('mouseenter', () => {
+                hit.setAttribute('fill', 'rgba(0,0,0,0.04)');
+                const lines = data.sheets.map((s) => `<div class="flex justify-between gap-4"><span><span class="inline-block w-2 h-2 rounded-sm mr-1" style="background:${color[s]}"></span>${sheetLabel[s]}</span><b>${fmt(m[s])}</b></div>`);
+                if (data.sheets.length > 1) lines.push(`<div class="flex justify-between gap-4 border-t mt-1 pt-1"><span>Нийт</span><b>${fmt(data.sheets.reduce((a, s) => a + m[s], 0))}</b></div>`);
+                tooltip.innerHTML = `<div class="font-semibold text-gray-900 mb-1">${m.label} ${m.closed ? '🔒' : '<span class="text-blue-600 font-normal">урьдчилсан</span>'}</div>${lines.join('')}`;
+                tooltip.classList.remove('hidden');
+                const tw = tooltip.offsetWidth;
+                tooltip.style.left = Math.min(Math.max(cx - tw / 2, 0), W - tw) + 'px';
+                tooltip.style.top = Math.max(y(stackTotal(m)) - tooltip.offsetHeight - 8, 0) + 'px';
+            });
+            hit.addEventListener('mouseleave', () => { hit.setAttribute('fill', 'transparent'); tooltip.classList.add('hidden'); });
+            svg.appendChild(hit);
+        });
+        svg.appendChild(el('line', { x1: pad.l, x2: W - pad.r, y1: y(0), y2: y(0), stroke: 'var(--axis)', 'stroke-width': 1 }));
+        host.insertBefore(svg, tooltip);
+    }
+    draw();
+    let timer;
+    window.addEventListener('resize', () => { clearTimeout(timer); timer = setTimeout(draw, 150); });
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,121 @@
+{% extends 'base.html' %}
+
+{% block title %}Цагийн бүртгэл - Euro Foods{% endblock %}
+
+{% block hide_mobile_menu %}hidden{% endblock %}
+
+{% block content %}
+{% load l10n %}
+<div class="flex min-h-screen bg-gray-50">
+    {% include 'shop/_sidebar.html' with active_page='my_attendance' %}
+
+    <main class="flex-1 p-2 lg:p-8 lg:ml-0">
+        <div class="mb-6">
+            <h1 class="text-2xl lg:text-3xl font-bold text-gray-900">🕒 Цагийн бүртгэл</h1>
+            <p class="text-gray-600 mt-2">Таны ирсэн, тарсан цаг болон хоцролтын мэдээлэл{% if employee %} · {{ employee.name }}{% if employee.positionname %} ({{ employee.positionname }}){% endif %}{% endif %}</p>
+        </div>
+
+        {% if not employee %}
+        <div class="bg-white rounded-lg shadow p-6 text-gray-600">Таны бүртгэлтэй ажилтны мэдээлэл олдсонгүй.</div>
+        {% else %}
+
+        <form method="get" class="bg-white rounded-lg shadow p-4 mb-6 flex flex-wrap items-end gap-3">
+            <a href="?year={{ prev_month.year|unlocalize }}&month={{ prev_month.month }}" class="bg-white border border-gray-300 text-gray-700 px-3 py-2 rounded-lg hover:bg-gray-50 transition" title="Өмнөх сар">←</a>
+            <div>
+                <label for="att-year" class="block text-sm font-medium mb-1">Он</label>
+                <select id="att-year" name="year" class="border border-gray-300 rounded-lg px-3 py-2">
+                    {% for y in years %}
+                    <option value="{{ y|unlocalize }}" {% if y == year %}selected{% endif %}>{{ y|unlocalize }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <label for="att-month" class="block text-sm font-medium mb-1">Сар</label>
+                <select id="att-month" name="month" class="border border-gray-300 rounded-lg px-3 py-2">
+                    {% for num, label in months %}
+                    <option value="{{ num }}" {% if num == month %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <a href="?year={{ next_month.year|unlocalize }}&month={{ next_month.month }}" class="bg-white border border-gray-300 text-gray-700 px-3 py-2 rounded-lg hover:bg-gray-50 transition" title="Дараагийн сар">→</a>
+            <button type="submit" class="bg-primary text-white px-6 py-2 rounded-lg hover:bg-green-700 transition">Харах</button>
+            {% if not is_current_month %}
+            <a href="{% url 'shop:my_attendance' %}" class="text-sm text-primary underline py-2">Энэ сар руу буцах</a>
+            {% endif %}
+        </form>
+
+        {% if not has_fingerprint and not rows %}
+        <div class="bg-yellow-50 border border-yellow-200 text-yellow-800 rounded-lg p-4 mb-6">
+            Таны хурууны хээ таних төхөөрөмжийн код бүртгэгдээгүй байна. Хүний нөөцийн ажилтанд хандана уу.
+        </div>
+        {% endif %}
+
+        <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+            <div class="bg-white rounded-lg shadow p-4">
+                <div class="text-sm text-gray-500">Ирсэн өдөр</div>
+                <div class="text-2xl font-bold text-gray-900">{{ summary.days }}</div>
+            </div>
+            <div class="bg-white rounded-lg shadow p-4">
+                <div class="text-sm text-gray-500">Хоцорсон өдөр</div>
+                <div class="text-2xl font-bold {% if summary.late_days %}text-red-600{% else %}text-gray-900{% endif %}">{{ summary.late_days }}</div>
+            </div>
+            <div class="bg-white rounded-lg shadow p-4">
+                <div class="text-sm text-gray-500">Нийт хоцорсон минут</div>
+                <div class="text-2xl font-bold {% if summary.late_minutes %}text-red-600{% else %}text-gray-900{% endif %}">{{ summary.late_minutes }}</div>
+            </div>
+            <div class="bg-white rounded-lg shadow p-4">
+                <div class="text-sm text-gray-500">Тарсан цаг бүртгэгдээгүй</div>
+                <div class="text-2xl font-bold text-gray-900">{{ summary.missing_left }}</div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-lg shadow p-6">
+            <h2 class="text-lg font-bold text-gray-900 mb-4">{{ month_label }}</h2>
+            {% if not rows %}
+            <p class="text-gray-500">Энэ сард ирцийн бүртгэл алга байна.</p>
+            {% else %}
+            <div class="overflow-x-auto">
+                <table class="min-w-full text-sm border border-gray-200">
+                    <thead>
+                        <tr class="bg-gray-100 text-left align-bottom">
+                            <th class="px-3 py-2 font-semibold text-gray-700">Огноо</th>
+                            <th class="px-3 py-2 font-semibold text-gray-700">Гариг</th>
+                            <th class="px-3 py-2 font-semibold text-gray-700">Ирсэн цаг</th>
+                            <th class="px-3 py-2 font-semibold text-gray-700">Тарсан цаг</th>
+                            <th class="px-3 py-2 font-semibold text-gray-700 text-right">1-10 минут</th>
+                            <th class="px-3 py-2 font-semibold text-gray-700 text-right">11-20 минут</th>
+                            <th class="px-3 py-2 font-semibold text-gray-700 text-right">20-с дээш минут</th>
+                            <th class="px-3 py-2 font-semibold text-gray-900 text-right bg-gray-200">Нийт хоцорсон минут</th>
+                            {% if has_customers %}<th class="px-3 py-2 font-semibold text-gray-700">Харилцагчийн нэр</th>{% endif %}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in rows %}
+                        <tr class="border-t {% if row.weekday == 'Бямба' or row.weekday == 'Ням' %}bg-gray-50{% endif %}">
+                            <td class="px-3 py-2 whitespace-nowrap">{{ row.date|date:'Y-m-d' }}</td>
+                            <td class="px-3 py-2 whitespace-nowrap">{{ row.weekday }}</td>
+                            <td class="px-3 py-2">{{ row.arrived_time|default:'-' }}</td>
+                            <td class="px-3 py-2">{{ row.left_time|default:'-' }}</td>
+                            <td class="px-3 py-2 text-right">{{ row.late_1_10 }}</td>
+                            <td class="px-3 py-2 text-right">{{ row.late_11_20 }}</td>
+                            <td class="px-3 py-2 text-right">{{ row.late_20_plus }}</td>
+                            <td class="px-3 py-2 text-right font-semibold bg-gray-50 {% if row.total_late_minutes %}text-red-600{% endif %}">{{ row.total_late_minutes }}</td>
+                            {% if has_customers %}<td class="px-3 py-2">{{ row.customer_name }}</td>{% endif %}
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                    <tfoot>
+                        <tr class="border-t-2 border-gray-300 font-semibold">
+                            <td class="px-3 py-2" colspan="7">Нийт</td>
+                            <td class="px-3 py-2 text-right bg-gray-50">{{ summary.late_minutes }}</td>
+                            {% if has_customers %}<td></td>{% endif %}
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+            {% endif %}
+        </div>
+        {% endif %}
+    </main>
+</div>
+{% endblock %}

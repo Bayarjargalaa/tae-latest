@@ -1,0 +1,40 @@
+{# Борлуулалтын тайлан - задаргаа / өдрийн хүснэгт (мөрүүдийг sales_report.html-ийн скрипт зурна) #}
+<div class="border border-gray-100 rounded-xl overflow-hidden">
+    <div class="flex flex-wrap items-center justify-between gap-2 px-4 py-3 border-b border-gray-100 no-print">
+        <span class="relative">
+            <svg class="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+            <input type="search" id="table-search" placeholder="Жагсаалтаас хайх" class="sr-field pl-8 w-64">
+        </span>
+        <select id="page-size" class="sr-field" aria-label="Хуудсанд харуулах">
+            <option value="25">25</option><option value="50" selected>50</option><option value="100">100</option><option value="100000">Бүгд</option>
+        </select>
+    </div>
+    <div class="table-scroll">
+        <table class="sr-table" id="sr-table">
+            <thead>
+                <tr>
+                    {% if tab == 'daily' %}
+                    <th class="l" data-sort="date">Огноо<span class="arrow">↕</span></th>
+                    {% else %}
+                    <th class="l">#</th>
+                    <th class="l" data-sort="name">{{ dim.name_label }}<span class="arrow">↕</span></th>
+                    {% endif %}
+                    <th data-sort="revenue">Орлого<span class="arrow">↕</span></th>
+                    <th data-sort="revenue" title="Нийт орлогод эзлэх хувь">Эзлэх %<span class="arrow">↕</span></th>
+                    <th data-sort="profit">Ашиг<span class="arrow">↕</span></th>
+                    <th data-sort="margin">Ашгийн %<span class="arrow">↕</span></th>
+                    <th data-sort="orders">Захиалга<span class="arrow">↕</span></th>
+                    {% if tab == 'daily' %}<th data-sort="customers">Харилцагч<span class="arrow">↕</span></th>{% else %}<th data-sort="count">{{ dim.count_label }}<span class="arrow">↕</span></th>{% endif %}
+                    <th data-sort="qty">Тоо ширхэг<span class="arrow">↕</span></th>
+                    {% if tab == 'customer' %}<th data-sort="last_date">Сүүлд авсан<span class="arrow">↕</span></th>{% endif %}
+                </tr>
+            </thead>
+            <tbody id="sr-tbody"></tbody>
+            <tfoot id="sr-tfoot"></tfoot>
+        </table>
+    </div>
+    <div class="flex flex-wrap items-center justify-between gap-2 px-4 py-3 border-t border-gray-100 text-sm no-print">
+        <span class="sr-sub" id="page-info"></span>
+        <div class="flex gap-1" id="pager"></div>
+    </div>
+</div>

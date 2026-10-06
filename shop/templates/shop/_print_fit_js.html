@@ -1,0 +1,33 @@
+<script>
+// Хэвлэх хуудас (.pr-print-page) бүрийг A4 цаасны хэвлэгдэх талбайд багтах хамгийн том хэмжээгээр томруулна:
+// томруулгыг алхам алхмаар багасгаж хүснэгт өргөндөө багтах, өндөр нь хуудсанд орох анхны утгыг сонгоно.
+// Талбайн хэмжээг .pr-print-ийн data-page-w/h-аас (анхдагч: A4 хэвтээ, 6мм зах ~1077x748px, захаар
+// тасрахгүй нөөцтэй). Нүдний хараа муу хүнд уншихад том, тод байлгах зорилготой.
+(function () {
+    function fitPrintPages() {
+        const root = document.querySelector('.pr-print');
+        if (!root) return;
+        const PAGE_W = Number(root.dataset.pageW || 1040), PAGE_H = Number(root.dataset.pageH || 720);
+        const MAX_ZOOM = Number(root.dataset.maxZoom || 1);
+        root.querySelectorAll('.pr-print-page').forEach((page) => {
+            page.style.zoom = 1;
+            page.style.setProperty('--pr-row-pad', '0px');
+            let zoom = MAX_ZOOM;
+            for (; zoom > 0.3; zoom -= 0.01) {
+                page.style.width = (PAGE_W / zoom) + 'px';
+                const tooWide = page.scrollWidth > PAGE_W / zoom + 1
+                    || [...page.querySelectorAll('table')].some((t) => t.scrollWidth > PAGE_W / zoom + 1);
+                if (!tooWide && page.scrollHeight * zoom <= PAGE_H) break;
+            }
+            // Өргөнөөр хязгаарлагдаж доор зай үлдвэл мөр бүрийн дээд/доод зайг нэмж хуудсыг дүүргэнэ - мөр ялгахад амар
+            const rowCount = page.querySelectorAll('tr').length;
+            const spare = PAGE_H / zoom - page.scrollHeight;
+            const pad = rowCount ? Math.max(0, Math.min(8, Math.floor(spare / rowCount / 2))) : 0;
+            page.style.setProperty('--pr-row-pad', pad + 'px');
+            page.style.zoom = zoom;
+        });
+    }
+    window.addEventListener('load', fitPrintPages);
+    window.addEventListener('beforeprint', fitPrintPages);
+})();
+</script>

@@ -1,0 +1,215 @@
+{% extends 'base.html' %}
+
+{% block title %}Өгөгдөл шинэчлэх - Euro Foods{% endblock %}
+
+{% block hide_mobile_menu %}hidden{% endblock %}
+
+{% block extra_css %}
+<style>
+    .ds-root { --ink: #111827; --ink-2: #4b5563; --muted: #6b7280; --hairline: rgba(17,24,39,.08); --accent: #2a78d6;
+               --good-text: #006300; --good-bg: #e8f5e9; --bad-text: #b42323; --bad-bg: #fdecec; color: var(--ink); }
+    .ds-card { background: #fff; border: 1px solid var(--hairline); border-radius: 1rem; box-shadow: 0 1px 2px rgba(0,0,0,.04); }
+    .ds-sub { font-size: .75rem; color: var(--muted); }
+    .ds-num { font-variant-numeric: tabular-nums; }
+    .btn-sync { display: inline-flex; align-items: center; gap: .4rem; font-size: .8rem; font-weight: 600; padding: .4rem .8rem; border-radius: .6rem;
+                background: var(--accent); color: #fff; transition: filter .15s; white-space: nowrap; }
+    .btn-sync:hover { filter: brightness(1.08); }
+    .btn-sync:disabled { background: #9ca3af; cursor: progress; }
+    .spin { width: 14px; height: 14px; border: 2px solid rgba(255,255,255,.45); border-top-color: #fff; border-radius: 999px; animation: spin .8s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .pill { white-space: nowrap; flex-shrink: 0; display: inline-flex; align-items: center; gap: .3rem; font-size: .7rem; font-weight: 600; padding: .1rem .5rem; border-radius: 999px; }
+    .pill.success { color: var(--good-text); background: var(--good-bg); }
+    .pill.error { color: var(--bad-text); background: var(--bad-bg); }
+    .pill.running { color: #1c4f8f; background: #eef4fc; }
+    .ds-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: .82rem; }
+    .ds-table th { position: sticky; top: 0; background: #fafaf9; color: var(--ink-2); font-weight: 600; font-size: .7rem; text-transform: uppercase; letter-spacing: .03em;
+                   padding: .55rem .75rem; border-bottom: 1px solid #e7e5e4; text-align: left; white-space: nowrap; }
+    .ds-table td { padding: .55rem .75rem; border-bottom: 1px solid #f1f1ef; vertical-align: middle; }
+    .ds-table td.r, .ds-table th.r { text-align: right; }
+    .progress-msg { font-size: .75rem; color: #1c4f8f; }
+    @media (prefers-reduced-motion: reduce) { .spin { animation: none; } }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="flex min-h-screen bg-gray-50">
+    {% include 'shop/_sidebar.html' with active_page=active_page %}
+
+    <main class="ds-root flex-1 p-3 lg:p-8 min-w-0 space-y-5">
+        <div class="flex flex-wrap items-end justify-between gap-3">
+            <div>
+                <div class="text-xs font-medium text-gray-500 mb-1">Админ <span class="mx-1 text-gray-300">/</span> MSSQL → PostgreSQL</div>
+                <h1 class="text-2xl lg:text-3xl font-bold tracking-tight">🔄 Өгөгдөл шинэчлэх</h1>
+                <p class="text-sm text-gray-500 mt-1 max-w-3xl">Өдөр бүр хуваарьт бүрэн синк хийгддэг. Үүнээс гадна шаардлагатай үед энд
+                    нэг хүснэгтийг сонгоод хурдан татна (жиш: ажилтны үндсэн цалин өөрчилсөн бол <b>OpenDataEmployee</b>).
+                    Татах хооронд хуучин өгөгдөл ажилласаар байх ба шинэ нь бэлэн болмогц солигдоно.</p>
+            </div>
+        </div>
+
+        <section>
+            <h2 class="text-sm font-semibold text-gray-700 mb-2">Түгээмэл хүснэгтүүд</h2>
+            <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3" id="favorites"></div>
+        </section>
+
+        <section class="ds-card overflow-hidden">
+            <div class="flex flex-wrap items-center justify-between gap-3 p-4 border-b border-gray-100">
+                <div>
+                    <h2 class="font-semibold">Бүх хүснэгт</h2>
+                    <p class="ds-sub" id="table-count"></p>
+                </div>
+                <div class="flex flex-wrap gap-2">
+                    <input type="search" id="search" placeholder="Хүснэгт хайх (жиш: employee)" class="text-sm border border-gray-200 rounded-lg px-3 py-2 w-64">
+                    <button type="button" id="refresh-views" class="text-sm font-medium px-3 py-2 rounded-lg border border-gray-200 bg-white hover:bg-gray-50"
+                            title="MSSQL-д шинээр нэмэгдсэн view-г жагсаалтад нэмнэ">↻ MSSQL жагсаалт</button>
+                </div>
+            </div>
+            <div class="overflow-x-auto" style="max-height: 60vh">
+                <table class="ds-table">
+                    <thead><tr><th>Хүснэгт</th><th class="r">Мөр (ойролцоо)</th><th>Сүүлд татсан</th><th>Төлөв</th><th></th></tr></thead>
+                    <tbody id="tables"></tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="ds-card overflow-hidden">
+            <div class="p-4 border-b border-gray-100"><h2 class="font-semibold">Татсан түүх</h2><p class="ds-sub">Сүүлийн 25</p></div>
+            <div class="overflow-x-auto">
+                <table class="ds-table">
+                    <thead><tr><th>Хүснэгт</th><th>Эхэлсэн</th><th>Хэн</th><th class="r">Мөр</th><th class="r">Хугацаа</th><th>Төлөв</th><th>Дэлгэрэнгүй</th></tr></thead>
+                    <tbody id="history"></tbody>
+                </table>
+            </div>
+        </section>
+    </main>
+</div>
+
+{{ tables_json|json_script:"ds-tables" }}
+{{ history_json|json_script:"ds-history" }}
+<script>
+(function () {
+    const TABLES = JSON.parse(document.getElementById('ds-tables').textContent);
+    let HISTORY = JSON.parse(document.getElementById('ds-history').textContent);
+    const CSRF = '{{ csrf_token }}';
+    const START_URL = '{% url "shop:data_sync_start" %}', STATUS_URL = '{% url "shop:data_sync_status" %}', VIEWS_URL = '{% url "shop:data_sync_views" %}';
+    const FAVORITES = new Set(TABLES.filter((t) => t.label).map((t) => t.name));
+    const running = new Map();  // log id -> table
+    const nf = new Intl.NumberFormat('en-US');
+    const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const byName = Object.fromEntries(TABLES.map((t) => [t.name, t]));
+
+    function ago(ts) {
+        if (!ts) return '';
+        const s = Math.round((Date.now() - new Date(ts.replace(' ', 'T')).getTime()) / 1000);
+        if (s < 60) return 'саяхан';
+        if (s < 3600) return `${Math.round(s / 60)} минутын өмнө`;
+        if (s < 86400) return `${Math.round(s / 3600)} цагийн өмнө`;
+        return `${Math.round(s / 86400)} өдрийн өмнө`;
+    }
+    const pill = (log) => log ? `<span class="pill ${log.status}">${log.status === 'running' ? '⏳' : log.status === 'success' ? '✓' : '⚠'} ${esc(log.status_label)}</span>` : '<span class="ds-sub">—</span>';
+    const lastText = (log) => log ? `${esc(log.started)} <span class="ds-sub">· ${ago(log.finished || log.started)}${log.seconds ? ` · ${log.seconds}с` : ''}${log.user ? ` · ${esc(log.user)}` : ''}</span>` : '<span class="ds-sub">бүртгэл алга (дараагийн синкээс бүртгэгдэнэ)</span>';
+    function button(t) {
+        const busy = t.last && t.last.status === 'running';
+        return `<button type="button" class="btn-sync" data-sync="${esc(t.name)}" ${busy ? 'disabled' : ''}>${busy ? '<span class="spin"></span> Татаж байна' : '⬇ Татах'}</button>`;
+    }
+    function progress(t) {
+        if (!t.last) return '';
+        if (t.last.status === 'running') return `<div class="progress-msg mt-1">${esc(t.last.message)}</div>`;
+        if (t.last.status === 'error') return `<div class="text-xs mt-1" style="color:var(--bad-text)">${esc(t.last.message)}</div>`;
+        return '';
+    }
+
+    function renderFavorites() {
+        document.getElementById('favorites').innerHTML = TABLES.filter((t) => FAVORITES.has(t.name)).map((t) => `
+            <div class="ds-card p-4 flex flex-col gap-2" data-card="${esc(t.name)}">
+                <div class="flex items-start justify-between gap-2">
+                    <div class="min-w-0"><div class="font-semibold truncate">${esc(t.name)}</div><div class="ds-sub">${esc(t.label)}</div></div>
+                    ${pill(t.last)}
+                </div>
+                <div class="ds-sub ds-num">${t.rows != null ? nf.format(t.rows) + ' мөр' : 'татаагүй'}${t.last && t.last.rows != null && t.last.status === 'success' ? ` · сүүлд ${nf.format(t.last.rows)} мөр ${t.last.seconds}с-д` : ''}</div>
+                <div class="ds-sub">${t.last ? 'Сүүлд: ' + ago(t.last.finished || t.last.started) + (t.last.user ? ' · ' + esc(t.last.user) : '') : 'Шинэчилсэн бүртгэл алга'}</div>
+                ${progress(t)}
+                <div class="mt-auto pt-1">${button(t)}</div>
+            </div>`).join('');
+    }
+    function renderTables() {
+        const q = document.getElementById('search').value.trim().toLowerCase();
+        const list = TABLES.filter((t) => !q || t.name.toLowerCase().includes(q) || (t.label || '').toLowerCase().includes(q));
+        document.getElementById('table-count').textContent = `${list.length} / ${TABLES.length} хүснэгт`;
+        document.getElementById('tables').innerHTML = list.map((t) => `<tr>
+            <td><div class="font-medium">${esc(t.name)}</div>${t.label ? `<div class="ds-sub">${esc(t.label)}</div>` : ''}${t.rows == null ? '<div class="ds-sub">PostgreSQL-д хараахан татаагүй</div>' : ''}</td>
+            <td class="r ds-num">${t.rows != null ? nf.format(t.rows) : '—'}</td>
+            <td>${lastText(t.last)}${progress(t)}</td>
+            <td>${pill(t.last)}</td>
+            <td class="r">${button(t)}</td></tr>`).join('') || '<tr><td colspan="5" class="ds-sub" style="text-align:center;padding:2rem">Олдсонгүй</td></tr>';
+    }
+    function renderHistory() {
+        document.getElementById('history').innerHTML = HISTORY.map((l) => `<tr>
+            <td class="font-medium">${esc(l.table)}</td><td class="ds-num">${esc(l.started)}</td><td>${esc(l.user)}</td>
+            <td class="r ds-num">${l.rows != null ? nf.format(l.rows) : '—'}</td><td class="r ds-num">${l.seconds != null ? l.seconds + 'с' : '—'}</td>
+            <td>${pill(l)}</td><td class="ds-sub" style="max-width:28rem">${esc(l.message)}</td></tr>`).join('') || '<tr><td colspan="7" class="ds-sub" style="text-align:center;padding:1.5rem">Түүх алга</td></tr>';
+    }
+    function renderAll() { renderFavorites(); renderTables(); renderHistory(); }
+
+    function applyLog(log) {
+        const t = byName[log.table] || (byName[log.table] = TABLES[TABLES.push({ name: log.table, rows: null, label: '' }) - 1]);
+        t.last = log;
+        if (log.status === 'success' && log.rows != null) t.rows = log.rows;
+        HISTORY = [log, ...HISTORY.filter((h) => h.id !== log.id)].slice(0, 25);
+    }
+
+    async function start(table) {
+        const body = new URLSearchParams({ table, csrfmiddlewaretoken: CSRF });
+        try {
+            const res = await fetch(START_URL, { method: 'POST', body, headers: { 'X-CSRFToken': CSRF } });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || res.status);
+            applyLog(data.log);
+            running.set(data.log.id, table);
+            renderAll();
+            poll();
+        } catch (err) {
+            alert(`Эхлүүлж чадсангүй: ${err.message}`);
+        }
+    }
+    let pollTimer = null;
+    async function poll() {
+        clearTimeout(pollTimer);
+        if (!running.size) return;
+        try {
+            const res = await fetch(`${STATUS_URL}?ids=${[...running.keys()].join(',')}`);
+            const { logs } = await res.json();
+            logs.forEach((log) => { applyLog(log); if (log.status !== 'running') running.delete(log.id); });
+            renderAll();
+        } catch (err) { /* түр алдаа - дараагийн удаа дахин оролдоно */ }
+        if (running.size) pollTimer = setTimeout(poll, 1000);
+    }
+    // Хуудас нээхэд татаж байгаа ажил байвал үргэлжлүүлэн харна
+    TABLES.forEach((t) => { if (t.last && t.last.status === 'running') running.set(t.last.id, t.name); });
+
+    document.addEventListener('click', (e) => {
+        const btn = e.target.closest('[data-sync]');
+        if (btn && !btn.disabled) start(btn.dataset.sync);
+    });
+    document.getElementById('search').addEventListener('input', renderTables);
+    document.getElementById('refresh-views').addEventListener('click', async (e) => {
+        const btn = e.currentTarget;
+        btn.disabled = true; btn.textContent = 'Уншиж байна...';
+        try {
+            const res = await fetch(VIEWS_URL);
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || res.status);
+            let added = 0;
+            data.views.forEach((v) => { if (!byName[v.name]) { byName[v.name] = TABLES[TABLES.push({ name: v.name, rows: null, label: '' }) - 1]; added++; } });
+            renderTables();
+            btn.textContent = `↻ MSSQL жагсаалт (${added} шинэ)`;
+        } catch (err) {
+            alert(`MSSQL жагсаалт уншиж чадсангүй: ${err.message}`);
+            btn.textContent = '↻ MSSQL жагсаалт';
+        }
+        btn.disabled = false;
+    });
+    renderAll();
+    poll();
+})();
+</script>
+{% endblock %}

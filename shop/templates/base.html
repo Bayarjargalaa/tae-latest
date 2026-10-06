@@ -39,6 +39,57 @@
         .mobile-menu.hidden {
             transform: translateX(-100%);
         }
+
+        /* Утсан дээр хуудас хэвтээ чиглэлд гүйлгэгдэхээс сэргийлнэ (sticky header-ийг эвдэхгүйн тулд clip) */
+        html, body {
+            overflow-x: clip;
+        }
+        /* Flex layout доторх main өргөн хүснэгтээс болж сунахгүй, хүснэгт өөрөө гүйлгэгдэнэ */
+        main.flex-1 {
+            min-width: 0;
+        }
+        img, video, canvas {
+            max-width: 100%;
+        }
+        @media (max-width: 1023px) {
+            /* Sidebar товчлуур (зүүн доод) контентыг дарахгүй байх зай */
+            body:has(#sidebar) main.flex-1 {
+                padding-bottom: 5rem;
+            }
+        }
+        @media (max-width: 639px) {
+            /* Гарчиг + товчлуурын мөр, товчлуурын бүлэг багтахгүй бол дараагийн мөрөнд шилжинэ
+               (багтаж байвал өөрчлөгдөхгүй). Хүснэгтийн нүд доторх flex-д хамаарахгүй */
+            main .flex.justify-between:not(td *):not(th *),
+            main .flex.gap-2:not(td *):not(th *),
+            main .flex.gap-3:not(td *):not(th *),
+            main .flex.gap-4:not(td *):not(th *) {
+                flex-wrap: wrap;
+            }
+            main .flex.justify-between:not(td *):not(th *) {
+                row-gap: 0.5rem;
+            }
+            /* Картын том зайг утсан дээр багасгана */
+            main .p-6 { padding: 1rem; }
+            main .p-8 { padding: 1rem; }
+            main .px-6 { padding-left: 1rem; padding-right: 1rem; }
+            main .text-3xl { font-size: 1.5rem; line-height: 2rem; }
+            main .text-4xl { font-size: 1.875rem; line-height: 2.25rem; }
+            /* Огнооны input гэх мэт форм талбар дэлгэцээс хэтрэхгүй */
+            main form input:not([type=checkbox]):not([type=radio]):not(table input),
+            main form select:not(table select) {
+                max-width: 100%;
+            }
+            /* iOS дээр input дээр дарахад автоматаар zoom хийхээс сэргийлнэ (хүснэгт доторх жижиг нүднээс бусад) */
+            input:not([type=checkbox]):not([type=radio]):not(table input),
+            select:not(table select),
+            textarea {
+                font-size: 16px;
+            }
+            .choices__inner {
+                font-size: 16px;
+            }
+        }
     </style>
     
     <script>
@@ -293,8 +344,8 @@
                     <h3 class="text-base lg:text-lg font-bold mb-3 lg:mb-4">Холбоо барих</h3>
                     <ul class="space-y-2 text-gray-400 text-sm lg:text-base">
                         <li>📍 Улаанбаатар, Монгол</li>
-                        <li>📞 +976 7777-7777</li>
-                        <li>📧 info@eurofoods.mn</li>
+                        <li>📞 +976 7018-0085</li>
+                        <li>📧 tugsaminerdene@yahoo.com</li>
                         <li class="hidden sm:block">⏰ Даваа-Баасан: 09:00-18:00</li>
                     </ul>
                 </div>

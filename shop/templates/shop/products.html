@@ -5,15 +5,15 @@
 
 {% block content %}
 <!-- Page Header -->
-<section class="bg-gradient-to-r from-primary to-secondary text-white py-12">
+<section class="bg-gradient-to-r from-primary to-secondary text-white py-6 lg:py-12">
     <div class="container mx-auto px-4">
-        <h1 class="text-4xl font-bold mb-2">
+        <h1 class="text-2xl lg:text-4xl font-bold mb-2 flex flex-wrap items-center gap-2">
             Бүтээгдэхүүн
             {% if jijig_min_qty == 'true' %}
-            <span class="text-2xl bg-blue-600 px-3 py-1 rounded-full ml-2">🏢 Үлдэгдэлтэй бараа 10+</span>
+            <span class="text-sm lg:text-2xl bg-blue-600 px-3 py-1 rounded-full">🏢 Үлдэгдэлтэй бараа 10+</span>
             {% endif %}
         </h1>
-        <p class="text-lg opacity-90">
+        <p class="text-base lg:text-lg opacity-90">
             {{ page_obj.paginator.count }} бүтээгдэхүүн олдлоо
             {% if jijig_min_qty == 'true' %}
             <span class="text-sm">(Агуулах жижиг ≥10)</span>
@@ -23,13 +23,19 @@
 </section>
 
 <!-- Filters & Products -->
-<section class="py-8">
+<section class="py-4 lg:py-8">
     <div class="container mx-auto px-4">
-        <div class="flex flex-col lg:flex-row gap-8">
+        <div class="flex flex-col lg:flex-row gap-4 lg:gap-8">
             <!-- Sidebar Filters -->
             <aside class="lg:w-1/4">
-                <div class="bg-white rounded-lg shadow-md p-6 sticky top-24">
-                    <h2 class="text-xl font-bold mb-4">Шүүлт</h2>
+                <!-- Утсан дээр шүүлтийг товчоор нээж хаана (бараанууд шууд харагдана) -->
+                <button type="button" id="filters-toggle" aria-expanded="false" aria-controls="filters-panel"
+                        class="lg:hidden w-full flex items-center justify-between bg-white rounded-lg shadow-md px-4 py-3 font-bold">
+                    <span>🔎 Шүүлт{% if search_query or current_category or current_brand %} (идэвхтэй){% endif %}</span>
+                    <span id="filters-toggle-icon">▼</span>
+                </button>
+                <div id="filters-panel" class="hidden lg:block mt-2 lg:mt-0 bg-white rounded-lg shadow-md p-4 lg:p-6 lg:sticky lg:top-24">
+                    <h2 class="text-xl font-bold mb-4 hidden lg:block">Шүүлт</h2>
                     
                     <!-- Search -->
                     <form method="get" class="mb-6">
@@ -139,9 +145,9 @@
             </aside>
 
             <!-- Products Grid -->
-            <main class="lg:w-3/4">
+            <main class="lg:w-3/4 min-w-0">
                 {% if page_obj %}
-                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 lg:gap-6">
                     {% for product in page_obj %}
                     <div class="bg-white rounded-lg shadow-md hover:shadow-xl transition-all duration-300 transform hover:-translate-y-2 overflow-hidden">
                         <!-- Product Image -->
@@ -262,4 +268,20 @@
         </div>
     </div>
 </section>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const toggle = document.getElementById('filters-toggle');
+    const panel = document.getElementById('filters-panel');
+    const icon = document.getElementById('filters-toggle-icon');
+    if (!toggle || !panel) return;
+    toggle.addEventListener('click', function () {
+        const open = panel.classList.toggle('hidden') === false;
+        toggle.setAttribute('aria-expanded', String(open));
+        icon.textContent = open ? '▲' : '▼';
+    });
+});
+</script>
 {% endblock %}

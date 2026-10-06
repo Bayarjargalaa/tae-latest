@@ -1,0 +1,192 @@
+{% extends 'base.html' %}
+
+{% block title %}{{ title }} - Euro Foods{% endblock %}
+
+{% block hide_mobile_menu %}hidden{% endblock %}
+
+{% block extra_css %}
+<style>
+.adv-table td, .adv-table th { border: 1px solid #e5e7eb; }
+{% include 'shop/_print_fit_css.html' %}
+/* Урьдчилгааны жагсаалт цөөн багана тул нэр, дүнгийн хооронд зай гаргана */
+.pr-print-table td, .pr-print-table th { padding-left: 8px; padding-right: 8px; }
+.pr-print-table .pr-sign { min-width: 12em; text-align: center; }
+.pr-print-title { margin: 0.6em 0 0.4em; }
+@media print {
+    @page { size: A4 portrait; margin: 10mm; }
+    #sidebar, #sidebar-open-button, #sidebar-overlay, header, footer, .no-print, .screen-area, #ai-chat-widget { display: none !important; }
+    main { margin: 0 !important; padding: 0 !important; }
+    body { background: white !important; }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+{% load l10n %}
+<div class="flex min-h-screen bg-gray-50">
+    {% include 'shop/_sidebar.html' with active_page=active_page %}
+
+    <main class="flex-1 p-2 lg:p-8 lg:ml-0 min-w-0">
+        <div class="flex flex-wrap items-center justify-between gap-2 mb-6 no-print">
+            <div>
+                <h1 class="text-2xl lg:text-3xl font-bold text-gray-900">{% if is_card %}💳{% else %}💵{% endif %} {{ title }}</h1>
+                <p class="text-gray-600 mt-2">Бичсэн урьдчилгаа тухайн сарын {% if is_card %}картын{% else %}бэлэн{% endif %} цалин бодолтын "Урьдчилгаа" баганад автоматаар орно</p>
+            </div>
+            <div class="flex gap-2">
+                <a href="{% url payroll_url_name %}?year={{ year|unlocalize }}&month={{ month }}" class="bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50 transition whitespace-nowrap">{% if is_card %}💳 Картын{% else %}💵 Бэлэн{% endif %} цалин бодолт</a>
+                <button type="button" onclick="window.print()" class="bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50 transition whitespace-nowrap">🖨 Хэвлэх</button>
+            </div>
+        </div>
+
+        <form method="get" class="bg-white rounded-lg shadow p-4 mb-6 flex flex-wrap items-end gap-3 no-print">
+            <a href="?year={{ prev_month.year|unlocalize }}&month={{ prev_month.month }}" class="bg-white border border-gray-300 text-gray-700 px-3 py-2 rounded-lg hover:bg-gray-50 transition" title="Өмнөх сар">←</a>
+            <div>
+                <label for="adv-year" class="block text-sm font-medium mb-1">Он</label>
+                <select id="adv-year" name="year" class="border border-gray-300 rounded-lg px-3 py-2">
+                    {% for y in years %}<option value="{{ y|unlocalize }}" {% if y == year %}selected{% endif %}>{{ y|unlocalize }}</option>{% endfor %}
+                </select>
+            </div>
+            <div>
+                <label for="adv-month" class="block text-sm font-medium mb-1">Сар</label>
+                <select id="adv-month" name="month" class="border border-gray-300 rounded-lg px-3 py-2">
+                    {% for num, label in months %}<option value="{{ num }}" {% if num == month %}selected{% endif %}>{{ label }}</option>{% endfor %}
+                </select>
+            </div>
+            <a href="?year={{ next_month.year|unlocalize }}&month={{ next_month.month }}" class="bg-white border border-gray-300 text-gray-700 px-3 py-2 rounded-lg hover:bg-gray-50 transition" title="Дараагийн сар">→</a>
+            <button type="submit" class="bg-primary text-white px-6 py-2 rounded-lg hover:bg-green-700 transition">Харах</button>
+        </form>
+
+        {% if messages %}
+        <div class="mb-6 space-y-2 no-print">
+            {% for message in messages %}
+            <div class="p-3 rounded-lg {% if message.tags == 'error' %}bg-red-100 text-red-800{% elif message.tags == 'warning' %}bg-yellow-100 text-yellow-800{% else %}bg-green-100 text-green-800{% endif %}">{{ message }}</div>
+            {% endfor %}
+        </div>
+        {% endif %}
+
+        <form method="post" class="screen-area bg-white rounded-lg shadow p-4 lg:p-6">
+            {% csrf_token %}
+            <input type="hidden" name="year" value="{{ year|unlocalize }}">
+            <input type="hidden" name="month" value="{{ month }}">
+            <div class="flex flex-wrap items-center justify-between gap-2 mb-4">
+                <div>
+                    <h2 class="text-lg font-bold text-gray-900">{{ print_title }}</h2>
+                    <p class="text-sm text-gray-500">Урьдчилгаа бичээгүй (0) ажилтан хэвлэгдэхгүй. Олгох өдөр, батлах захирлын нэрийг
+                        <a href="{% url 'shop:payroll_settings' %}" class="text-primary underline">Цалингийн тохиргоо</a>-ноос{% if not is_card %}, Гарын үсэг баганын дансыг тэндээс ажилтан бүрээр{% endif %} засна.</p>
+                </div>
+                {% if close %}
+                <div class="text-sm text-gray-700 bg-gray-100 border border-gray-300 rounded-lg px-3 py-2">🔒 Энэ сарын цалин хаагдсан - урьдчилгааг засах бол цалин бодолтоос сарыг дахин нээнэ үү.</div>
+                {% else %}
+                <div class="flex gap-2">
+                    {% if has_prev %}
+                    <button type="submit" name="action" value="copy_prev" class="bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50 transition whitespace-nowrap"
+                            title="Өмнөх сарын урьдчилгааг энэ сард бичээгүй ажилчдад хуулна">↩ Өмнөх сараас хуулах</button>
+                    {% endif %}
+                    <button type="submit" name="action" value="save" class="bg-primary text-white px-6 py-2 rounded-lg hover:bg-green-700 transition whitespace-nowrap">💾 Хадгалах</button>
+                </div>
+                {% endif %}
+            </div>
+
+            {% if not rows %}
+            <p class="text-gray-500">Энэ хуудсанд харагдах ажилтан алга. <a href="{% url 'shop:payroll_settings' %}" class="text-primary underline">Цалингийн тохиргоо</a> хуудаснаас ажилчдын олгох хэлбэрийг тохируулна уу.</p>
+            {% else %}
+            <div class="overflow-x-auto">
+                <table class="adv-table min-w-full text-sm">
+                    <thead>
+                        <tr class="bg-gray-100 text-left">
+                            <th class="px-3 py-2 w-10 text-center">№</th>
+                            <th class="px-3 py-2">Ажилчдын нэрс</th>
+                            <th class="px-3 py-2">Албан тушаал</th>
+                            {% if not is_card %}<th class="px-3 py-2">Данс (Гарын үсэг баганад)</th>{% endif %}
+                            <th class="px-3 py-2 text-right">Өмнөх сар</th>
+                            <th class="px-3 py-2 text-right">Урьдчилгаа</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in rows %}
+                        <tr>
+                            <td class="px-3 py-1.5 text-center text-gray-500">{{ forloop.counter }}</td>
+                            <td class="px-3 py-1.5 font-medium text-gray-900 whitespace-nowrap">{{ row.name }}<input type="hidden" name="employee_code" value="{{ row.employee_code }}"></td>
+                            <td class="px-3 py-1.5 text-gray-600 whitespace-nowrap">{{ row.positionname|default:'-' }}</td>
+                            {% if not is_card %}<td class="px-3 py-1.5 text-gray-600 whitespace-nowrap">{{ row.cash_bank_account|default:'-' }}</td>{% endif %}
+                            <td class="px-3 py-1.5 text-right text-gray-400">{% if row.prev_advance %}{{ row.prev_advance|floatformat:'-2g' }}{% else %}-{% endif %}</td>
+                            <td class="px-3 py-1.5 text-right">
+                                <input type="number" step="0.01" min="0" name="advance" value="{% if row.advance %}{{ row.advance|floatformat:'-2u' }}{% endif %}" placeholder="0"
+                                       class="adv-input w-36 border border-gray-300 rounded px-2 py-1 text-right"{% if close %} readonly{% endif %}>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                    <tfoot>
+                        <tr class="bg-gray-100 font-semibold">
+                            <td colspan="{% if is_card %}4{% else %}5{% endif %}" class="px-3 py-2">Дүн <span id="adv-count" class="text-sm font-normal text-gray-500"></span></td>
+                            <td id="adv-total" class="px-3 py-2 text-right">{{ total_advance|floatformat:'-2g' }}</td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+            {% endif %}
+        </form>
+
+        {% comment %} Хэвлэх загвар (дэлгэцэнд харагдахгүй) - Excel-ийн урьдчилгааны файлын загвараар {% endcomment %}
+        <div class="pr-print" aria-hidden="true" data-page-w="700" data-page-h="1010" data-max-zoom="1.6">
+            <section class="pr-print-page">
+                <div class="pr-print-head">
+                    <div class="pr-print-company">{{ setting.company_name }}</div>
+                    <div class="pr-print-approve">Батлав: Захирал ....................... /{{ approver }}/</div>
+                </div>
+                <div class="pr-print-title">{{ print_title }}</div>
+                <table class="pr-print-table">
+                    <thead>
+                        <tr>
+                            <th>№</th>
+                            <th>Ажилчдын нэрс</th>
+                            <th>Албан тушаал</th>
+                            <th>Урьдчилгаа{% if not is_card %} цалин{% endif %}</th>
+                            {% if not is_card %}<th class="pr-sign">Гарын үсэг</th>{% endif %}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in print_rows %}
+                        <tr>
+                            <td class="c">{{ forloop.counter }}</td>
+                            <td class="t">{{ row.name }}</td>
+                            <td class="t">{{ row.positionname|default:'' }}</td>
+                            <td>{{ row.advance|floatformat:'-2g' }}</td>
+                            {% if not is_card %}<td class="pr-sign">{{ row.cash_bank_account }}</td>{% endif %}
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                    <tfoot>
+                        <tr>
+                            <td colspan="3" class="t">Дүн</td>
+                            <td>{{ total_advance|floatformat:'-2g' }}</td>
+                            {% if not is_card %}<td></td>{% endif %}
+                        </tr>
+                    </tfoot>
+                </table>
+                <div class="pr-print-foot">Нягтлан бодогч: ....................................... /{{ setting.prepared_by }}/</div>
+            </section>
+        </div>
+    </main>
+</div>
+{% include 'shop/_print_fit_js.html' %}
+<script>
+// Урьдчилгааны дүнг бичих явцад шинэчилнэ
+(function () {
+    const inputs = document.querySelectorAll('.adv-input');
+    const total = document.getElementById('adv-total');
+    const count = document.getElementById('adv-count');
+    if (!total) return;
+    const update = () => {
+        let sum = 0, n = 0;
+        inputs.forEach((i) => { const v = Number(i.value) || 0; sum += v; if (v) n += 1; });
+        const r = Math.round(sum * 100) / 100;
+        total.textContent = r.toLocaleString('en-US', { minimumFractionDigits: Number.isInteger(r) ? 0 : 2, maximumFractionDigits: 2 });
+        count.textContent = `(${n} ажилтан)`;
+    };
+    inputs.forEach((i) => i.addEventListener('input', update));
+    update();
+})();
+</script>
+{% endblock %}

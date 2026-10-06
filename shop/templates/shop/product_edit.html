@@ -3,15 +3,15 @@
 {% block title %}{{ product.name }} - Засах{% endblock %}
 
 {% block content %}
-<div class="container mx-auto px-4 py-8">
+<div class="container mx-auto px-2 sm:px-4 py-4 lg:py-8">
     <div class="max-w-4xl mx-auto">
-        <div class="bg-white rounded-lg shadow-md p-6">
+        <div class="bg-white rounded-lg shadow-md p-4 lg:p-6">
             <h1 class="text-2xl font-bold mb-6">Бүтээгдэхүүн засах</h1>
-            
+
             <!-- Original Data -->
             <div class="bg-gray-50 p-4 rounded-lg mb-6">
                 <h2 class="font-bold mb-2">MSSQL-ээс ирсэн мэдээлэл:</h2>
-                <div class="grid grid-cols-2 gap-4 text-sm">
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-4 text-sm break-words">
                     <div><strong>ID:</strong> {{ product.id }}</div>
                     <div><strong>Нэр:</strong> {{ product.name }}</div>
                     <div><strong>Брэнд:</strong> {{ product.brandname|default:"-" }}</div>

@@ -2,24 +2,24 @@
 
 {% block title %}Ажилтны хяналтын самбар - EuroFoods{% endblock %}
 
-{% block hide_mobile_menu %}{% endblock %}
+{% block hide_mobile_menu %}hidden{% endblock %}
 
 {% block content %}
 <div class="flex min-h-screen bg-gray-50">
     <!-- Mobile-responsive Sidebar -->
     {% include 'shop/_sidebar.html' with active_page='dashboard' %}
-    
+
     <!-- Main Content -->
-    <main class="flex-1 p-8">
+    <main class="flex-1 p-3 sm:p-4 lg:p-8">
         <div class="max-w-7xl mx-auto">
             <!-- Header -->
-            <div class="mb-8">
-                <h1 class="text-3xl font-bold text-gray-800">Тавтай морил, {{ user.first_name|default:user.username }}!</h1>
+            <div class="mb-6 lg:mb-8">
+                <h1 class="text-2xl lg:text-3xl font-bold text-gray-800">Тавтай морил, {{ user.first_name|default:user.username }}!</h1>
                 <p class="text-gray-600 mt-2">Ажилтны хяналтын самбар</p>
             </div>
             
             <!-- Stats Cards -->
-            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6 mb-8">
+            <div class="grid grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-6 mb-8">
                 <div class="bg-white rounded-lg shadow p-6">
                     <div class="flex items-center justify-between">
                         <div>

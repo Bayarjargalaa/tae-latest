@@ -119,6 +119,13 @@ class OpenDataEmployee(models.Model):
     hiredate = models.DateField(db_column='HireDate', blank=True, null=True)
     basesalary = models.FloatField(db_column='BaseSalary', blank=True, null=True)
     isreclusion = models.TextField(db_column='IsReclusion', blank=True, null=True)
+    # Цалин бодолтод ашиглах нэмэлт утгууд (эх системийн D-баганууд)
+    insuredtypeid = models.TextField('НДШ-ийн код (даатгуулагчийн төрөл)', db_column='InsuredTypeId', blank=True, null=True)
+    insuredtypename = models.TextField('Даатгуулагчийн төрөл', db_column='InsuredTypeName', blank=True, null=True)
+    d4 = models.FloatField('Удаан жилийн нэмэгдэл', db_column='D4', blank=True, null=True)
+    d5 = models.FloatField('Хадгаламж', db_column='D5', blank=True, null=True)
+    d6 = models.FloatField('Эрсдэлийн сан', db_column='D6', blank=True, null=True)
+    d7 = models.FloatField('Хуримтлал', db_column='D7', blank=True, null=True)
 
     class Meta:
         managed = False

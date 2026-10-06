@@ -1,0 +1,342 @@
+{% extends 'base.html' %}
+
+{% block title %}Цалингийн тохиргоо - Euro Foods{% endblock %}
+
+{% block hide_mobile_menu %}hidden{% endblock %}
+
+{% block content %}
+<div class="flex min-h-screen bg-gray-50">
+    {% include 'shop/_sidebar.html' with active_page='payroll_card' %}
+
+    <main class="flex-1 p-2 lg:p-8 lg:ml-0 min-w-0">
+        <div class="flex flex-wrap items-center justify-between gap-2 mb-6">
+            <div>
+                <h1 class="text-2xl lg:text-3xl font-bold text-gray-900">⚙️ Цалингийн тохиргоо</h1>
+                <p class="text-gray-600 mt-2">Татварын хувь хэмжээ, ХХОАТ-ын хөнгөлөлт, ажилчдын олгох хэлбэр болон үндсэн цалин</p>
+            </div>
+            <div class="flex gap-2">
+                <a href="{% url 'shop:payroll_card' %}" class="bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50 transition whitespace-nowrap">💳 Картын цалин</a>
+                <a href="{% url 'shop:payroll_cash' %}" class="bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50 transition whitespace-nowrap">💵 Бэлэн цалин</a>
+            </div>
+        </div>
+
+        {% if messages %}
+        <div class="mb-6 space-y-2">
+            {% for message in messages %}
+            <div class="p-3 rounded-lg {% if message.tags == 'error' %}bg-red-100 text-red-800{% elif message.tags == 'warning' %}bg-yellow-100 text-yellow-800{% else %}bg-green-100 text-green-800{% endif %}">{{ message }}</div>
+            {% endfor %}
+        </div>
+        {% endif %}
+
+        <div class="grid grid-cols-1 xl:grid-cols-2 gap-6 mb-6">
+            <form method="post" class="bg-white rounded-lg shadow p-4">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="settings">
+                <h2 class="text-lg font-bold text-gray-900 mb-1">Татварын хувь хэмжээ</h2>
+                <p class="text-sm text-gray-500 mb-3">Зөвхөн картын цалинд үйлчилнэ. Хуулийн одоогийн утгатай тулгаж шалгана уу.</p>
+                <div class="space-y-2 text-sm">
+                    <label class="flex items-center justify-between gap-2">НДШ ажилтан, анхдагч (%)
+                        <input type="number" step="0.01" min="0" name="ndsh_employee_rate" value="{{ setting.ndsh_employee_rate|floatformat:'-2u' }}" class="border border-gray-300 rounded-lg px-3 py-1.5 w-40 text-right"></label>
+                    <label class="flex items-center justify-between gap-2">НДШ байгууллага, анхдагч (%)
+                        <input type="number" step="0.01" min="0" name="ndsh_employer_rate" value="{{ setting.ndsh_employer_rate|floatformat:'-2u' }}" class="border border-gray-300 rounded-lg px-3 py-1.5 w-40 text-right"></label>
+                    <label class="flex items-center justify-between gap-2">НДШ ногдуулах дээд хэмжээ (₮)
+                        <input type="text" inputmode="decimal" autocomplete="off" name="ndsh_max_base" value="{{ setting.ndsh_max_base|floatformat:'-2g' }}" class="money-input border border-gray-300 rounded-lg px-3 py-1.5 w-40 text-right"></label>
+                    <label class="flex items-center justify-between gap-2">ХХОАТ (%)
+                        <input type="number" step="0.01" min="0" name="pit_rate" value="{{ setting.pit_rate|floatformat:'-2u' }}" class="border border-gray-300 rounded-lg px-3 py-1.5 w-40 text-right"></label>
+                    <label class="flex items-center justify-between gap-2">Бямба гарагийн ажлын цаг (хоногт)
+                        <input type="number" step="0.5" min="0" name="saturday_hours_per_day" value="{{ setting.saturday_hours_per_day|floatformat:'-1u' }}" class="border border-gray-300 rounded-lg px-3 py-1.5 w-40 text-right"></label>
+                    <label class="flex items-center justify-between gap-2">Унааны мөнгө (ажилласан хоногт, ₮)
+                        <input type="text" inputmode="decimal" autocomplete="off" name="transport_per_day" value="{{ setting.transport_per_day|floatformat:'-2g' }}" class="money-input border border-gray-300 rounded-lg px-3 py-1.5 w-40 text-right"></label>
+                </div>
+
+                <h3 class="font-semibold text-gray-900 mt-4 mb-1">Хэвлэх хуудасны нэрс</h3>
+                <p class="text-xs text-gray-500 mb-2">Цалин бодолтыг хэвлэхэд толгой болон гарын үсгийн мөрөнд гарна.</p>
+                <div class="space-y-2 text-sm">
+                    <label class="flex items-center justify-between gap-2">Байгууллагын нэр
+                        <input type="text" name="company_name" value="{{ setting.company_name }}" class="border border-gray-300 rounded-lg px-3 py-1.5 w-56"></label>
+                    <label class="flex items-center justify-between gap-2">Картын цалин батлах захирал
+                        <input type="text" name="card_approver" value="{{ setting.card_approver }}" class="border border-gray-300 rounded-lg px-3 py-1.5 w-56"></label>
+                    <label class="flex items-center justify-between gap-2">Бэлэн цалин батлах захирал
+                        <input type="text" name="cash_approver" value="{{ setting.cash_approver }}" class="border border-gray-300 rounded-lg px-3 py-1.5 w-56"></label>
+                    <label class="flex items-center justify-between gap-2">Тооцоо гаргасан нягтлан
+                        <input type="text" name="prepared_by" value="{{ setting.prepared_by }}" class="border border-gray-300 rounded-lg px-3 py-1.5 w-56"></label>
+                    <label class="flex items-center justify-between gap-2">Урьдчилгаа олгох өдөр (сарын)
+                        <input type="number" min="1" max="31" name="advance_day" value="{{ setting.advance_day }}" class="border border-gray-300 rounded-lg px-3 py-1.5 w-56 text-right"></label>
+                </div>
+
+                <h3 class="font-semibold text-gray-900 mt-4 mb-1">НДШ-ийн код тус бүрийн хувь</h3>
+                <p class="text-xs text-gray-500 mb-2">Ажилчдын мэдээлэл дэх кодууд. Хоосон бол дээрх анхдагч хувь хэрэглэгдэнэ.</p>
+                <table class="min-w-full text-sm border border-gray-200">
+                    <thead>
+                        <tr class="bg-gray-100 text-left align-bottom">
+                            <th class="px-2 py-2 font-semibold text-gray-700">Код</th>
+                            <th class="px-2 py-2 font-semibold text-gray-700">Даатгуулагчийн төрөл</th>
+                            <th class="px-2 py-2 font-semibold text-gray-700 text-right">Ажилтан</th>
+                            <th class="px-2 py-2 font-semibold text-gray-700">Ажилтан %</th>
+                            <th class="px-2 py-2 font-semibold text-gray-700">Байгууллага %</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for c in ndsh_codes %}
+                        <tr class="border-t">
+                            <td class="px-2 py-1.5 font-medium whitespace-nowrap">{{ c.code }}<input type="hidden" name="code" value="{{ c.code }}"></td>
+                            <td class="px-2 py-1.5 text-xs text-gray-600">{{ c.name|default:'-' }}</td>
+                            <td class="px-2 py-1.5 text-right text-gray-500">{{ c.count }}</td>
+                            <td class="px-2 py-1.5"><input type="number" step="0.01" min="0" name="code_employee_rate" value="{% if c.rate and c.rate.employee_rate is not None %}{{ c.rate.employee_rate|floatformat:'-2u' }}{% endif %}" placeholder="{{ setting.ndsh_employee_rate|floatformat:'-2' }}" class="border border-gray-300 rounded-lg px-2 py-1 w-20 text-right"></td>
+                            <td class="px-2 py-1.5"><input type="number" step="0.01" min="0" name="code_employer_rate" value="{% if c.rate and c.rate.employer_rate is not None %}{{ c.rate.employer_rate|floatformat:'-2u' }}{% endif %}" placeholder="{{ setting.ndsh_employer_rate|floatformat:'-2' }}" class="border border-gray-300 rounded-lg px-2 py-1 w-20 text-right"></td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="5" class="px-2 py-3 text-center text-gray-500">Ажилчдын мэдээлэлд НДШ-ийн код алга.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                <button type="submit" class="mt-3 bg-primary text-white px-4 py-2 rounded-lg hover:bg-green-700 transition">💾 Хадгалах</button>
+            </form>
+
+            <form method="post" class="bg-white rounded-lg shadow p-4">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="credits">
+                <h2 class="text-lg font-bold text-gray-900 mb-1">ХХОАТ-ын хөнгөлөлтийн шатлал</h2>
+                <p class="text-sm text-gray-500 mb-3">Сарын цалингаас <strong>НДШ хассан дүн</strong> тухайн дүн хүртэл бол сарын хөнгөлөлт. Хуулийн жилийн дүнг 12-т хувааж оруулна
+                    (жиш: жилийн 6,000,000 → сарын 500,000; жилийн 240,000 → сарын 20,000). "Хүртэл" хоосон мөр нь дээд шат. Мөрийг устгах бол хоёр нүдийг хоослоно.</p>
+                <table class="min-w-full text-sm border border-gray-200">
+                    <thead>
+                        <tr class="bg-gray-100 text-left">
+                            <th class="px-3 py-2 font-semibold text-gray-700">Сарын цалин, НДШ хассан (хүртэл, ₮)</th>
+                            <th class="px-3 py-2 font-semibold text-gray-700">Сарын хөнгөлөлт (₮)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for c in credits %}
+                        <tr class="border-t">
+                            <td class="px-3 py-1.5"><input type="text" inputmode="decimal" autocomplete="off" name="income_to" value="{% if c and c.income_to is not None %}{{ c.income_to|floatformat:'-2g' }}{% endif %}" placeholder="{% if c %}дээд шат{% endif %}" class="money-input border border-gray-300 rounded-lg px-3 py-1 w-full text-right"></td>
+                            <td class="px-3 py-1.5"><input type="text" inputmode="decimal" autocomplete="off" name="credit_amount" value="{% if c %}{{ c.credit_amount|floatformat:'-2g' }}{% endif %}" class="money-input border border-gray-300 rounded-lg px-3 py-1 w-full text-right"></td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                <button type="submit" class="mt-3 bg-primary text-white px-4 py-2 rounded-lg hover:bg-green-700 transition">💾 Хадгалах</button>
+            </form>
+        </div>
+
+        <form method="post" class="bg-white rounded-lg shadow p-4 lg:p-6">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="profiles">
+            <div class="flex flex-wrap items-center justify-between gap-2 mb-4">
+                <div>
+                    <h2 class="text-lg font-bold text-gray-900">Ажилчдын цалингийн мэдээлэл</h2>
+                    <p class="text-sm text-gray-500">Карт - зөвхөн картын цалинд, Бэлэн - зөвхөн бэлэн цалинд, Хосолсон - хоёуланд нь тус тусын үндсэн цалингаар. Олгох хэлбэр сонгоогүй ажилтан цалин бодолтод орохгүй.
+                        Ээлжийн ажилтанд үндсэн цалингийн оронд <strong>нэг гарын мөнгө</strong> оруулна (цалин = нэг гарын мөнгө x ажилласан хоног).
+                        Картын үндсэн цалин, удаан жилийн нэмэгдэл, НДШ код ажилтны мэдээллээс автоматаар (саарал) - тэнд нь засна.
+                        "Бямбыг хоногт оруулах" - чеклэсэн бол Бямба гарагууд ажиллавал зохих хоногт нэмэгдэж, Бямбад ажилласан өдөр ажилласан хоногт тоологдоно; үгүй бол аль алинд нь тоологдохгүй (Бямбын нэмэгдэлд үргэлж тоологдоно).
+                        Анхдагчаар албан тушаалын ажлын горимоор; ✎ - тусгайлан өөрөөр тохируулсан.
+                        Бямбын нэмэгдэл % - бодогдсон Бямбад ажилласан нэмэгдлийн (үндсэн цалин / зохих цаг x Бямбад ажилласан цаг) хэдэн хувийг олгох: 100 бүтэн, 50 тал.
+                        НДШ-ийн % зөвхөн тухайн ажилтанд өөр хувь хэрэглэх бол бөглөнө - хоосон бол НДШ-ийн кодын хувь, тэр нь хоосон бол анхдагч хувь.</p>
+                </div>
+                <button type="submit" class="bg-primary text-white px-6 py-2 rounded-lg hover:bg-green-700 transition whitespace-nowrap">💾 Хадгалах</button>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="min-w-full text-sm border border-gray-200">
+                    <thead>
+                        <tr class="bg-gray-100 text-left align-bottom">
+                            <th class="px-2 py-2 font-semibold text-gray-700">Нэр</th>
+                            <th class="px-2 py-2 font-semibold text-gray-700">Албан тушаал</th>
+                            <th class="px-2 py-2 font-semibold text-gray-700">Олгох хэлбэр</th>
+                            <th class="px-2 py-2 font-semibold text-gray-700">Картын үндсэн цалин / нэг гарын мөнгө</th>
+                            <th class="px-2 py-2 font-semibold text-gray-700">Бэлэн үндсэн цалин / нэг гарын мөнгө</th>
+                            <th class="px-2 py-2 font-semibold text-gray-700">Удаан жилийн нэмэгдэл</th>
+                            <th class="px-2 py-2 font-semibold text-gray-700" title="Бодогдсон Бямбад ажилласан нэмэгдлийн хэдэн хувийг олгох">Бямбын нэмэгдэл %</th>
+                            <th class="px-2 py-2 font-semibold text-gray-700" title="Бямба гарагийг ажиллавал зохих болон ажилласан хоногт оруулах эсэх">Бямбыг хоногт оруулах</th>
+                            <th class="px-2 py-2 font-semibold text-gray-700">НДШ код</th>
+                            <th class="px-2 py-2 font-semibold text-gray-700">НДШ ажилтан %</th>
+                            <th class="px-2 py-2 font-semibold text-gray-700">НДШ байгууллага %</th>
+                            <th class="px-2 py-2 font-semibold text-gray-700" title="Бэлэн цалин хэвлэхэд Гарын үсэг баганад гарна">Бэлэн цалингийн данс</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for e in employees %}
+                        {% with p=e.profile %}
+                        <tr class="border-t">
+                            <td class="px-2 py-1.5 font-medium text-gray-900 whitespace-nowrap">
+                                {{ e.name }}
+                                <input type="hidden" name="employee_code" value="{{ e.employee_code }}">
+                            </td>
+                            <td class="px-2 py-1.5 text-gray-600 whitespace-nowrap">{{ e.positionname|default:'-' }}</td>
+                            <td class="px-2 py-1.5">
+                                <select name="pay_type" class="border border-gray-300 rounded-lg px-2 py-1">
+                                    <option value="">-</option>
+                                    {% for value, label in pay_choices %}
+                                    <option value="{{ value }}" {% if p and p.pay_type == value %}selected{% endif %}>{{ label }}</option>
+                                    {% endfor %}
+                                </select>
+                            </td>
+                            {% if e.is_shift %}
+                            <td class="px-2 py-1.5 whitespace-nowrap">
+                                <input type="text" inputmode="decimal" autocomplete="off" name="card_shift_pay" value="{% if p %}{{ p.card_shift_pay|floatformat:'-2g' }}{% endif %}" class="money-input border border-gray-300 rounded-lg px-2 py-1 w-32 text-right"> <span class="text-xs text-gray-500">/ гар</span>
+                            </td>
+                            <td class="px-2 py-1.5 whitespace-nowrap">
+                                <input type="text" inputmode="decimal" autocomplete="off" name="cash_shift_pay" value="{% if p %}{{ p.cash_shift_pay|floatformat:'-2g' }}{% endif %}" class="money-input border border-gray-300 rounded-lg px-2 py-1 w-32 text-right"> <span class="text-xs text-gray-500">/ гар</span>
+                                <input type="hidden" name="cash_base_salary" value="">
+                            </td>
+                            {% else %}
+                            <td class="px-2 py-1.5 text-right text-gray-500" title="Ажилтны мэдээллээс (BaseSalary)">
+                                {{ e.card_base_salary|floatformat:'-2g' }}
+                                <input type="hidden" name="card_shift_pay" value="">
+                            </td>
+                            <td class="px-2 py-1.5">
+                                <input type="text" inputmode="decimal" autocomplete="off" name="cash_base_salary" value="{% if p %}{{ p.cash_base_salary|floatformat:'-2g' }}{% endif %}" class="money-input border border-gray-300 rounded-lg px-2 py-1 w-32 text-right">
+                                <input type="hidden" name="cash_shift_pay" value="">
+                            </td>
+                            {% endif %}
+                            <td class="px-2 py-1.5 text-right text-gray-500" title="Ажилтны мэдээллээс (D4)">{{ e.seniority_bonus|floatformat:'-2g' }}</td>
+                            <td class="px-2 py-1.5"><input type="number" step="0.01" min="0" max="1000" name="saturday_bonus_percent" value="{% if p %}{{ p.saturday_bonus_percent|floatformat:'-2u' }}{% else %}{{ saturday_bonus_default|floatformat:'-2u' }}{% endif %}" class="border border-gray-300 rounded-lg px-2 py-1 w-20 text-right"></td>
+                            <td class="px-2 py-1.5 text-center whitespace-nowrap">
+                                {% if e.is_shift %}<span class="text-gray-400" title="Ээлжийн ажилтанд хамаарахгүй">-</span>{% else %}
+                                <input type="checkbox" name="saturday_in_worked_days" value="{{ e.employee_code }}" {% if e.saturday_included %}checked{% endif %}
+                                       title="Албан тушаалын горимоор: {% if e.saturday_default %}оруулна{% else %}оруулахгүй{% endif %}">
+                                {% if e.saturday_overridden %}<span class="text-xs text-amber-600" title="Албан тушаалын горимоос өөрөөр тусгайлан тохируулсан">✎</span>{% endif %}
+                                {% endif %}
+                            </td>
+                            <td class="px-2 py-1.5 text-gray-500" title="Ажилтны мэдээллээс (InsuredTypeId)">{{ e.ndsh_code|default:'-' }}</td>
+                            <td class="px-2 py-1.5"><input type="number" step="0.01" min="0" name="ndsh_employee_rate" value="{% if p and p.ndsh_employee_rate is not None %}{{ p.ndsh_employee_rate|floatformat:'-2u' }}{% endif %}" placeholder="{{ setting.ndsh_employee_rate|floatformat:'-2' }}" class="border border-gray-300 rounded-lg px-2 py-1 w-20 text-right"></td>
+                            <td class="px-2 py-1.5"><input type="number" step="0.01" min="0" name="ndsh_employer_rate" value="{% if p and p.ndsh_employer_rate is not None %}{{ p.ndsh_employer_rate|floatformat:'-2u' }}{% endif %}" placeholder="{{ setting.ndsh_employer_rate|floatformat:'-2' }}" class="border border-gray-300 rounded-lg px-2 py-1 w-20 text-right"></td>
+                            <td class="px-2 py-1.5">
+                                <input type="text" name="cash_bank_account" maxlength="100" value="{% if p %}{{ p.cash_bank_account }}{% endif %}" placeholder="жиш: MN35 0005 00 5070482122" class="border border-gray-300 rounded-lg px-2 py-1 w-60">
+                                {% if e.system_bank_account %}<div class="text-xs text-gray-400 mt-0.5" title="Ажилтны мэдээлэл дэх данс (картын цалингийнх)">Системд: {{ e.system_bank_account }}</div>{% endif %}
+                            </td>
+                        </tr>
+                        {% endwith %}
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </form>
+
+        <section id="print-columns" class="bg-white rounded-lg shadow p-4 lg:p-6 mt-6" style="scroll-margin-top: 8rem;">
+            <h2 class="text-lg font-bold text-gray-900 mb-1">Хэвлэх баганууд</h2>
+            <p class="text-sm text-gray-500 mb-4">Цалин бодолтыг хэвлэхэд хуудас, хүснэгт бүрт гарах баганыг сонгож, ↑ ↓ товчоор дарааллыг өөрчилнө.
+                Хоосон хүснэгт хэвлэгдэхгүй, хүснэгтгүй хуудас хэвлэгдэхгүй. Хуудас бүр A4 хэвтээ цаасанд багтах хамгийн том үсгээр хэвлэгдэнэ - багана, мөр цөөн байх тусам үсэг томорно.</p>
+            <div class="grid grid-cols-1 2xl:grid-cols-2 gap-6">
+                {% for layout in print_layouts %}
+                <form method="post" class="border border-gray-200 rounded-lg p-4 pr-layout">
+                    {% csrf_token %}
+                    <input type="hidden" name="sheet" value="{{ layout.sheet }}">
+                    <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+                        <h3 class="font-semibold text-gray-900">{% if layout.sheet == 'card' %}💳{% else %}💵{% endif %} {{ layout.title }}
+                            {% if not layout.is_custom %}<span class="ml-1 text-xs font-normal text-gray-400">(анхдагч)</span>{% endif %}</h3>
+                        <div class="flex gap-2">
+                            {% if layout.is_custom %}
+                            <button type="submit" name="action" value="print_columns_reset" class="text-sm text-gray-600 border border-gray-300 rounded-lg px-3 py-1.5 hover:bg-gray-50"
+                                    onclick="return confirm('{{ layout.title }}-ийн хэвлэх баганыг анхдагч байдалд буцаах уу?')">Анхдагч руу буцаах</button>
+                            {% endif %}
+                            <button type="submit" name="action" value="print_columns" class="bg-primary text-white text-sm px-4 py-1.5 rounded-lg hover:bg-green-700">💾 Хадгалах</button>
+                        </div>
+                    </div>
+                    <div class="flex flex-wrap items-center gap-2 mb-3 text-sm">
+                        <label for="pr-pages-{{ layout.sheet }}" class="text-gray-700">Хэвлэх хуудас:</label>
+                        <select id="pr-pages-{{ layout.sheet }}" name="separate_pages" class="border border-gray-300 rounded-lg px-2 py-1.5 bg-white">
+                            <option value="0" {% if not layout.separate_pages %}selected{% endif %}>Хуудсаар нь бүлэглэх - {{ layout.grouped_pages }} хуудас (нэг хуудсанд дээд, доод хүснэгт)</option>
+                            <option value="1" {% if layout.separate_pages %}selected{% endif %}>Хүснэгт бүрийг тусдаа хуудсанд - {{ layout.separate_page_count }} хуудас</option>
+                        </select>
+                        <span class="text-xs text-gray-400">(хуудасны тоо нь хадгалсан баганаар бодогдоно)</span>
+                    </div>
+                    <p class="text-xs text-gray-500 mb-3">Хүснэгтэд нийт татварын суутгал, суутгал, хадгаламж (эсвэл ХЧТА) багана байвал, дараа нь өөр хүснэгт байгаа үед
+                        төгсгөлд нь "... хассан дүн" багана (нийт цалингаас тэдгээрийг хассан дүн) автоматаар нэмэгдэж, дараагийн хүснэгтийн эхний багана болж давтагдана.</p>
+                    {% with choices_id='pr-choices-'|add:layout.sheet %}{{ layout.choices|json_script:choices_id }}{% endwith %}
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {% for slot in layout.slots %}
+                        <div class="pr-slot bg-gray-50 rounded-lg p-3">
+                            <div class="flex items-center justify-between mb-2">
+                                <span class="text-sm font-semibold text-gray-700">{{ slot.label }}</span>
+                                <span class="pr-count text-xs text-gray-400"></span>
+                            </div>
+                            <input type="hidden" name="cols_{{ slot.key }}" value="{{ slot.columns }}">
+                            <ol class="pr-list space-y-1 text-sm mb-2"></ol>
+                            <select class="pr-add w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm bg-white">
+                                <option value="">+ Багана нэмэх...</option>
+                            </select>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </form>
+                {% endfor %}
+            </div>
+        </section>
+    </main>
+</div>
+<script>
+// Мөнгөн дүнгийн нүднүүдийг мянгачилж харуулна: бичих үед таслалгүй, гарахад 1,041,165 хэлбэрээр; хадгалахад таслалыг хасна
+(function () {
+    const fmt = (v) => {
+        const n = Number(String(v).replace(/,/g, ''));
+        if (!String(v).trim() || !isFinite(n)) return String(v).trim();
+        const r = Math.round(n * 100) / 100;
+        return r.toLocaleString('en-US', { minimumFractionDigits: Number.isInteger(r) ? 0 : 2, maximumFractionDigits: 2 });
+    };
+    document.addEventListener('focusin', (e) => {
+        const input = e.target.closest?.('.money-input');
+        if (input) { input.value = input.value.replace(/,/g, ''); input.select(); }
+    });
+    document.addEventListener('focusout', (e) => {
+        const input = e.target.closest?.('.money-input');
+        if (input) input.value = fmt(input.value);
+    });
+    document.addEventListener('submit', (e) => {
+        e.target.querySelectorAll('.money-input').forEach((input) => { input.value = input.value.replace(/,/g, ''); });
+    });
+})();
+
+// Хэвлэх баганы сонголт: хүснэгт бүрийн баганыг жагсааж, нэмэх/хасах/дараалал солих. Сонголт нь
+// cols_<байрлал> нуугдмал талбарт таслалаар хадгалагдана
+(function () {
+    document.querySelectorAll('.pr-layout').forEach((form) => {
+        const sheet = form.querySelector('input[name=sheet]').value;
+        const choices = JSON.parse(document.getElementById(`pr-choices-${sheet}`).textContent);
+        const labels = Object.fromEntries(choices.map((c) => [c.key, c.label]));
+
+        form.querySelectorAll('.pr-slot').forEach((slot) => {
+            const input = slot.querySelector('input[type=hidden]');
+            const list = slot.querySelector('.pr-list');
+            const add = slot.querySelector('.pr-add');
+            let keys = input.value ? input.value.split(',').filter((k) => labels[k]) : [];
+
+            const button = (text, title, onClick, disabled) => {
+                const b = document.createElement('button');
+                b.type = 'button';
+                b.textContent = text;
+                b.title = title;
+                b.disabled = disabled;
+                b.className = 'px-1.5 rounded hover:bg-gray-200 disabled:opacity-30 disabled:hover:bg-transparent';
+                b.addEventListener('click', onClick);
+                return b;
+            };
+            const render = () => {
+                input.value = keys.join(',');
+                slot.querySelector('.pr-count').textContent = keys.length ? `${keys.length} багана` : 'хэвлэгдэхгүй';
+                list.innerHTML = '';
+                keys.forEach((key, i) => {
+                    const li = document.createElement('li');
+                    li.className = 'flex items-center gap-1 bg-white border border-gray-200 rounded px-2 py-1';
+                    const name = document.createElement('span');
+                    name.className = 'flex-1';
+                    name.textContent = `${i + 1}. ${labels[key]}`;
+                    li.append(
+                        name,
+                        button('↑', 'Дээш', () => { [keys[i - 1], keys[i]] = [keys[i], keys[i - 1]]; render(); }, i === 0),
+                        button('↓', 'Доош', () => { [keys[i + 1], keys[i]] = [keys[i], keys[i + 1]]; render(); }, i === keys.length - 1),
+                        button('✕', 'Хасах', () => { keys.splice(i, 1); render(); }, false),
+                    );
+                    list.append(li);
+                });
+                add.length = 1;
+                choices.filter((c) => !keys.includes(c.key)).forEach((c) => add.add(new Option(c.label, c.key)));
+            };
+            add.addEventListener('change', () => {
+                if (add.value) { keys.push(add.value); render(); }
+            });
+            render();
+        });
+    });
+})();
+</script>
+{% endblock %}

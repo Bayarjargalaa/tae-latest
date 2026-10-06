@@ -28,11 +28,66 @@
         </div>
         {% endif %}
 
-        <form method="post">
+        {% if inactive_count %}
+        <div class="bg-yellow-50 border border-yellow-200 text-yellow-800 rounded-lg p-4 mb-6">
+            ℹ️ Ажлаас гарсан <strong>{{ inactive_count }}</strong> ажилтан хурууны кодоо эзэмшсэн хэвээр байна (жагсаалтын төгсгөлд саарал өнгөөр, "Төлөв: Ажлаас гарсан" шүүлтүүрээр харж болно). Тэдний кодыг шинэ ажилтанд оноохын тулд эхлээд кодыг нь хоослоод хадгална уу.
+        </div>
+        {% endif %}
+
+        {% if has_duplicates %}
+        <div class="bg-red-50 border border-red-200 text-red-700 rounded-lg p-4 mb-6">
+            ⚠️ Доор улаанаар тодруулсан ажилчид хоорондоо <strong>ижил хурууны код</strong> ашиглаж байна. Нэг код зөвхөн нэг ажилтанд харьяалагдах ёстой тул засаж, зөвхөн бодит эзэмшигчийнх нь кодыг үлдээнэ үү.
+        </div>
+        {% endif %}
+
+        <div class="bg-white rounded-lg shadow p-4 mb-4">
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3 items-end">
+                <div>
+                    <label for="filter-name" class="block text-xs font-medium text-gray-600 mb-1">Нэр</label>
+                    <input type="search" id="filter-name" data-filter="name" placeholder="Нэрээр хайх..." class="border border-gray-300 rounded-lg px-3 py-1.5 w-full text-sm">
+                </div>
+                <div>
+                    <label for="filter-position" class="block text-xs font-medium text-gray-600 mb-1">Албан тушаал</label>
+                    <select id="filter-position" data-filter="position" class="border border-gray-300 rounded-lg px-3 py-1.5 w-full text-sm">
+                        <option value="">Бүгд</option>
+                        <option value="__none__">(Тодорхойгүй)</option>
+                        {% for position in positions %}
+                        <option value="{{ position }}">{{ position }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div>
+                    <label for="filter-code" class="block text-xs font-medium text-gray-600 mb-1">Ажилтны код</label>
+                    <input type="search" id="filter-code" data-filter="code" placeholder="Кодоор хайх..." class="border border-gray-300 rounded-lg px-3 py-1.5 w-full text-sm">
+                </div>
+                <div>
+                    <label for="filter-device" class="block text-xs font-medium text-gray-600 mb-1">Хурууны код</label>
+                    <input type="search" id="filter-device" data-filter="device" placeholder="Хурууны кодоор хайх..." class="border border-gray-300 rounded-lg px-3 py-1.5 w-full text-sm">
+                </div>
+                <div>
+                    <label for="filter-status" class="block text-xs font-medium text-gray-600 mb-1">Төлөв</label>
+                    <select id="filter-status" data-filter="status" class="border border-gray-300 rounded-lg px-3 py-1.5 w-full text-sm">
+                        <option value="">Бүгд</option>
+                        <option value="filled">Хурууны код бүртгэсэн</option>
+                        <option value="empty">Хурууны код хоосон</option>
+                        <option value="duplicate">Давхардсан код</option>
+                        <option value="active">Идэвхтэй ажилчид</option>
+                        <option value="inactive">Ажлаас гарсан</option>
+                    </select>
+                </div>
+                <div>
+                    <button type="button" id="filter-clear" class="w-full bg-white border border-gray-300 text-gray-700 px-4 py-1.5 rounded-lg hover:bg-gray-50 transition text-sm">
+                        ✕ Шүүлтүүр цэвэрлэх
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <form method="post" id="fingerprint-form">
             {% csrf_token %}
             <div class="bg-white rounded-lg shadow p-6">
                 <div class="flex items-center justify-between mb-4">
-                    <h2 class="text-lg font-bold text-gray-900">Идэвхтэй ажилчид ({{ rows|length }})</h2>
+                    <h2 class="text-lg font-bold text-gray-900">Ажилчид (<span id="visible-count">{{ rows|length }}</span><span id="total-count" hidden> / {{ rows|length }}</span>)</h2>
                     <button type="submit" class="bg-primary text-white px-6 py-2 rounded-lg hover:bg-green-700 transition whitespace-nowrap">
                         💾 Хадгалах
                     </button>
@@ -50,20 +105,25 @@
                         </thead>
                         <tbody>
                             {% for row in rows %}
-                            <tr class="border-t">
+                            <tr class="border-t {% if row.is_duplicate %}bg-red-50{% elif row.is_inactive %}bg-gray-50{% endif %}" data-row
+                                data-name="{{ row.name|lower }}" data-position="{{ row.positionname|default:'' }}"
+                                data-code="{{ row.employee_code|lower }}" data-duplicate="{% if row.is_duplicate %}1{% endif %}" data-inactive="{% if row.is_inactive %}1{% endif %}">
                                 <td class="px-4 py-2 font-medium text-gray-900 whitespace-nowrap">
                                     {{ row.name }}
+                                    {% if row.is_inactive %}<span class="ml-1 text-xs bg-gray-200 text-gray-600 px-2 py-0.5 rounded-full">Ажлаас гарсан</span>{% endif %}
                                     <input type="hidden" name="employee_code" value="{{ row.employee_code }}">
                                 </td>
                                 <td class="px-4 py-2 text-gray-600 whitespace-nowrap">{{ row.positionname|default:'-' }}</td>
                                 <td class="px-4 py-2 text-gray-500 whitespace-nowrap">{{ row.employee_code }}</td>
                                 <td class="px-4 py-2">
-                                    <input type="text" name="device_user_id" value="{{ row.device_user_id }}" placeholder="-" class="border border-gray-300 rounded-lg px-3 py-1.5 w-32">
+                                    <input type="text" name="device_user_id" value="{{ row.device_user_id }}" placeholder="-" class="border {% if row.is_duplicate %}border-red-400{% else %}border-gray-300{% endif %} rounded-lg px-3 py-1.5 w-32">
+                                    {% if row.is_duplicate %}<span class="text-red-600 text-xs" title="Энэ код өөр ажилтантай давхцаж байна">⚠️</span>{% endif %}
                                 </td>
                             </tr>
                             {% empty %}
                             <tr><td colspan="4" class="px-4 py-4 text-center text-gray-500">Идэвхтэй ажилтан олдсонгүй.</td></tr>
                             {% endfor %}
+                            <tr id="filter-empty" hidden><td colspan="4" class="px-4 py-4 text-center text-gray-500">Шүүлтүүрт тохирох ажилтан олдсонгүй.</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -71,4 +131,77 @@
         </form>
     </main>
 </div>
+
+<script>
+// Шүүлтүүр нь зөвхөн мөрийг нууна (input-ууд form-д хэвээр үлдэж хадгалагдана), тиймээс
+// шүүсэн үедээ хадгалахад нуугдсан ажилчдын код өөрчлөгдөхгүй
+(function () {
+    const controls = document.querySelectorAll('[data-filter]');
+    const rows = document.querySelectorAll('tr[data-row]');
+    const visibleCount = document.getElementById('visible-count');
+    const totalCount = document.getElementById('total-count');
+    const emptyRow = document.getElementById('filter-empty');
+    const form = document.getElementById('fingerprint-form');
+
+    function values() {
+        const v = {};
+        controls.forEach(el => { v[el.dataset.filter] = el.value.trim(); });
+        return v;
+    }
+
+    function apply() {
+        const f = values();
+        const name = f.name.toLowerCase();
+        const code = f.code.toLowerCase();
+        const device = f.device.toLowerCase();
+        let shown = 0;
+
+        rows.forEach(row => {
+            const deviceValue = row.querySelector('input[name="device_user_id"]').value.trim().toLowerCase();
+            let ok = true;
+            if (name && !row.dataset.name.includes(name)) ok = false;
+            if (ok && f.position) {
+                ok = f.position === '__none__' ? !row.dataset.position : row.dataset.position === f.position;
+            }
+            if (ok && code && !row.dataset.code.includes(code)) ok = false;
+            if (ok && device && !deviceValue.includes(device)) ok = false;
+            if (ok && f.status === 'filled') ok = !!deviceValue;
+            if (ok && f.status === 'empty') ok = !deviceValue;
+            if (ok && f.status === 'duplicate') ok = !!row.dataset.duplicate;
+            if (ok && f.status === 'active') ok = !row.dataset.inactive;
+            if (ok && f.status === 'inactive') ok = !!row.dataset.inactive;
+            row.hidden = !ok;
+            if (ok) shown++;
+        });
+
+        visibleCount.textContent = shown;
+        totalCount.hidden = shown === rows.length;
+        if (emptyRow) emptyRow.hidden = !(rows.length && shown === 0);
+
+        // Шүүлтүүрийг URL-д хадгалж, хуудас дахин ачаалах/хадгалсны дараа сэргээнэ
+        const params = new URLSearchParams();
+        Object.entries(f).forEach(([k, val]) => { if (val) params.set(k, val); });
+        const qs = params.toString();
+        history.replaceState(null, '', location.pathname + (qs ? '?' + qs : ''));
+    }
+
+    const initial = new URLSearchParams(location.search);
+    controls.forEach(el => {
+        const val = initial.get(el.dataset.filter);
+        if (val !== null) el.value = val;
+        el.addEventListener(el.tagName === 'SELECT' ? 'change' : 'input', apply);
+    });
+
+    document.getElementById('filter-clear').addEventListener('click', () => {
+        controls.forEach(el => { el.value = ''; });
+        apply();
+    });
+
+    form.addEventListener('submit', () => {
+        form.action = location.pathname + location.search;
+    });
+
+    apply();
+})();
+</script>
 {% endblock %}

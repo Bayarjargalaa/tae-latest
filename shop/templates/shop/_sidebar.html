@@ -1,20 +1,21 @@
-<!-- Mobile Hamburger Button (positioned to avoid navbar conflict) -->
-<button id="mobile-menu-button" class="lg:hidden fixed top-20 left-2 z-50 p-3 bg-primary text-white rounded-lg shadow-lg hover:bg-green-700 transition">
-    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<!-- Mobile Hamburger Button (зүүн доод буланд — хуудасны гарчиг, контентыг дарахгүй) -->
+<button id="sidebar-open-button" type="button" aria-label="Цэс нээх" class="lg:hidden fixed bottom-4 left-4 z-50 flex items-center gap-2 px-4 py-3 bg-primary text-white rounded-full shadow-lg hover:bg-green-700 transition">
+    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path>
     </svg>
+    <span class="text-sm font-medium">Цэс</span>
 </button>
 
 <!-- Sidebar Overlay (mobile only) -->
-<div id="sidebar-overlay" class="lg:hidden fixed inset-0 bg-black bg-opacity-50 z-30 hidden"></div>
+<div id="sidebar-overlay" class="lg:hidden fixed inset-0 bg-black bg-opacity-50 z-[60] hidden"></div>
 
 <!-- Sidebar -->
-<aside id="sidebar" class="w-64 bg-white shadow-lg fixed lg:static inset-y-0 left-0 z-40 transform -translate-x-full lg:translate-x-0 transition-transform duration-300">
-    <div class="p-6">
+<aside id="sidebar" class="w-64 max-w-[85vw] shrink-0 bg-white shadow-lg fixed lg:static inset-y-0 left-0 z-[70] lg:z-auto overflow-y-auto overscroll-contain lg:overflow-visible transform -translate-x-full lg:translate-x-0 transition-transform duration-300">
+    <div class="p-4 lg:p-6">
         <!-- Close button (mobile only) -->
         <div class="lg:hidden flex justify-between items-center mb-4">
             <h2 class="text-xl font-bold text-primary">Цэс</h2>
-            <button id="mobile-menu-close" class="p-2 text-gray-600 hover:text-gray-900">
+            <button id="sidebar-close-button" type="button" aria-label="Цэс хаах" class="p-2 text-gray-600 hover:text-gray-900">
                 <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
                 </svg>
@@ -59,6 +60,9 @@
             <a href="{% url 'shop:menu_permission_config' %}" class="flex items-center gap-3 px-4 py-3 rounded-lg text-gray-700 hover:bg-gray-100 transition {% if active_page == 'menu_permission_config' %}bg-primary text-white font-medium{% endif %}">
                 🔐 Цэсний эрх тохируулах
             </a>
+            <a href="{% url 'shop:data_sync' %}" class="flex items-center gap-3 px-4 py-3 rounded-lg text-gray-700 hover:bg-gray-100 transition {% if active_page == 'data_sync' %}bg-primary text-white font-medium{% endif %}">
+                🔄 Өгөгдөл шинэчлэх
+            </a>
             <a href="/admin/" class="flex items-center gap-3 px-4 py-3 rounded-lg text-gray-700 hover:bg-gray-100 transition">
                 ⚙️ Тохиргоо
             </a>
@@ -101,22 +105,24 @@ document.addEventListener('DOMContentLoaded', function() {
 <script>
 // Mobile sidebar toggle
 document.addEventListener('DOMContentLoaded', function() {
-    const menuButton = document.getElementById('mobile-menu-button');
-    const closeButton = document.getElementById('mobile-menu-close');
+    const menuButton = document.getElementById('sidebar-open-button');
+    const closeButton = document.getElementById('sidebar-close-button');
     const sidebar = document.getElementById('sidebar');
     const overlay = document.getElementById('sidebar-overlay');
-    
+
     if (menuButton && sidebar && overlay && closeButton) {
         // Open sidebar
         menuButton.addEventListener('click', function() {
             sidebar.classList.remove('-translate-x-full');
             overlay.classList.remove('hidden');
+            document.body.style.overflow = 'hidden';
         });
-        
+
         // Close sidebar
         function closeSidebar() {
             sidebar.classList.add('-translate-x-full');
             overlay.classList.add('hidden');
+            document.body.style.overflow = '';
         }
         
         closeButton.addEventListener('click', closeSidebar);

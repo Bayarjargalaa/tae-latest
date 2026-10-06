@@ -1,0 +1,6 @@
+{# Автомат утгыг гараар дарж бичих нүд: хоосон бол автомат (саарал placeholder), бичсэн бол (0 ч байж болно) тэр утга #}<td class="px-2 py-1.5">
+    <input type="text" inputmode="decimal" name="{{ name }}" value="{% if value is not None %}{{ value|floatformat:'-2g' }}{% endif %}" placeholder="{{ auto|floatformat:'-2g' }}" data-auto
+           class="pr-input{% if value is not None %} pr-override{% endif %}" autocomplete="off"{% if close %} readonly{% endif %}
+           title="{{ hint }}: автомат {{ auto|floatformat:'-2g' }}. Хоосон үлдээвэл автомат, 0 бичвэл 0 болно.">
+    <span class="print-value">{{ shown|floatformat:'-2g' }}</span>
+</td>

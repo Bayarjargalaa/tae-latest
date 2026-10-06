@@ -1,0 +1,32 @@
+{% comment %}
+Цалин бодолтыг хэвлэх загвар (дэлгэцэнд харагдахгүй). Хуудас, хүснэгт бүрийн баганыг Цалингийн тохиргооны
+"Хэвлэх баганууд" хэсгээс сонгоно (shop.services.payroll_print). Хуудас бүрийг A4 хэвтээ цаасанд багтах
+хамгийн том хэмжээгээр томруулж хэвлэнэ (payroll.html-ийн fitPrintPages скрипт).
+{% endcomment %}
+<div class="pr-print" aria-hidden="true">
+    {% for page in print_pages %}
+    <section class="pr-print-page">
+        {% include 'shop/_payroll_print_head.html' %}
+        {% for table in page.tables %}
+        <table class="pr-print-table{% if not forloop.first %} pr-print-gap{% endif %}">
+            <thead>
+                {% for head_row in table.head_rows %}
+                <tr>
+                    {% for th in head_row %}<th{% if th.colspan > 1 %} colspan="{{ th.colspan }}"{% endif %}{% if th.rowspan > 1 %} rowspan="{{ th.rowspan }}"{% endif %}{% if th.cls %} class="{{ th.cls }}"{% endif %}>{{ th.label }}</th>{% endfor %}
+                </tr>
+                {% endfor %}
+            </thead>
+            <tbody>
+                {% for cells in table.rows %}
+                <tr>{% for td in cells %}<td{% if td.cls %} class="{{ td.cls }}"{% endif %}>{{ td.text }}</td>{% endfor %}</tr>
+                {% endfor %}
+            </tbody>
+            <tfoot>
+                <tr>{% for td in table.foot %}<td{% if td.colspan > 1 %} colspan="{{ td.colspan }}"{% endif %}{% if td.cls %} class="{{ td.cls }}"{% endif %}>{{ td.text }}</td>{% endfor %}</tr>
+            </tfoot>
+        </table>
+        {% endfor %}
+        {% include 'shop/_payroll_print_foot.html' %}
+    </section>
+    {% endfor %}
+</div>

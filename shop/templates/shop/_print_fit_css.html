@@ -1,0 +1,26 @@
+/* Том, тод хэвлэх загвар (.pr-print) - цалин бодолт, урьдчилгаа хэвлэхэд. Дэлгэцэнд харагдахгүй ч хэмжээг нь
+   хэмжиж, хуудсанд багтаах томруулгыг бодохын тулд дэлгэцийн гадна байршуулна (_print_fit_js.html) */
+.pr-print { position: absolute; left: -100000px; top: 0; visibility: hidden; }
+.pr-print-page { width: 1060px; color: #000; font-family: Arial, Helvetica, sans-serif; font-size: 16px; font-weight: 700; }
+.pr-print-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 1em; margin-bottom: 0.25em; line-height: 1.1; }
+.pr-print-company { font-size: 1.05em; white-space: nowrap; }
+.pr-print-title { font-size: 1.3em; text-align: center; flex: 1; }
+.pr-print-approve { font-weight: 400; white-space: nowrap; }
+.pr-print-foot { margin-top: 0.5em; text-align: center; line-height: 1.1; }
+.pr-print-table { width: 100%; border-collapse: collapse; }
+.pr-print-gap { margin-top: 0.6em; }
+.pr-print-table th, .pr-print-table td { border: 1.5px solid #000; padding: var(--pr-row-pad, 0px) 4px; }
+.pr-print-table th { font-size: 0.8em; line-height: 1.05; padding: 1px 3px; text-align: center; vertical-align: middle; }
+.pr-print-table td { text-align: right; white-space: nowrap; line-height: 1.15; }
+.pr-print-table td.t { text-align: left; }
+.pr-print-table td.c { text-align: center; }
+.pr-print-table tfoot td { border-top-width: 2.5px; }
+.pr-print-table .pr-sign { min-width: 8em; }
+@media print {
+    .pr-print { position: static; visibility: visible; }
+    .pr-print-page { overflow: hidden; break-after: page; }
+    .pr-print-page:last-child { break-after: auto; }
+    /* Хуудасны саарал дэвсгэр (body, bg-gray-50) хэвлэгдэхгүй - зөвхөн хэвлэх загварын өнгийг яг хэвлэнэ */
+    html, body, body > div, main, .bg-gray-50 { background: #fff !important; }
+    .pr-print, .pr-print * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+}

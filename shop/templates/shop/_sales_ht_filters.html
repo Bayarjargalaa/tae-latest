@@ -1,0 +1,311 @@
+{% comment %}
+Борлуулалтын тайлан ХТ-р - хүснэгт болон dashboard хуудасны нийтлэг толгой, харагдацын таб, шүүлт.
+view_mode: 'table' | 'dashboard' | 'breakdown' - зөвхөн хүснэгтэд хамаарах сонголтуудыг (дээд түвшин, үзүүлэлт,
+харилцагчийн горим, толгойт агуулах, Excel) dashboard дээр нуух.
+{% endcomment %}
+<style>
+    .ht-filters .choices { margin-bottom: 0; }
+    .ht-filters .choices__inner { min-height: 42px; border-radius: 0.5rem; background: #fff; }
+    .ht-tab { display: inline-flex; align-items: center; gap: .4rem; padding: .45rem 1rem; border-radius: .6rem;
+              font-size: .875rem; font-weight: 500; color: #4b5563; transition: background .15s, color .15s; }
+    .ht-tab:hover { color: #111827; background: rgba(255,255,255,.6); }
+    .ht-tab[aria-current="page"] { background: #fff; color: #111827; box-shadow: 0 1px 2px rgba(0,0,0,.08), 0 0 0 1px rgba(0,0,0,.04); }
+    .ht-preset { font-size: .75rem; padding: .25rem .6rem; border-radius: 999px; border: 1px solid #e5e7eb; color: #4b5563; background: #fff; }
+    .ht-preset:hover { background: #f3f4f6; color: #111827; }
+</style>
+
+<div class="flex flex-wrap items-end justify-between gap-4 mb-4 lg:mb-6">
+    <div>
+        <h1 class="text-2xl lg:text-3xl font-bold text-gray-900 tracking-tight">🧑‍💼 Борлуулалтын тайлан ХТ-р</h1>
+        <p class="text-gray-500 mt-1 text-sm">
+            {% if ht_scope %}Таны хариуцсан сувгийн{% elif filters.channels %}Сонгосон сувгуудын{% elif filters.all_channels %}Бүх сувгийн{% else %}Худалдааны төлөөлөгчийн (ХТ) сувгуудын{% endif %} борлуулалт
+            • {{ date_from }} ~ {{ date_to }}
+        </p>
+    </div>
+    <nav class="inline-flex p-1 rounded-xl bg-gray-100" aria-label="Харагдац">
+        <a href="{% url 'shop:sales_report_ht' %}?{{ querystring }}" class="ht-tab"
+           {% if view_mode == 'table' %}aria-current="page"{% endif %}>📋 Хүснэгт</a>
+        <a href="{% url 'shop:sales_report_ht_dashboard' %}?{{ querystring }}" class="ht-tab"
+           {% if view_mode == 'dashboard' %}aria-current="page"{% endif %}>📊 Dashboard</a>
+        <a href="{% url 'shop:sales_report_ht_breakdown' %}?{{ querystring }}" class="ht-tab"
+           {% if view_mode == 'breakdown' %}aria-current="page"{% endif %}>🔎 Задаргаа</a>
+    </nav>
+</div>
+
+{% if ht_scope %}
+<!-- Нэвтэрсэн ХТ зөвхөн өөрийн хариуцсан (сүүлийн 90 хоногт хамгийн олон борлуулалт хийсэн) сувгийг харна -->
+{% if ht_scope.channels %}
+<div class="flex flex-wrap items-center gap-2 mb-3 px-4 py-2.5 rounded-xl bg-blue-50 border border-blue-200 text-sm text-blue-900">
+    <span>🔒 {{ ht_scope.employee_name }}, та зөвхөн өөрийн хариуцсан сувгийн борлуулалтыг харж байна:</span>
+    {% for code, name in ht_scope.channels %}<strong>{{ code }} {{ name }}</strong>{% if not forloop.last %},{% endif %}{% endfor %}
+</div>
+{% else %}
+<div class="mb-3 px-4 py-2.5 rounded-xl bg-amber-50 border border-amber-200 text-sm text-amber-900">
+    ⚠️ Таны ажилтны код (<strong>{{ ht_scope.employee_code }}</strong>)-той борлуулагчийн кодоор сүүлийн 90 хоногт
+    борлуулалт хийгдсэн суваг олдсонгүй тул тайлан хоосон харагдана. Системийн администраторт хандана уу.
+</div>
+{% endif %}
+{% endif %}
+
+<form method="get" id="ht-form" class="ht-filters bg-white rounded-2xl border border-gray-200 shadow-sm p-4 mb-6">
+    <div class="grid grid-cols-1 md:grid-cols-3 {% if view_mode == 'table' %}xl:grid-cols-7{% else %}xl:grid-cols-6{% endif %} gap-4 mb-4">
+        <div>
+            <label class="block text-sm font-medium mb-1">Эхлэх огноо</label>
+            <input type="date" name="date_from" id="ht-date-from" value="{{ date_from }}"
+                   class="border border-gray-300 rounded-lg px-3 py-2 w-full">
+        </div>
+        <div>
+            <label class="block text-sm font-medium mb-1">Дуусах огноо</label>
+            <input type="date" name="date_to" id="ht-date-to" value="{{ date_to }}"
+                   class="border border-gray-300 rounded-lg px-3 py-2 w-full">
+        </div>
+        {% if view_mode == 'table' %}
+        <div>
+            <label class="block text-sm font-medium mb-1">Харилцагч</label>
+            <select name="sales_mode" class="border border-gray-300 rounded-lg px-3 py-2 w-full">
+                {% for key, label in sales_mode_labels.items %}
+                <option value="{{ key }}" {% if filters.sales_mode == key %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div>
+            <label class="block text-sm font-medium mb-1">Бараа</label>
+            <select name="item_mode" class="border border-gray-300 rounded-lg px-3 py-2 w-full"
+                    title="Үлдэгдэлтэй = &quot;Үлдэгдэлтэй барааны борлуулалт харах&quot; чеклэсэн бол Агуулах жижигт, үгүй бол аль нэг агуулахад">
+                {% for key, label in item_mode_labels.items %}
+                <option value="{{ key }}" {% if filters.item_mode == key %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        {% endif %}
+        <div>
+            <label class="block text-sm font-medium mb-1">Харилцагчийн төлөв</label>
+            <select name="customer_status" class="border border-gray-300 rounded-lg px-3 py-2 w-full">
+                {% for key, label in customer_status_labels.items %}
+                <option value="{{ key }}" {% if filters.customer_status == key %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        {% if view_mode == 'table' %}
+        <div>
+            <label class="block text-sm font-medium mb-1">Мөрийн дээд түвшин</label>
+            <select name="group_by" id="group-by" class="border border-gray-300 rounded-lg px-3 py-2 w-full">
+                {% for key, label in group_labels.items %}
+                <option value="{{ key }}" {% if filters.group_by == key %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div>
+            <label class="block text-sm font-medium mb-1">Үзүүлэлт</label>
+            <select name="metric" id="metric" class="border border-gray-300 rounded-lg px-3 py-2 w-full">
+                {% for key, label in metric_labels.items %}
+                <option value="{{ key }}" {% if filters.metric == key %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        {% endif %}
+    </div>
+
+    <div class="flex flex-wrap items-center gap-2 -mt-2 mb-4">
+        <label class="flex items-center gap-2 text-xs text-gray-500 mr-2">
+            Он сар:
+            <input type="month" id="ht-month" value="{{ date_from|slice:':7' }}"
+                   class="border border-gray-300 rounded-lg px-2 py-1 text-sm text-gray-800">
+        </label>
+        <span class="text-xs text-gray-500 mr-1">Хугацаа:</span>
+        <button type="button" class="ht-preset" data-preset="month">Энэ сар</button>
+        <button type="button" class="ht-preset" data-preset="last3">Сүүлийн 3 сар</button>
+        <button type="button" class="ht-preset" data-preset="last6">Сүүлийн 6 сар</button>
+        <button type="button" class="ht-preset" data-preset="year">Энэ он</button>
+        <button type="button" class="ht-preset" data-preset="prevyear">Өнгөрсөн он</button>
+        <button type="button" class="ht-preset" data-preset="last12">Сүүлийн 12 сар</button>
+    </div>
+
+    {% if view_mode == 'dashboard' %}
+    <div class="flex flex-wrap items-end gap-3 mb-4 p-3 rounded-xl bg-gray-50 border border-gray-100">
+        <div>
+            <label class="block text-sm font-medium mb-1">Харьцуулах үе</label>
+            <select name="compare" id="ht-compare" class="border border-gray-300 rounded-lg px-3 py-2 bg-white">
+                {% for key, label in compare_labels.items %}
+                <option value="{{ key }}" {% if filters.compare == key %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div id="ht-compare-custom" class="flex flex-wrap items-end gap-3 {% if filters.compare != 'custom' %}hidden{% endif %}">
+            <div>
+                <label class="block text-sm font-medium mb-1">Харьцуулах эхлэх</label>
+                <input type="date" name="compare_from" value="{{ filters.compare_from|date:'Y-m-d' }}"
+                       class="border border-gray-300 rounded-lg px-3 py-2 bg-white">
+            </div>
+            <div>
+                <label class="block text-sm font-medium mb-1">Харьцуулах дуусах</label>
+                <input type="date" name="compare_to" value="{{ filters.compare_to|date:'Y-m-d' }}"
+                       class="border border-gray-300 rounded-lg px-3 py-2 bg-white">
+            </div>
+        </div>
+        <p class="text-xs text-gray-500 pb-2">
+            Жишээ: 2026.01–04-ийг 2025.01–04-тэй харьцуулахдаа хугацааг 2026.01.01–2026.04.30 болгоод "Өнгөрсөн жилийн мөн үе"-г сонгоно.
+        </p>
+    </div>
+    {% endif %}
+
+    <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 mb-4">
+        <div>
+            <label class="block text-sm font-medium mb-1">Бараа (олноор сонгож болно)</label>
+            <select name="item" id="item-select" multiple>
+                {% for name, code in item_options %}
+                <option value="{{ name }}" {% if name in filters.items %}selected{% endif %}>{% if code %}{{ code }} - {% endif %}{{ name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div>
+            <label class="block text-sm font-medium mb-1">Харилцагч (олноор сонгож болно)</label>
+            <select name="customer" id="customer-select" multiple>
+                {% for customer_id, name in customer_options %}
+                <option value="{{ customer_id }}" {% if customer_id in filters.customers %}selected{% endif %}>{{ name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div>
+            <label class="block text-sm font-medium mb-1">Харилцагчийн бүлэг (дэд бүлгүүд хамт орно)</label>
+            <select name="customer_group" id="customer-group-select" multiple>
+                {% for name, label in customer_group_options %}
+                <option value="{{ name }}" {% if name in filters.customer_groups %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div>
+            <label class="block text-sm font-medium mb-1">Борлуулалтын суваг (олноор сонгож болно)</label>
+            <select name="channel" id="channel-select" multiple>
+                {% for code, name in channel_options %}
+                <option value="{{ code }}" {% if code in filters.channels %}selected{% endif %}>{{ code }} - {{ name }}</option>
+                {% endfor %}
+            </select>
+            <!-- Суваг сонгоогүй үед аль сувгуудаар харах вэ (анхдагч: бүх суваг); суваг сонгосон бол үйлчлэхгүй.
+                 ХТ-д (ht_scope) зөвхөн өөрийн сувгууд тул хэрэггүй -->
+            {% if not ht_scope %}
+            <div id="channel-scope" class="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm mt-2 transition-opacity">
+                <span class="text-gray-500">Сонгоогүй үед:</span>
+                {% for key, label in channel_scope_labels.items %}
+                <label class="flex items-center gap-1.5">
+                    <input type="radio" name="channel_scope" value="{{ key }}" {% if filters.channel_scope == key %}checked{% endif %}
+                           class="w-4 h-4 accent-primary">
+                    {{ label }}{% if key == 'all' %} ({{ channel_options|length }}){% endif %}
+                </label>
+                {% endfor %}
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="flex flex-wrap items-center gap-x-6 gap-y-3">
+        <label class="flex items-center gap-2 text-sm font-medium">
+            <input type="checkbox" name="stock_only" value="true" {% if filters.stock_only %}checked{% endif %}
+                   class="w-4 h-4 accent-primary">
+            Үлдэгдэлтэй барааны борлуулалт харах (Агуулах жижиг)
+        </label>
+        {% if view_mode == 'table' %}
+        <label class="flex items-center gap-2 text-sm font-medium">
+            <input type="checkbox" name="show_tolgoit" value="true" {% if filters.show_tolgoit %}checked{% endif %}
+                   class="w-4 h-4 accent-primary">
+            Толгойт агуулахын үлдэгдэл харах
+        </label>
+        {% endif %}
+        <div class="flex gap-2 ml-auto">
+            <button type="submit" class="bg-primary text-white px-6 py-2 rounded-lg hover:bg-green-700 transition">
+                Шүүх
+            </button>
+            <a href="{% if view_mode == 'table' %}{% url 'shop:sales_report_ht' %}{% elif view_mode == 'breakdown' %}{% url 'shop:sales_report_ht_breakdown' %}{% else %}{% url 'shop:sales_report_ht_dashboard' %}{% endif %}"
+               class="bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50 transition">
+                Цэвэрлэх
+            </a>
+            {% if view_mode == 'table' %}
+            <a id="export-link" href="{% url 'shop:sales_report_ht_export' %}?{{ querystring }}"
+               class="bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50 transition whitespace-nowrap">
+                📥 Excel рүү гаргах
+            </a>
+            {% endif %}
+        </div>
+    </div>
+</form>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const choicesOptions = {
+        removeItemButton: true,
+        searchEnabled: true,
+        searchPlaceholderValue: 'Хайх...',
+        noResultsText: 'Илэрц олдсонгүй',
+        noChoicesText: 'Сонгох зүйлгүй',
+        itemSelectText: '',
+        shouldSort: false,
+        renderChoiceLimit: 300,
+        searchResultLimit: 100,
+        placeholder: true,
+    };
+    // Барааг "код - нэр"-ийн аль ч хэсгээр бараг яг таараагаар хайна (анхдагч нь бүдэг хайлт)
+    new Choices('#item-select', {
+        ...choicesOptions, placeholderValue: 'Бүх бараа (код эсвэл нэрээр хайх)',
+        searchFields: ['label'], fuseOptions: { threshold: 0.1, ignoreLocation: true },
+    });
+    new Choices('#customer-select', { ...choicesOptions, placeholderValue: 'Бүх харилцагч' });
+    new Choices('#customer-group-select', { ...choicesOptions, placeholderValue: 'Бүх бүлэг' });
+    const channelChoices = new Choices('#channel-select', {
+        ...choicesOptions, placeholderValue: '{% if filters.channel_scope == "ht" %}ХТ сувгууд{% else %}Бүх суваг{% endif %}',
+    });
+
+    // Суваг сонгосон үед "Сонгоогүй үед" сонголт үйлчлэхгүй тул бүдгэрүүлнэ; сонголтыг солиход шууд шүүнэ
+    const scopeBox = document.getElementById('channel-scope');
+    const channelSelect = document.getElementById('channel-select');
+    if (scopeBox) {
+        const syncScope = () => scopeBox.classList.toggle('opacity-40', channelChoices.getValue(true).length > 0);
+        channelSelect.addEventListener('addItem', syncScope);
+        channelSelect.addEventListener('removeItem', syncScope);
+        syncScope();
+        scopeBox.querySelectorAll('input[name="channel_scope"]').forEach((radio) => {
+            radio.addEventListener('change', () => document.getElementById('ht-form').submit());
+        });
+    }
+
+    // Харьцуулах үе: "Сонгосон хугацаа" үед огноо оруулах талбарыг гаргана, бусад үед шууд шүүнэ
+    const compareSelect = document.getElementById('ht-compare');
+    if (compareSelect) {
+        compareSelect.addEventListener('change', () => {
+            const custom = compareSelect.value === 'custom';
+            document.getElementById('ht-compare-custom').classList.toggle('hidden', !custom);
+            if (!custom) document.getElementById('ht-form').submit();
+        });
+    }
+
+    // Он сар сонгоход тухайн сарын эхнээс сүүл хүртэл шүүнэ
+    const monthInput = document.getElementById('ht-month');
+    monthInput.addEventListener('change', () => {
+        if (!monthInput.value) return;
+        const [y, m] = monthInput.value.split('-').map(Number);
+        document.getElementById('ht-date-from').value = iso(new Date(y, m - 1, 1));
+        document.getElementById('ht-date-to').value = iso(new Date(y, m, 0));
+        document.getElementById('ht-form').submit();
+    });
+
+    // Хугацааны бэлэн сонголтууд - огноог бөглөөд шууд шүүнэ
+    const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    document.querySelectorAll('.ht-preset').forEach((button) => {
+        button.addEventListener('click', () => {
+            const today = new Date();
+            const y = today.getFullYear(), m = today.getMonth();
+            const ranges = {
+                month: [new Date(y, m, 1), today],
+                last3: [new Date(y, m - 2, 1), today],
+                last6: [new Date(y, m - 5, 1), today],
+                year: [new Date(y, 0, 1), today],
+                prevyear: [new Date(y - 1, 0, 1), new Date(y - 1, 11, 31)],
+                last12: [new Date(y, m - 11, 1), today],
+            };
+            const [from, to] = ranges[button.dataset.preset];
+            document.getElementById('ht-date-from').value = iso(from);
+            document.getElementById('ht-date-to').value = iso(to);
+            document.getElementById('ht-form').submit();
+        });
+    });
+});
+</script>

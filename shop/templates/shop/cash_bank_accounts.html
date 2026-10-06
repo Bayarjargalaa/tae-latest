@@ -1,0 +1,215 @@
+{% extends 'base.html' %}
+
+{% block title %}Бэлэн цалингийн данс - Euro Foods{% endblock %}
+
+{% block hide_mobile_menu %}hidden{% endblock %}
+
+{% block content %}
+{% load l10n %}
+<div class="flex min-h-screen bg-gray-50">
+    {% include 'shop/_sidebar.html' with active_page='cash_bank_accounts' %}
+
+    <main class="flex-1 p-2 lg:p-8 lg:ml-0 min-w-0">
+        <div class="flex flex-wrap items-center justify-between gap-2 mb-6">
+            <div>
+                <h1 class="text-2xl lg:text-3xl font-bold text-gray-900">🏦 Бэлэн цалингийн данс</h1>
+                <p class="text-gray-600 mt-2">Бэлэн болон хосолсон цалинтай ажилчдын данс, {{ month_label }}ын бэлэн цалингийн олгох дүн{% if not close %} (урьдчилсан){% endif %}</p>
+            </div>
+            <a href="{{ export_url }}" class="bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50 transition whitespace-nowrap">⬇ Excel</a>
+        </div>
+
+        <form method="get" class="bg-white rounded-lg shadow p-4 mb-4 space-y-3">
+            <div class="flex flex-wrap items-end gap-3">
+                <a href="?{% for k, v in f.items %}{{ k }}={{ v|urlencode }}&{% endfor %}sort={{ sort|urlencode }}&year={{ prev_month.year|unlocalize }}&month={{ prev_month.month }}" class="bg-white border border-gray-300 text-gray-700 px-3 py-2 rounded-lg hover:bg-gray-50" title="Өмнөх сар">←</a>
+                <div>
+                    <label for="ca-year" class="block text-xs font-medium text-gray-600 mb-1">Он</label>
+                    <select id="ca-year" name="year" class="border border-gray-300 rounded-lg px-2 py-2" onchange="this.form.submit()">
+                        {% for y in years %}<option value="{{ y|unlocalize }}" {% if y == year %}selected{% endif %}>{{ y|unlocalize }}</option>{% endfor %}
+                    </select>
+                </div>
+                <div>
+                    <label for="ca-month" class="block text-xs font-medium text-gray-600 mb-1">Сар <span class="text-gray-400 font-normal">(олгох дүн)</span></label>
+                    <select id="ca-month" name="month" class="border border-gray-300 rounded-lg px-2 py-2" onchange="this.form.submit()">
+                        {% for num, label in months %}<option value="{{ num }}" {% if num == month %}selected{% endif %}>{{ label }}</option>{% endfor %}
+                    </select>
+                </div>
+                <a href="?{% for k, v in f.items %}{{ k }}={{ v|urlencode }}&{% endfor %}sort={{ sort|urlencode }}&year={{ next_month.year|unlocalize }}&month={{ next_month.month }}" class="bg-white border border-gray-300 text-gray-700 px-3 py-2 rounded-lg hover:bg-gray-50" title="Дараагийн сар">→</a>
+                <div class="flex-1 min-w-[14rem]">
+                    <label for="ca-q" class="block text-xs font-medium text-gray-600 mb-1">Хайх</label>
+                    <input id="ca-q" type="search" name="q" value="{{ f.q }}" placeholder="Нэр, код эсвэл дансны дугаар" class="w-full border border-gray-300 rounded-lg px-3 py-2">
+                </div>
+                <button type="submit" class="bg-primary text-white px-5 py-2 rounded-lg hover:bg-green-700 transition">Шүүх</button>
+            </div>
+            <div class="flex flex-wrap items-end gap-3">
+                {% with sel='border border-gray-300 rounded-lg px-2 py-1.5 text-sm max-w-[13rem]' %}
+                <div>
+                    <label for="ca-bank" class="block text-xs font-medium text-gray-600 mb-1">Банк</label>
+                    <select id="ca-bank" name="bank" class="{{ sel }} {% if f.bank %}ring-1 ring-primary border-primary{% endif %}" onchange="this.form.submit()">
+                        <option value="">Бүгд</option>
+                        {% for v in bank_options %}<option value="{{ v }}" {% if v == f.bank %}selected{% endif %}>{{ v }}</option>{% endfor %}
+                    </select>
+                </div>
+                <div>
+                    <label for="ca-position" class="block text-xs font-medium text-gray-600 mb-1">Албан тушаал</label>
+                    <select id="ca-position" name="position" class="{{ sel }} {% if f.position %}ring-1 ring-primary border-primary{% endif %}" onchange="this.form.submit()">
+                        <option value="">Бүгд</option>
+                        {% for v in position_options %}<option value="{{ v }}" {% if v == f.position %}selected{% endif %}>{{ v }}</option>{% endfor %}
+                    </select>
+                </div>
+                <div>
+                    <label for="ca-department" class="block text-xs font-medium text-gray-600 mb-1">Хэлтэс</label>
+                    <select id="ca-department" name="department" class="{{ sel }} {% if f.department %}ring-1 ring-primary border-primary{% endif %}" onchange="this.form.submit()">
+                        <option value="">Бүгд</option>
+                        {% for v in department_options %}<option value="{{ v }}" {% if v == f.department %}selected{% endif %}>{{ v }}</option>{% endfor %}
+                    </select>
+                </div>
+                <div>
+                    <label for="ca-pay" class="block text-xs font-medium text-gray-600 mb-1">Олгох хэлбэр</label>
+                    <select id="ca-pay" name="pay_type" class="{{ sel }} {% if f.pay_type %}ring-1 ring-primary border-primary{% endif %}" onchange="this.form.submit()">
+                        <option value="">Бүгд</option>
+                        {% for v, label in pay_type_options %}<option value="{{ v }}" {% if v == f.pay_type %}selected{% endif %}>{{ label }}</option>{% endfor %}
+                    </select>
+                </div>
+                <div>
+                    <label for="ca-status" class="block text-xs font-medium text-gray-600 mb-1">Дансны төлөв</label>
+                    <select id="ca-status" name="status" class="{{ sel }} {% if f.status %}ring-1 ring-primary border-primary{% endif %}" onchange="this.form.submit()">
+                        <option value="">Бүгд</option>
+                        {% for v, label in status_options %}<option value="{{ v }}" {% if v == f.status %}selected{% endif %}>{{ label }}</option>{% endfor %}
+                    </select>
+                </div>
+                <div>
+                    <label for="ca-active" class="block text-xs font-medium text-gray-600 mb-1">Ажилчид</label>
+                    <select id="ca-active" name="active" class="{{ sel }}" onchange="this.form.submit()">
+                        <option value="1" {% if f.active == '1' %}selected{% endif %}>Идэвхтэй</option>
+                        <option value="all" {% if f.active != '1' %}selected{% endif %}>Ажлаас гарсан ч</option>
+                    </select>
+                </div>
+                {% endwith %}
+                <input type="hidden" name="sort" value="{{ sort }}">
+                {% if has_filters %}<a href="?year={{ year|unlocalize }}&month={{ month }}&sort={{ sort|urlencode }}" class="text-sm text-gray-500 underline pb-2">Шүүлтүүр арилгах</a>{% endif %}
+            </div>
+        </form>
+
+        <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+            <div class="bg-white rounded-lg shadow p-4">
+                <div class="text-sm text-gray-500">Ажилтан</div>
+                <div class="text-2xl font-bold text-gray-900">{{ summary.count }}</div>
+                <div class="text-xs text-gray-500">{{ summary.with_account }} нь данстай</div>
+            </div>
+            <div class="bg-white rounded-lg shadow p-4 ring-2 ring-primary">
+                <div class="text-sm text-gray-500">Бэлэн олгох дүн</div>
+                <div class="text-2xl font-bold text-primary">{{ summary.payout|floatformat:'0g' }}₮</div>
+                <div class="text-xs text-gray-500">{{ month_label }}{% if close %} · 🔒 хаагдсан{% endif %}</div>
+            </div>
+            <div class="bg-white rounded-lg shadow p-4">
+                <div class="text-sm text-gray-500">Банкаар</div>
+                <div class="text-xs text-gray-700 mt-1 space-y-0.5">
+                    {% for bank, count, amount in summary.by_bank %}<div class="flex justify-between gap-2"><span>{{ bank }} ({{ count }})</span><b>{{ amount|floatformat:'0g' }}</b></div>{% empty %}-{% endfor %}
+                </div>
+            </div>
+            <div class="bg-white rounded-lg shadow p-4">
+                <div class="text-sm text-gray-500">Анхаарах</div>
+                <div class="text-2xl font-bold {% if summary.invalid or summary.missing %}text-amber-600{% else %}text-gray-900{% endif %}">{{ summary.invalid|add:summary.missing }}</div>
+                <div class="text-xs text-gray-500">{{ summary.invalid }} шалгах · {{ summary.missing }} данс оруулаагүй</div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-lg shadow p-4 lg:p-6">
+            {% if not rows %}
+            <p class="text-gray-500">Сонгосон нөхцөлд ажилтан алга байна.</p>
+            {% else %}
+            <div class="overflow-x-auto">
+                <table class="min-w-full text-sm border border-gray-200">
+                    <thead>
+                        <tr class="bg-gray-100 text-left align-bottom">
+                            <th class="px-3 py-2 font-semibold text-gray-700">№</th>
+                            {% for key, label, right, url, direction in columns %}
+                            <th class="p-0 font-semibold {% if key == 'account' %}bg-gray-200 text-gray-900{% else %}text-gray-700{% endif %} {% if right %}text-right{% endif %}"
+                                aria-sort="{% if direction == 'asc' %}ascending{% elif direction == 'desc' %}descending{% else %}none{% endif %}">
+                                <a href="{{ url }}" class="flex items-center gap-1 px-3 py-2 hover:bg-gray-200 {% if right %}justify-end{% endif %} {% if direction %}text-gray-900{% endif %}" title="Энэ баганаар эрэмбэлэх">
+                                    {{ label }}<span class="text-[10px] {% if not direction %}text-gray-300{% endif %}">{% if direction == 'asc' %}▲{% elif direction == 'desc' %}▼{% else %}↕{% endif %}</span>
+                                </a>
+                            </th>
+                            {% endfor %}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for r in rows %}
+                        <tr class="border-t {% if not r.active %}text-gray-400{% endif %}">
+                            <td class="px-3 py-2 text-gray-500">{{ r.no }}</td>
+                            <td class="px-3 py-2 whitespace-nowrap"><div class="font-medium {% if r.active %}text-gray-900{% endif %}">{{ r.name }}</div><div class="text-xs text-gray-500">{{ r.code }}{% if r.department %} · {{ r.department }}{% endif %}{% if not r.active %} · ажлаас гарсан{% endif %}</div></td>
+                            <td class="px-3 py-2 whitespace-nowrap">{{ r.position|default:'-' }}</td>
+                            <td class="px-3 py-2">{{ r.pay_label }}</td>
+                            <td class="px-3 py-2 whitespace-nowrap">{{ r.bank|default:'-' }}</td>
+                            <td class="px-3 py-2 whitespace-nowrap bg-gray-50">
+                                {% if r.status == 'missing' %}
+                                <span class="text-amber-700 text-xs">Данс оруулаагүй</span>
+                                {% else %}
+                                <span class="inline-flex items-center gap-2">
+                                    <span class="font-mono tracking-wide text-gray-900" {% if r.raw != r.account %}title="Бичсэн: {{ r.raw }}"{% endif %}>{{ r.account }}</span>
+                                    <button type="button" class="text-xs text-gray-500 hover:text-gray-900 border border-gray-200 rounded px-1.5 py-0.5 hover:bg-white" data-copy="{{ r.account }}" title="Хуулах">⧉</button>
+                                    {% if r.status == 'invalid' %}<span class="text-xs text-amber-700" title="IBAN нь MN + 18 оронтой тоо байх ёстой - Цалингийн тохиргоонд шалгана уу">⚠ шалгах</span>{% endif %}
+                                </span>
+                                {% endif %}
+                            </td>
+                            <td class="px-3 py-2 text-right whitespace-nowrap">{% if r.payout is None %}<span class="text-gray-300">-</span>{% else %}{{ r.payout|floatformat:'0g' }}{% endif %}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                    <tfoot>
+                        <tr class="border-t-2 border-gray-300 font-semibold bg-gray-50">
+                            <td class="px-3 py-2" colspan="6">Нийт ({{ summary.count }} ажилтан)</td>
+                            <td class="px-3 py-2 text-right whitespace-nowrap">{{ summary.payout|floatformat:'0g' }}</td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+            <p class="text-xs text-gray-500 mt-3">Дансыг "MN"-ийн араас тоонуудыг зайгүйгээр харуулав. Засах бол
+                <a href="{% url 'shop:payroll_settings' %}" class="text-primary underline">Цалингийн тохиргоо</a>-нд.</p>
+            {% endif %}
+        </div>
+    </main>
+</div>
+<script>
+// Дансны дугаар хуулах. navigator.clipboard нь зөвхөн HTTPS / localhost дээр ажилладаг тул HTTP-ээр нээсэн үед
+// түр textarea-аар (execCommand) хуулна
+function copyText(text) {
+    if (navigator.clipboard && window.isSecureContext) return navigator.clipboard.writeText(text);
+    return new Promise((resolve, reject) => {
+        const area = document.createElement('textarea');
+        area.value = text;
+        area.setAttribute('readonly', '');
+        area.style.position = 'fixed';
+        area.style.opacity = '0';
+        document.body.appendChild(area);
+        area.select();
+        area.setSelectionRange(0, text.length);
+        const ok = document.execCommand('copy');
+        area.remove();
+        ok ? resolve() : reject(new Error('copy failed'));
+    });
+}
+document.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-copy]');
+    if (!btn) return;
+    const old = btn.textContent;
+    const flash = (text, cls) => {
+        btn.textContent = text;
+        btn.classList.add(cls);
+        setTimeout(() => { btn.textContent = old; btn.classList.remove(cls); }, 1200);
+    };
+    copyText(btn.dataset.copy)
+        .then(() => flash('✓ хуулсан', 'text-green-700'))
+        .catch(() => {
+            // Хуулж чадаагүй бол дугаарыг сонгож өгнө - Ctrl+C дарахад хуулагдана
+            const span = btn.previousElementSibling;
+            const range = document.createRange();
+            range.selectNodeContents(span);
+            const sel = window.getSelection();
+            sel.removeAllRanges();
+            sel.addRange(range);
+            flash('Ctrl+C', 'text-amber-700');
+        });
+});
+</script>
+{% endblock %}

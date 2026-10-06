@@ -1,0 +1,4 @@
+{% load product_filters %}{% with value=row|get_item:field %}<td class="px-2 py-1.5">
+    <input type="text" inputmode="decimal" name="{{ field }}" value="{% if value %}{{ value|floatformat:'-2g' }}{% endif %}" placeholder="0" class="pr-input" autocomplete="off"{% if close %} readonly{% endif %}>
+    <span class="print-value">{{ value|floatformat:'-2g' }}</span>
+</td>{% endwith %}

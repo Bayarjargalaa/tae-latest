@@ -23,7 +23,7 @@
         {% if messages %}
         <div class="mb-4">
             {% for message in messages %}
-            <div class="p-3 rounded-lg bg-green-100 text-green-800 mb-2">{{ message }}</div>
+            <div class="p-3 rounded-lg {% if message.tags == 'error' %}bg-red-100 text-red-800{% else %}bg-green-100 text-green-800{% endif %} mb-2">{{ message }}</div>
             {% endfor %}
         </div>
         {% endif %}
@@ -64,6 +64,47 @@
             </p>
         </div>
 
+        <form method="get" class="bg-white rounded-lg shadow p-4 mb-4 flex flex-wrap items-end gap-3">
+            <div class="flex-1 min-w-[200px]">
+                <label class="block text-xs text-gray-500 mb-1">Хайх</label>
+                <input type="text" name="q" value="{{ q }}" placeholder="Хоолны нэр, тайлбар, орцын нэр/код..." class="w-full border border-gray-300 rounded-lg px-3 py-2">
+            </div>
+            <div>
+                <label class="block text-xs text-gray-500 mb-1">Төрөл</label>
+                <select name="meal_type" class="border border-gray-300 rounded-lg px-3 py-2">
+                    <option value="">Бүгд</option>
+                    {% for value, label in meal_type_choices %}
+                    <option value="{{ value }}" {% if value == filter_meal_type %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <label class="block text-xs text-gray-500 mb-1">Дугаар</label>
+                <select name="number" class="border border-gray-300 rounded-lg px-3 py-2">
+                    <option value="">Бүгд</option>
+                    {% for n in number_choices %}
+                    <option value="{{ n }}" {% if n|stringformat:'s' == filter_number %}selected{% endif %}>{{ n }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <label class="block text-xs text-gray-500 mb-1">Төлөв</label>
+                <select name="status" class="border border-gray-300 rounded-lg px-3 py-2">
+                    <option value="">Бүгд</option>
+                    <option value="active" {% if filter_status == 'active' %}selected{% endif %}>Идэвхтэй</option>
+                    <option value="inactive" {% if filter_status == 'inactive' %}selected{% endif %}>Идэвхгүй</option>
+                </select>
+            </div>
+            <button type="submit" class="bg-primary text-white px-4 py-2 rounded-lg hover:bg-green-700 transition">Хайх</button>
+            {% if is_filtered %}
+            <a href="{% url 'shop:meal_list' %}" class="px-4 py-2 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-100 transition">Цэвэрлэх</a>
+            {% endif %}
+        </form>
+
+        {% if is_filtered %}
+        <p class="text-sm text-gray-500 mb-2">Олдсон: <strong>{{ meals|length }}</strong> хоол</p>
+        {% endif %}
+
         <div class="bg-white rounded-lg shadow overflow-x-auto">
             <table class="min-w-full text-sm">
                 <thead>
@@ -77,10 +118,13 @@
                 </thead>
                 <tbody>
                     {% for meal in meals %}
-                    <tr class="border-t">
+                    <tr class="border-t{% if not meal.is_active %} bg-gray-50 text-gray-400{% endif %}">
                         <td class="px-4 py-3">{{ meal.get_meal_type_display }}</td>
                         <td class="px-4 py-3">{{ meal.number_display|default:'-' }}</td>
-                        <td class="px-4 py-3 font-medium text-gray-900">{{ meal.name }}</td>
+                        <td class="px-4 py-3 font-medium {% if meal.is_active %}text-gray-900{% else %}text-gray-400{% endif %}">
+                            {{ meal.name }}
+                            {% if not meal.is_active %}<span class="ml-1 text-xs bg-gray-200 text-gray-600 px-2 py-0.5 rounded">Идэвхгүй{% if meal.deactivated_at %} ({{ meal.deactivated_at|date:"Y-m-d" }}-с){% endif %}</span>{% endif %}
+                        </td>
                         <td class="px-4 py-3 text-gray-600">
                             {% if meal.ingredients.all %}
                             <table class="min-w-full text-xs border border-gray-200 rounded">
@@ -107,12 +151,20 @@
                         </td>
                         <td class="px-4 py-3 text-right whitespace-nowrap">
                             <a href="{% url 'shop:meal_edit' meal.pk %}" class="text-primary hover:underline mr-3">Засах</a>
+                            <form method="post" action="{% url 'shop:meal_toggle_active' meal.pk %}" class="inline">
+                                {% csrf_token %}
+                                {% if meal.is_active %}
+                                <button type="submit" class="text-yellow-600 hover:underline mr-3" onclick="return confirm('Энэ хоолыг идэвхгүй болгох уу? Өнөөдрөөс эхлэн хоолны цэс, материалын тооцоонд орохгүй, өмнөх бүртгэлд хэвээр харагдана.')">Идэвхгүй болгох</button>
+                                {% else %}
+                                <button type="submit" class="text-green-600 hover:underline mr-3">Идэвхжүүлэх</button>
+                                {% endif %}
+                            </form>
                             <a href="{% url 'shop:meal_delete' meal.pk %}" class="text-red-600 hover:underline">Устгах</a>
                         </td>
                     </tr>
                     {% empty %}
                     <tr>
-                        <td colspan="5" class="px-4 py-6 text-center text-gray-500">Хоол бүртгэгдээгүй байна.</td>
+                        <td colspan="5" class="px-4 py-6 text-center text-gray-500">{% if is_filtered %}Хайлтад тохирох хоол олдсонгүй.{% else %}Хоол бүртгэгдээгүй байна.{% endif %}</td>
                     </tr>
                     {% endfor %}
                 </tbody>

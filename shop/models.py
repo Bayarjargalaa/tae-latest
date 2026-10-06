@@ -3,6 +3,7 @@ E-commerce shop моделууд
 """
 import os
 from datetime import date, timedelta
+from decimal import Decimal
 from django.db import models
 from django.contrib.auth.models import User
 from django.conf import settings
@@ -92,6 +93,9 @@ class Meal(models.Model):
     meal_type = models.CharField('Төрөл', max_length=1, choices=MEAL_TYPE_CHOICES, default='1')
     name = models.CharField('Хоолны нэр', max_length=200)
     description = models.TextField('Тайлбар', blank=True)
+    is_active = models.BooleanField('Идэвхтэй', default=True)
+    # Идэвхгүй болсон өдөр - үүнээс өмнөх өдрийн бүртгэлд хоол хэвээр харагдана
+    deactivated_at = models.DateField('Идэвхгүй болсон огноо', null=True, blank=True)
     created_at = models.DateTimeField('Үүсгэсэн', auto_now_add=True)
     updated_at = models.DateTimeField('Шинэчилсэн', auto_now=True)
 
@@ -104,6 +108,14 @@ class Meal(models.Model):
     def __str__(self):
         prefix = f"{self.number_display}. " if self.number_display else ""
         return f"{prefix}{self.name} ({self.get_meal_type_display()})"
+
+    @staticmethod
+    def visible_on_q(date):
+        """Тухайн өдөрт харагдах хоолны нөхцөл (идэвхтэй, эсвэл тэр өдрөөс хойш идэвхгүй болсон)."""
+        return models.Q(is_active=True) | models.Q(deactivated_at__gt=date)
+
+    def is_visible_on(self, date):
+        return self.is_active or (self.deactivated_at is not None and date < self.deactivated_at)
 
     @property
     def number_list(self):
@@ -255,7 +267,10 @@ class MealAttendance(models.Model):
         number = self.menu_number
         if not number:
             return Meal.objects.none()
-        return Meal.objects.filter(numbers__number=number).prefetch_related('ingredients').distinct()
+        return (
+            Meal.objects.filter(Meal.visible_on_q(self.date), numbers__number=number)
+            .prefetch_related('ingredients').distinct()
+        )
 
     def ingredients_for_meal(self, meal):
         """Тухайн өдөрт хадгалагдсан орцны хувилбар (байхгүй бол стандарт жор)."""
@@ -432,12 +447,30 @@ class AttendanceRecord(models.Model):
     late_20_plus = models.PositiveIntegerField('20-с дээш минут', default=0)
     total_late_minutes = models.PositiveIntegerField('Нийт хоцорсон минут', default=0)
     customer_name = models.CharField('Харилцагчийн нэр', max_length=1000, blank=True)
+    # Тухайн өдөр өөр албан тушаалд шилжин ажилласан бол (жиш: харуул туслахаар) тэр албан тушаал - хоцролт,
+    # хоног бүртгэлийг түүгээр тооцно. Хоосон бол ажилтны үндсэн албан тушаал (OpenDataEmployee.positionname)
+    position_name = models.CharField('Албан тушаал (тухайн өдөр)', max_length=200, blank=True)
+    # True бол тухайн өдөр үндсэн мөрөөс гадна өөр албан тушаалыг хавсарч ажилласан нэмэлт мөр (гараар нэмсэн,
+    # төхөөрөмжийн бүртгэлгүй). Нэг өдөрт үндсэн мөр ганц, нэмэлт мөр албан тушаал бүрт нэг байна
+    is_additional = models.BooleanField('Хавсарсан албан тушаалын мөр', default=False)
+    # True бол энэ (ажилтан, огноо)-ны мөрийг хүснэгтээс нууна - төхөөрөмжийн түүхий бүртгэлээс автоматаар
+    # үүсэх мөрийг ч мөн (түүхий өгөгдлийг устгахгүйгээр) хасна. Энэ бичлэгийг устгавал мөр сэргэнэ.
+    is_deleted = models.BooleanField('Устгасан', default=False)
     updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, verbose_name='Засварласан хэрэглэгч')
     updated_at = models.DateTimeField('Засварласан огноо', auto_now=True)
 
     class Meta:
         db_table = 'shop_attendance_record'
-        unique_together = ('employee_code', 'date')
+        constraints = [
+            models.UniqueConstraint(
+                fields=['employee_code', 'date'], condition=models.Q(is_additional=False),
+                name='unique_attendance_primary_row',
+            ),
+            models.UniqueConstraint(
+                fields=['employee_code', 'date', 'position_name'], condition=models.Q(is_additional=True),
+                name='unique_attendance_additional_row',
+            ),
+        ]
         ordering = ['-date', 'name']
         verbose_name = 'Цаг бүртгэлийн мөр'
         verbose_name_plural = 'Цаг бүртгэлийн мөрүүд'
@@ -477,10 +510,29 @@ class AttendancePositionRule(models.Model):
 
     start_time тодорхойлогдсон бол: ирсэн цаг тэр цагаас хойш байвал зөрүүг хоцролтоор тооцно.
     start_time хоосон (NULL) бол: 'ирсэн цагаас хойш 8 цаг ажиллах ёстой' дүрэм хэрэгжинэ -
-    өөрөөр хэлбэл (тарсан цаг - ирсэн цаг) < 8 цаг бол дутсан минутыг хоцролтоор тооцно.
+    12:00-13:00 цайны цагийг оруулан (тарсан цаг - ирсэн цаг) < 9 цаг бол дутсан минутыг хоцролтоор тооцно.
     """
+    SCHEDULE_WEEKDAYS = 'weekdays'
+    SCHEDULE_SATURDAY = 'saturday'
+    SCHEDULE_SHIFT = 'shift'
+    SCHEDULE_CHOICES = [
+        (SCHEDULE_WEEKDAYS, 'Бямбад ажилладаггүй'),
+        (SCHEDULE_SATURDAY, 'Бямбад ажилладаг'),
+        (SCHEDULE_SHIFT, 'Ээлжийн'),
+    ]
+
     position_name = models.CharField('Албан тушаал', max_length=200, unique=True)
     start_time = models.TimeField('Ажил эхлэх цаг', null=True, blank=True)
+    # Хоног бүртгэлд ажиллавал зохих хоногийг тодорхойлно: ажлын өдрүүд (Да-Ба), ажлын өдрүүд + Бямба,
+    # эсвэл ээлжийн (ажилтан бүрт гараар оруулна)
+    schedule_type = models.CharField('Ажлын горим', max_length=20, choices=SCHEDULE_CHOICES, default=SCHEDULE_WEEKDAYS)
+    # Хоног бүртгэл зэрэг жагсаалтад албан тушаалыг харуулах дараалал (бага нь эхэнд, хоосон бол төгсгөлд)
+    sort_order = models.PositiveIntegerField('Эрэмбэ', null=True, blank=True)
+    # Цаг бүртгүүлдэггүй албан тушаал (Ерөнхий захирал гэх мэт): Хоног бүртгэлд ажилласан хоногийг
+    # цаг бүртгэлээс биш, ажиллавал зохих хоногоор нь бөглөнө
+    worked_equals_required = models.BooleanField('Ажилласан хоног = ажиллавал зохих хоног', default=False)
+    # Цалин бодолтод тухайн албан тушаалын ажилтанд унааны мөнгө бодохгүй (Имарт худалдагч гэх мэт)
+    no_transport = models.BooleanField('Унааны мөнгө бодохгүй', default=False)
     updated_at = models.DateTimeField('Шинэчилсэн огноо', auto_now=True)
 
     class Meta:
@@ -509,6 +561,495 @@ class EmployeeFingerprint(models.Model):
         ordering = ['employee_code']
         verbose_name = 'Ажилтны хурууны мэдээлэл'
         verbose_name_plural = 'Ажилтны хурууны мэдээлэл'
+        constraints = [
+            # Нэг хурууны код хоёр өөр ажилтанд зэрэг оноогдож болохгүй (нэг код = нэг бодит хүн
+            # төхөөрөмж дээр) - хоосон утгыг (device_user_id='') хязгаарлахгүй
+            models.UniqueConstraint(
+                fields=['device_user_id'],
+                condition=~models.Q(device_user_id=''),
+                name='unique_nonblank_device_user_id',
+            ),
+        ]
 
     def __str__(self):
         return f"{self.employee_code} -> {self.device_user_id}"
+
+
+class OrganizationHoliday(models.Model):
+    """Байгууллагаас амралтын өдөр гэж зарласан өдөр - Хоног бүртгэлийн ажиллавал зохих хоногоос хасагдана."""
+    date = models.DateField('Огноо', unique=True)
+    updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, verbose_name='Засварласан хэрэглэгч')
+    updated_at = models.DateTimeField('Засварласан огноо', auto_now=True)
+
+    class Meta:
+        db_table = 'shop_organization_holiday'
+        ordering = ['date']
+        verbose_name = 'Байгууллагын амралтын өдөр'
+        verbose_name_plural = 'Байгууллагын амралтын өдрүүд'
+
+    def __str__(self):
+        return str(self.date)
+
+
+class TimesheetEntry(models.Model):
+    """Хоног бүртгэлд ажилтан тус бүрийн сарын гараар оруулах утгууд (ээлжийн амралт, чөлөө гэх мэт).
+
+    Ажилласан хоног/цаг, хоцролт зэргийг Цаг бүртгэлээс тооцоолдог. Зөвхөн 'худалдагч' агуулсан албан
+    тушаалд ажиллавал зохих / ажилласан хоногийг гараар дарж бичиж болно (хоосон бол тооцоолсноор).
+    """
+    employee_code = models.CharField('Ажилтны код', max_length=50, db_index=True)
+    year = models.PositiveSmallIntegerField('Он')
+    month = models.PositiveSmallIntegerField('Сар')
+    required_days = models.DecimalField('Ажиллавал зохих хоног (гараар)', max_digits=5, decimal_places=1, null=True, blank=True)
+    worked_days = models.DecimalField('Ажилласан хоног (гараар)', max_digits=5, decimal_places=1, null=True, blank=True)
+    # Бямбад ажилласан хоногийг бүх ажилтанд (ээлжийнхээс бусад) гараар засч болно (хоосон бол цаг бүртгэлээр)
+    saturday_days = models.DecimalField('Бямбад ажилласан (гараар)', max_digits=5, decimal_places=1, null=True, blank=True)
+    leave_days = models.DecimalField('Ээлжийн амралт (хоног)', max_digits=5, decimal_places=1, default=0)
+    excused_days = models.DecimalField('Чөлөөтэй хоног', max_digits=5, decimal_places=1, default=0)
+    excused_hours = models.DecimalField('Цагийн чөлөө', max_digits=6, decimal_places=1, default=0)
+    # Хоосон бол ажилтны үндсэн албан тушаалын мөр; өөр албан тушаалд шилжин ажилласан өдрүүдийн
+    # (AttendanceRecord.position_name) тусдаа мөрийн гар утга бол тэр албан тушаалын нэр
+    position_name = models.CharField('Албан тушаал (шилжин ажилласан)', max_length=200, blank=True, default='')
+    updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, verbose_name='Засварласан хэрэглэгч')
+    updated_at = models.DateTimeField('Засварласан огноо', auto_now=True)
+
+    class Meta:
+        db_table = 'shop_timesheet_entry'
+        unique_together = ('employee_code', 'year', 'month', 'position_name')
+        verbose_name = 'Хоног бүртгэлийн гар утга'
+        verbose_name_plural = 'Хоног бүртгэлийн гар утгууд'
+
+    def __str__(self):
+        return f"{self.employee_code} {self.year}-{self.month:02d}"
+
+
+class TimesheetSetting(models.Model):
+    """Хоног бүртгэлийн нэгдсэн тохиргоо (ганц мөр, pk=1): хоцролтын багц бүрийн минут тутмын суутгал (₮)."""
+    late_rate_1_10 = models.DecimalField('1-10 минутын хоцролт (₮/минут)', max_digits=10, decimal_places=2, default=0)
+    late_rate_11_20 = models.DecimalField('11-20 минутын хоцролт (₮/минут)', max_digits=10, decimal_places=2, default=0)
+    late_rate_21_30 = models.DecimalField('21-30 минутын хоцролт (₮/минут)', max_digits=10, decimal_places=2, default=0)
+    updated_at = models.DateTimeField('Засварласан огноо', auto_now=True)
+
+    class Meta:
+        db_table = 'shop_timesheet_setting'
+        verbose_name = 'Хоног бүртгэлийн тохиргоо'
+        verbose_name_plural = 'Хоног бүртгэлийн тохиргоо'
+
+    @classmethod
+    def get(cls):
+        obj, _ = cls.objects.get_or_create(pk=1)
+        return obj
+
+
+def _money_field(label):
+    return models.DecimalField(label, max_digits=14, decimal_places=2, default=0)
+
+
+class EmployeePayProfile(models.Model):
+    """Ажилтны цалингийн тогтмол мэдээлэл: олгох хэлбэр (карт/бэлэн/хосолсон), бэлэн үндсэн цалин, нэг гарын мөнгө.
+
+    Картын үндсэн цалин, НДШ код, удаан жил, эрсдэлийн сан, хуримтлалыг ажилтны мэдээллээс (OpenDataEmployee) авна.
+
+    Карт - зөвхөн Картын цалин бодолтод (НДШ, ХХОАТ суутгана), Бэлэн - зөвхөн Бэлэн цалин бодолтод
+    (татварын суутгалгүй), Хосолсон - хоёуланд нь өөр өөрийн үндсэн цалингаар харагдана.
+    """
+    PAY_CARD = 'card'
+    PAY_CASH = 'cash'
+    PAY_MIXED = 'mixed'
+    PAY_CHOICES = [
+        (PAY_CARD, 'Карт'),
+        (PAY_CASH, 'Бэлэн'),
+        (PAY_MIXED, 'Хосолсон'),
+    ]
+
+    employee_code = models.CharField('Ажилтны код', max_length=50, unique=True)
+    pay_type = models.CharField('Олгох хэлбэр', max_length=10, choices=PAY_CHOICES, blank=True)
+    cash_base_salary = _money_field('Бэлэн үндсэн цалин')
+    # Ээлжийн ажилтанд: цалин = нэг гарын мөнгө x ажилласан хоног (үндсэн цалингийн оронд)
+    card_shift_pay = _money_field('Картын нэг гарын мөнгө')
+    cash_shift_pay = _money_field('Бэлэн нэг гарын мөнгө')
+    # Бодогдсон Бямбад ажилласан нэмэгдлийн хэдэн хувийг олгох (100 = бүтэн, 50 = тал)
+    saturday_bonus_percent = models.DecimalField('Бямбын нэмэгдэл (%)', max_digits=5, decimal_places=2, default=Decimal('50'))
+    # Бямба гарагийг ажиллавал зохих болон ажилласан хоногт оруулах эсэх (Бямбад ажилласан хоног, Бямбын
+    # нэмэгдэлд үргэлж тоологдоно). None бол албан тушаалын ажлын горимоор (Бямбад ажилладаг -> оруулна)
+    saturday_in_worked_days = models.BooleanField('Бямбыг ажилласан хоногт оруулах', null=True, blank=True, default=None)
+    # Хоосон бол PayrollSetting-ийн анхдагч хувь хэрэглэгдэнэ (тэтгэвэрт гарсан ажилтан гэх мэт өөр хувьтай үед бөглөнө)
+    ndsh_employee_rate = models.DecimalField('НДШ ажилтан (%)', max_digits=5, decimal_places=2, null=True, blank=True)
+    ndsh_employer_rate = models.DecimalField('НДШ байгууллага (%)', max_digits=5, decimal_places=2, null=True, blank=True)
+    # Бэлэн цалин шилжүүлэх данс (банкны нэртэй чөлөөт бичвэр) - ажилтны мэдээлэл дэх данс нь картын цалингийнх тул тусад нь
+    cash_bank_account = models.CharField('Бэлэн цалингийн данс', max_length=100, blank=True)
+    updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, verbose_name='Засварласан хэрэглэгч')
+    updated_at = models.DateTimeField('Засварласан огноо', auto_now=True)
+
+    class Meta:
+        db_table = 'shop_employee_pay_profile'
+        verbose_name = 'Ажилтны цалингийн мэдээлэл'
+        verbose_name_plural = 'Ажилчдын цалингийн мэдээлэл'
+
+    def __str__(self):
+        return f"{self.employee_code} - {self.get_pay_type_display() or '-'}"
+
+
+class PayrollSetting(models.Model):
+    """Цалин бодолтын нэгдсэн тохиргоо (ганц мөр, pk=1) - хуулиар өөрчлөгдөх хувь хэмжээг хуудаснаас засна."""
+    ndsh_employee_rate = models.DecimalField('НДШ ажилтан (%)', max_digits=5, decimal_places=2, default=Decimal('11.5'))
+    ndsh_employer_rate = models.DecimalField('НДШ байгууллага (%)', max_digits=5, decimal_places=2, default=Decimal('12.5'))
+    ndsh_max_base = models.DecimalField('НДШ ногдуулах дээд хэмжээ (₮)', max_digits=14, decimal_places=2, default=Decimal('7920000'))
+    pit_rate = models.DecimalField('ХХОАТ (%)', max_digits=5, decimal_places=2, default=Decimal('10'))
+    saturday_hours_per_day = models.DecimalField('Бямба гарагийн ажлын цаг', max_digits=4, decimal_places=1, default=Decimal('6'))
+    transport_per_day = models.DecimalField('Унааны мөнгө (хоногт, ₮)', max_digits=10, decimal_places=2, default=Decimal('1000'))
+    # Хэвлэх хуудасны толгой, гарын үсгийн мөр
+    company_name = models.CharField('Байгууллагын нэр', max_length=200, blank=True, default='Төгс Амин Эрдэнэ ХХК')
+    card_approver = models.CharField('Картын цалин батлах захирал', max_length=100, blank=True, default='Б.Болор-Эрдэнэ')
+    cash_approver = models.CharField('Бэлэн цалин батлах захирал', max_length=100, blank=True, default='Б.Очгэрэл')
+    prepared_by = models.CharField('Тооцоо гаргасан нягтлан', max_length=100, blank=True, default='О.Баяржаргал')
+    # Урьдчилгаа цалин олгох өдөр (хэвлэхэд "2026 ОНЫ 09 САРЫН 20 УРЬДЧИЛГАА ЦАЛИН")
+    advance_day = models.PositiveSmallIntegerField('Урьдчилгаа олгох өдөр', default=20)
+    # Борлуулалтын нэмэгдлийн нийтлэг тохиргоо (хасагдах суурь %, түгээгчийн шалгуур г.м.) - shop.services.sales_bonus.DEFAULT_SETTINGS
+    sales_bonus_settings = models.JSONField('Борлуулалтын нэмэгдлийн тохиргоо', default=dict, blank=True)
+    # Хэвлэх баганууд: {'card': {'p1a': [...], ...}, 'cash': {...}} - shop.services.payroll_print-ийг үз
+    print_columns = models.JSONField('Хэвлэх баганууд', default=dict, blank=True)
+    updated_at = models.DateTimeField('Засварласан огноо', auto_now=True)
+
+    class Meta:
+        db_table = 'shop_payroll_setting'
+        verbose_name = 'Цалин бодолтын тохиргоо'
+        verbose_name_plural = 'Цалин бодолтын тохиргоо'
+
+    @classmethod
+    def get(cls):
+        obj, _ = cls.objects.get_or_create(pk=1)
+        return obj
+
+
+class NdshCodeRate(models.Model):
+    """НДШ-ийн код (OpenDataEmployee.InsuredTypeId) тус бүрийн шимтгэлийн хувь - хоосон бол PayrollSetting-ийн анхдагч хувь."""
+    code = models.CharField('НДШ-ийн код', max_length=20, unique=True)
+    employee_rate = models.DecimalField('НДШ ажилтан (%)', max_digits=5, decimal_places=2, null=True, blank=True)
+    employer_rate = models.DecimalField('НДШ байгууллага (%)', max_digits=5, decimal_places=2, null=True, blank=True)
+    updated_at = models.DateTimeField('Засварласан огноо', auto_now=True)
+
+    class Meta:
+        db_table = 'shop_ndsh_code_rate'
+        ordering = ['code']
+        verbose_name = 'НДШ-ийн кодын хувь'
+        verbose_name_plural = 'НДШ-ийн кодын хувь'
+
+    def __str__(self):
+        return self.code
+
+
+class PayrollTaxCredit(models.Model):
+    """ХХОАТ-ын хөнгөлөлтийн шатлал: сарын цалингаас НДШ хассан дүн income_to хүртэл бол credit_amount хөнгөлнө
+    (income_to хоосон = дээд шат). Хуулийн жилийн дүнг 12-т хуваан сарын дүнгээр оруулна."""
+    income_to = models.DecimalField('Сарын цалин, НДШ хассан (хүртэл, ₮)', max_digits=14, decimal_places=2, null=True, blank=True)
+    credit_amount = models.DecimalField('Хөнгөлөлт (₮)', max_digits=14, decimal_places=2, default=0)
+
+    class Meta:
+        db_table = 'shop_payroll_tax_credit'
+        ordering = [models.F('income_to').asc(nulls_last=True)]
+        verbose_name = 'ХХОАТ-ын хөнгөлөлтийн шат'
+        verbose_name_plural = 'ХХОАТ-ын хөнгөлөлтийн шатлал'
+
+
+class PayrollEntry(models.Model):
+    """Цалин бодолтын сар бүр гараар оруулах утгууд (карт, бэлэн хуудас тус тусдаа)."""
+    SHEET_CARD = 'card'
+    SHEET_CASH = 'cash'
+    SHEET_CHOICES = [(SHEET_CARD, 'Карт'), (SHEET_CASH, 'Бэлэн')]
+
+    employee_code = models.CharField('Ажилтны код', max_length=50, db_index=True)
+    year = models.PositiveSmallIntegerField('Он')
+    month = models.PositiveSmallIntegerField('Сар')
+    sheet = models.CharField('Хуудас', max_length=10, choices=SHEET_CHOICES)
+    holiday_pay = _money_field('Амралтын мөнгө')
+    sales_bonus = _money_field('Нэмэгдэл цалин /Борлуулалт/')
+    advance = _money_field('Урьдчилгаа')
+    inventory_shortage = _money_field('Тооллогын дутагдал')
+    goods_deduction = _money_field('Барааны суутгал')
+    phone_fee = _money_field('Ярианы төлбөр')
+    fine = _money_field('Торгууль')
+    other_deduction = _money_field('Бусад суутгал')
+    sick_employer = _money_field('ХЧТА-н мөнгө байгууллага')
+    sick_fund = _money_field('ХЧТА-н мөнгө НД-с')
+    # Автомат бодолтыг гараар дарж бичих (хоосон/NULL бол автомат, 0 бичвэл 0) - shop.services.payroll.OVERRIDE_FIELDS
+    saturday_bonus_override = models.DecimalField('Бямбад ажилласан нэмэгдэл (гараар)', max_digits=14, decimal_places=2, null=True, blank=True)
+    transport_override = models.DecimalField('Унааны мөнгө (гараар)', max_digits=14, decimal_places=2, null=True, blank=True)
+    updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, verbose_name='Засварласан хэрэглэгч')
+    updated_at = models.DateTimeField('Засварласан огноо', auto_now=True)
+
+    class Meta:
+        db_table = 'shop_payroll_entry'
+        unique_together = ('employee_code', 'year', 'month', 'sheet')
+        verbose_name = 'Цалин бодолтын гар утга'
+        verbose_name_plural = 'Цалин бодолтын гар утгууд'
+
+    def __str__(self):
+        return f"{self.employee_code} {self.year}-{self.month:02d} {self.sheet}"
+
+
+class PayrollMonthClose(models.Model):
+    """Хаагдсан (баталгаажсан) сарын цалин бодолтын хуулбар (snapshot) - карт, бэлэн хуудас тус тусдаа.
+
+    Цалин бодолт нь ажилтны одоогийн мэдээллээр (үндсэн цалин, албан тушаал, идэвхтэй эсэх) үргэлж дахин бодогддог
+    тул сарыг хаахад бодогдсон мөрүүдийг ажилтны тухайн үеийн мэдээлэлтэй (хэлтэс, хүйс, төрсөн/ажилд орсон огноо,
+    олгох хэлбэр) хамт хадгална. Хаагдсан сарыг цалин бодолт, хувийн мэдээлэл, цалингийн тайланд энэ хуулбараас
+    харуулж, засварлахыг хориглоно (дахин нээж болно). shop.services.payroll_snapshot-ийг үз."""
+    year = models.PositiveSmallIntegerField('Он')
+    month = models.PositiveSmallIntegerField('Сар')
+    sheet = models.CharField('Хуудас', max_length=10, choices=PayrollEntry.SHEET_CHOICES)
+    rows = models.JSONField('Бодогдсон мөрүүд', default=list)
+    closed_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, verbose_name='Хаасан хэрэглэгч')
+    closed_at = models.DateTimeField('Хаасан огноо', auto_now=True)
+
+    class Meta:
+        db_table = 'shop_payroll_month_close'
+        unique_together = ('year', 'month', 'sheet')
+        verbose_name = 'Хаагдсан сарын цалин'
+        verbose_name_plural = 'Хаагдсан сарын цалингууд'
+
+    def __str__(self):
+        return f"{self.year}-{self.month:02d} {self.sheet}"
+
+
+class SalesBonusMember(models.Model):
+    """Борлуулалтын нэмэгдэл бодох ажилтан: аль хүснэгтэд (scheme) бодогдох, сувгийн мөрүүд ба тэдгээрийн хувь.
+
+    channels: [{"channel": "Cүлжээ дэлгүүр", "rate": "0.75"}, ...] - сар бүр анхдагчаар энэ мөрүүдээр бодогдоно
+    (тухайн сард хувь өөрчилбөл энд ч хадгалагдаж дараагийн сард үйлчилнэ). shop.services.sales_bonus-ийг үз.
+    """
+    SCHEME_STOREKEEPER = 'storekeeper'
+    SCHEME_SALES_REP = 'sales_rep'
+    SCHEME_CASH_SELLER = 'cash_seller'
+    SCHEME_DISTRIBUTOR = 'distributor'
+    SCHEME_ALTJIN_SELLER = 'altjin_seller'
+    SCHEME_CHOICES = [
+        (SCHEME_STOREKEEPER, 'Нярав'),
+        (SCHEME_SALES_REP, 'Худалдааны төлөөлөгч'),
+        (SCHEME_CASH_SELLER, 'Борлуулагч'),
+        (SCHEME_DISTRIBUTOR, 'Түгээгч'),
+        (SCHEME_ALTJIN_SELLER, 'Алтжин худалдагч'),
+    ]
+    SOURCE_CREDIT = 'credit'
+    SOURCE_DELIVERY = 'delivery'
+    SOURCE_CHOICES = [
+        (SOURCE_CREDIT, 'Авлагын кредит (сувгаар)'),
+        (SOURCE_DELIVERY, 'Түгээлт (нийт)'),
+    ]
+
+    employee_code = models.CharField('Ажилтны код', max_length=50, unique=True)
+    scheme = models.CharField('Нэмэгдлийн хүснэгт', max_length=20, choices=SCHEME_CHOICES)
+    channels = models.JSONField('Сувгууд ба хувь', default=list, blank=True)
+    # Няравын борлуулалтын суурь: авлагын кредит (сувгаар) эсвэл нийт түгээлт
+    source = models.CharField('Борлуулалтын суурь', max_length=10, choices=SOURCE_CHOICES, default=SOURCE_CREDIT)
+    is_active = models.BooleanField('Идэвхтэй', default=True)
+    sort_order = models.PositiveIntegerField('Дараалал', default=0)
+    updated_at = models.DateTimeField('Засварласан огноо', auto_now=True)
+
+    class Meta:
+        db_table = 'shop_sales_bonus_member'
+        ordering = ['scheme', 'sort_order', 'employee_code']
+        verbose_name = 'Борлуулалтын нэмэгдлийн ажилтан'
+        verbose_name_plural = 'Борлуулалтын нэмэгдлийн ажилчид'
+
+    def __str__(self):
+        return f'{self.employee_code} ({self.get_scheme_display()})'
+
+
+class SalesBonusEntry(models.Model):
+    """Сарын борлуулалтын нэмэгдлийн бодолт - гараар оруулсан утгууд (inputs) ба бодогдсон дүн.
+
+    inputs: {"lines": [{"channel", "rate", "sales", "returns"}], "deduction_pct", "plan_pct", "inventory",
+             "delivery_amount", "criteria": {key: bool}, "solo_days", "helper_days", "adjustment", "note"}
+    sales/returns/delivery_amount null бол өгөгдлөөс автоматаар. Хадгалахад card_amount / cash_amount нь
+    цалин бодолтын (PayrollEntry.sales_bonus) карт / бэлэн хуудсанд бичигдэнэ.
+    """
+    employee_code = models.CharField('Ажилтны код', max_length=50, db_index=True)
+    year = models.PositiveSmallIntegerField('Он')
+    month = models.PositiveSmallIntegerField('Сар')
+    scheme = models.CharField('Нэмэгдлийн хүснэгт', max_length=20, choices=SalesBonusMember.SCHEME_CHOICES)
+    inputs = models.JSONField('Оруулсан утгууд', default=dict, blank=True)
+    total = _money_field('Борлуулалтын нэмэгдэл')
+    card_amount = _money_field('Картад')
+    cash_amount = _money_field('Бэлэнд')
+    updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, verbose_name='Засварласан хэрэглэгч')
+    updated_at = models.DateTimeField('Засварласан огноо', auto_now=True)
+
+    class Meta:
+        db_table = 'shop_sales_bonus_entry'
+        # Нэг ажилтан нэг сард хэд хэдэн хүснэгтээр бодогдож болно (жиш: ХТ нь няравыг орлосон) - цалин бодолтод нийлбэр
+        unique_together = [('employee_code', 'year', 'month', 'scheme')]
+        verbose_name = 'Борлуулалтын нэмэгдлийн бодолт'
+        verbose_name_plural = 'Борлуулалтын нэмэгдлийн бодолтууд'
+
+    def __str__(self):
+        return f'{self.employee_code} {self.year}-{self.month:02d}: {self.total}'
+
+
+class SalesBonusMonthMember(models.Model):
+    """Тухайн сард хүснэгтэд (одоогоор Түгээгч) гараар нэмсэн эсвэл хассан ажилтан. Байнгын гишүүнчлэлийг
+    (SalesBonusMember) өөрчлөхгүй - жиш: өөр албан тушаалтай / ажлаас гарсан ажилтан тэр сард түгээлт хийсэн бол
+    нэмж, байнгын түгээгч тэр сард түгээлт хийгээгүй бол хасна. shop.services.sales_bonus.month_people-ийг үз."""
+    year = models.PositiveSmallIntegerField('Он')
+    month = models.PositiveSmallIntegerField('Сар')
+    scheme = models.CharField('Нэмэгдлийн хүснэгт', max_length=20, choices=SalesBonusMember.SCHEME_CHOICES)
+    employee_code = models.CharField('Ажилтны код', max_length=50)
+    # False - тэр сард нэмсэн, True - байнгын гишүүнийг тэр сард хассан
+    excluded = models.BooleanField('Хассан', default=False)
+    updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, verbose_name='Засварласан хэрэглэгч')
+    updated_at = models.DateTimeField('Засварласан огноо', auto_now=True)
+
+    class Meta:
+        db_table = 'shop_sales_bonus_month_member'
+        unique_together = [('year', 'month', 'scheme', 'employee_code')]
+        verbose_name = 'Сарын нэмэгдлийн ажилтан (нэмсэн/хассан)'
+        verbose_name_plural = 'Сарын нэмэгдлийн ажилчид (нэмсэн/хассан)'
+
+    def __str__(self):
+        return f"{self.employee_code} {self.year}-{self.month:02d} {self.scheme} {'хассан' if self.excluded else 'нэмсэн'}"
+
+
+class SalesBonusSubstitute(models.Model):
+    """Үндсэн нярав байхгүй өдрүүдэд няравыг орлосон ажилтан ба өдрүүд (сараар). Тэр өдрүүдийн борлуулалт,
+    буцаалт бүтнээр орлогчид очно (үндсэн нярав авахгүй). Нэг өдөр зөвхөн нэг орлогчтой - өдрүүд давхцахгүй.
+    shop.services.sales_bonus.storekeeper_allocation-ийг үз."""
+    MODE_REPLACE = 'replace'
+    MODE_CHOICES = [(MODE_REPLACE, 'Орлосон')]
+
+    year = models.PositiveSmallIntegerField('Он')
+    month = models.PositiveSmallIntegerField('Сар')
+    employee_code = models.CharField('Ажилтны код', max_length=50)
+    mode = models.CharField('Хэлбэр', max_length=10, choices=MODE_CHOICES, default=MODE_REPLACE)
+    dates = models.JSONField('Өдрүүд', default=list, blank=True)  # ["2026-08-05", ...]
+    note = models.CharField('Тайлбар', max_length=200, blank=True)
+    updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, verbose_name='Засварласан хэрэглэгч')
+    updated_at = models.DateTimeField('Засварласан огноо', auto_now=True)
+
+    class Meta:
+        db_table = 'shop_sales_bonus_substitute'
+        ordering = ['year', 'month', 'id']
+        verbose_name = 'Нярав орлолт'
+        verbose_name_plural = 'Нярав орлолтууд'
+
+    def __str__(self):
+        return f'{self.year}-{self.month:02d} {self.employee_code} ({self.get_mode_display()}, {len(self.dates)} өдөр)'
+
+
+class OpenDataSyncLog(models.Model):
+    """MSSQL -> PostgreSQL нэг хүснэгт татсан түүх (Өгөгдөл шинэчлэх хуудаснаас / sync_table командаас)."""
+    STATUS_RUNNING = 'running'
+    STATUS_SUCCESS = 'success'
+    STATUS_ERROR = 'error'
+    STATUS_CHOICES = [(STATUS_RUNNING, 'Татаж байна'), (STATUS_SUCCESS, 'Амжилттай'), (STATUS_ERROR, 'Алдаа')]
+
+    table_name = models.CharField('Хүснэгт', max_length=128, db_index=True)
+    database = models.CharField('MSSQL өгөгдлийн сан', max_length=128, blank=True)
+    status = models.CharField('Төлөв', max_length=10, choices=STATUS_CHOICES, default=STATUS_RUNNING)
+    rows = models.PositiveIntegerField('Мөрийн тоо', null=True, blank=True)
+    seconds = models.FloatField('Хугацаа (сек)', null=True, blank=True)
+    message = models.TextField('Мессеж', blank=True)
+    started_at = models.DateTimeField('Эхэлсэн', auto_now_add=True)
+    finished_at = models.DateTimeField('Дууссан', null=True, blank=True)
+    user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, verbose_name='Хэрэглэгч')
+
+    class Meta:
+        db_table = 'shop_opendata_sync_log'
+        ordering = ['-started_at']
+        verbose_name = 'Өгөгдөл татсан түүх'
+        verbose_name_plural = 'Өгөгдөл татсан түүх'
+
+    def __str__(self):
+        return f'{self.table_name} {self.started_at:%Y-%m-%d %H:%M} ({self.get_status_display()})'
+
+
+
+class UnloadingEvent(models.Model):
+    """Ачаа буулгалт - нэг татан авалт (OpenDataLandedCost.DocumentPkId) бүрийн чингэлэг буулгалт ба ажлын хөлс.
+    Оролцсон ажилчид UnloadingWorker-т (хүн бүр өөрийн хөлстэй); гаднаас хөлсөлсөн хүмүүсийг тоо × нэг хүний хөлсөөр."""
+    # Дугаар нь он бүр давтагддаг тул татан авалтыг DocumentPkId-аар таниулна
+    document_id = models.BigIntegerField('Татан авалтын ID (DocumentPkId)', unique=True)
+    document_number = models.CharField('Татан авалтын дугаар', max_length=50)
+    document_date = models.DateField('Татан авалтын огноо', null=True, blank=True)
+    vendor_name = models.CharField('Илгээгч', max_length=255, blank=True)
+    unload_date = models.DateField('Буулгасан огноо', db_index=True)
+    outside_count = models.PositiveSmallIntegerField('Гаднаас хөлсөлсөн хүний тоо', default=0)
+    outside_fee = models.DecimalField('Гаднаас хөлсөлсөн нэг хүний хөлс', max_digits=14, decimal_places=2, default=0)
+    note = models.CharField('Тайлбар', max_length=300, blank=True)
+    updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, verbose_name='Засварласан хэрэглэгч')
+    updated_at = models.DateTimeField('Засварласан огноо', auto_now=True)
+
+    class Meta:
+        db_table = 'shop_unloading_event'
+        ordering = ['-unload_date', 'document_number']
+        verbose_name = 'Ачаа буулгалт'
+        verbose_name_plural = 'Ачаа буулгалтууд'
+
+    def __str__(self):
+        return f'{self.document_number} ({self.unload_date})'
+
+    @property
+    def outside_amount(self):
+        return self.outside_fee * self.outside_count
+
+
+class UnloadingWorker(models.Model):
+    """Ачаа буулгалтад оролцсон ажилтан ба үүрэг."""
+    ROLE_CUSTOMS = 'customs'
+    ROLE_CHECK = 'check'
+    ROLE_RECEIVE = 'receive'
+    ROLE_UNLOAD = 'unload'
+    ROLE_CHOICES = [
+        (ROLE_CUSTOMS, 'Гааль мэдүүлсэн'),
+        (ROLE_CHECK, 'Хянаж авсан'),
+        (ROLE_RECEIVE, 'Орлого хүлээж авсан'),
+        (ROLE_UNLOAD, 'Буулгаж зөөсөн'),
+    ]
+
+    event = models.ForeignKey(UnloadingEvent, on_delete=models.CASCADE, related_name='workers')
+    employee_code = models.CharField('Ажилтны код', max_length=50, db_index=True)
+    role = models.CharField('Үүрэг', max_length=10, choices=ROLE_CHOICES, default=ROLE_UNLOAD)
+    fee = models.DecimalField('Ажлын хөлс', max_digits=14, decimal_places=2, default=0)
+
+    class Meta:
+        db_table = 'shop_unloading_worker'
+        unique_together = [('event', 'employee_code')]
+        verbose_name = 'Ачаа буулгасан ажилтан'
+        verbose_name_plural = 'Ачаа буулгасан ажилчид'
+
+    def __str__(self):
+        return f'{self.event.document_number}: {self.employee_code} ({self.get_role_display()})'
+
+
+class UnloadingSettings(models.Model):
+    """Ачаа буулгалтын анхдагч тохиргоо (ганц мөр): шинэ ачаанд урьдчилан бөглөгдөх хүмүүс, ажлын хөлс."""
+    customs_code = models.CharField('Гааль мэдүүлэх ажилтан', max_length=50, blank=True)
+    check_code = models.CharField('Хянаж авах ажилтан', max_length=50, blank=True)
+    receive_code = models.CharField('Орлого хүлээж авах ажилтан', max_length=50, blank=True)
+    key_fee = models.DecimalField('Гааль/хяналт/орлогын хүний хөлс', max_digits=14, decimal_places=2, default=100000)
+    worker_fee = models.DecimalField('Бусад ажилтны хөлс', max_digits=14, decimal_places=2, default=60000)
+    outside_fee = models.DecimalField('Гаднаас хөлсөлсөн хүний хөлс', max_digits=14, decimal_places=2, default=80000)
+
+    class Meta:
+        db_table = 'shop_unloading_settings'
+        verbose_name = 'Ачаа буулгалтын тохиргоо'
+        verbose_name_plural = 'Ачаа буулгалтын тохиргоо'
+
+    # Анх үүсгэхэд ажилтныг нэрээр нь олж бөглөнө
+    DEFAULT_NAMES = {'customs_code': 'Галт', 'check_code': 'Баяржаргал', 'receive_code': 'Энхжаргал'}
+
+    @classmethod
+    def load(cls):
+        obj = cls.objects.first()
+        if obj is None:
+            obj = cls()
+            for field, name in cls.DEFAULT_NAMES.items():
+                emp = (OpenDataEmployee.objects.filter(isreclusion='N', name__istartswith=name).order_by('id').first())
+                setattr(obj, field, emp.id if emp else '')
+            obj.save()
+        return obj
+
+    def role_codes(self):
+        return {'customs': self.customs_code, 'check': self.check_code, 'receive': self.receive_code}
+
+    def role_fee(self, role):
+        return self.worker_fee if role == 'unload' else self.key_fee

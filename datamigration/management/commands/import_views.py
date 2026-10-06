@@ -6,6 +6,7 @@ from django.db import connection, transaction
 from datamigration.utils.view_extractor import MSSQLViewExtractor, get_all_databases
 from datamigration.utils.dynamic_models import create_model_from_view, mssql_to_django_field
 import logging
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -103,6 +104,7 @@ class Command(BaseCommand):
                     
                     # View бүрийг боловсруулах
                     for view_name in views:
+                        view_started = time.monotonic()
                         try:
                             self.stdout.write(f'\n  View: {view_name}')
                             
@@ -138,6 +140,19 @@ class Command(BaseCommand):
                                 total_records += records_saved
                                 total_created += 1
                                 self.stdout.write(self.style.SUCCESS(f'    {records_saved} records saved'))
+                                self._log_sync(view_name, db_name, records_saved, time.monotonic() - view_started)
+                                # Хүснэгт дахин үүссэн тул тайлангийн индексүүдийг сэргээнэ (datamigration.opendata_indexes)
+                                try:
+                                    from datamigration.opendata_indexes import ensure_indexes
+                                    indexed = ensure_indexes([table_name])
+                                    if indexed:
+                                        self.stdout.write(f'    {indexed} index created')
+                                    if table_name == 'OpenDataSale':
+                                        from shop.services.sales_report import warm_cache
+                                        warm_cache()
+                                        self.stdout.write('    sales report cache warmed')
+                                except Exception as e:
+                                    self.stdout.write(self.style.WARNING(f'    Index error: {e}'))
                             else:
                                 self.stdout.write(self.style.ERROR('    Save error'))
                                 total_errors += 1
@@ -250,55 +265,24 @@ class Command(BaseCommand):
         
         return 'TEXT'
     
-    def _save_to_postgres(self, df, table_name: str, columns: list) -> int:
-        """DataFrame-ийг PostgreSQL-д хадгалах"""
+    def _log_sync(self, table_name, db_name, rows, seconds):
+        """Өдөр тутмын синкийг "Өгөгдөл шинэчлэх" хуудасны түүхэнд бүртгэнэ (хүснэгт хэзээ шинэчлэгдсэнийг харуулахад)."""
         try:
-            # Column нэрүүдийг анхны байдлаар нь үлдээх (зөвхөн reserved words)
-            df_columns = []
-            for col in df.columns:
-                if col.lower() in ('class', 'def', 'return', 'for', 'if', 'while'):
-                    df_columns.append(f"{col}_")
-                else:
-                    df_columns.append(col)  # Анхны нэрээр нь
-            df.columns = df_columns
+            from django.utils import timezone
+            from shop.models import OpenDataSyncLog
+            OpenDataSyncLog.objects.create(
+                table_name=table_name, database=db_name, status=OpenDataSyncLog.STATUS_SUCCESS, rows=rows,
+                seconds=round(seconds, 2), message='Хуваарьт синк (import_views)', finished_at=timezone.now(),
+            )
+        except Exception as e:
+            logger.warning(f'Sync log error: {e}')
 
-            # MSSQL талын view өөрөө нэг "Id"-д олон мөр буцааж болзошгүй (жиш нь
-            # түүх/хувилбарын хүснэгттэй join хийсэн view - нэр засварласны дараа
-            # хуучин мөр устаагүй хэвээр гарч ирэх нь бий). "Id" баганаар
-            # deduplicate хийж, боломжтой бол сүүлд шинэчлэгдсэн мөрийг үлдээнэ.
-            id_col = next((col for col in df.columns if col.lower() == 'id'), None)
-            if id_col:
-                before_count = len(df)
-                recency_col = next(
-                    (col for col in df.columns
-                     if col.lower() in ('modifieddate', 'lastupdated', 'updateddate', 'modifiedon', 'lastmodified')),
-                    None,
-                )
-                if recency_col:
-                    df = df.sort_values(by=recency_col)
-                df = df.drop_duplicates(subset=id_col, keep='last')
-                removed = before_count - len(df)
-                if removed > 0:
-                    logger.warning(f"{table_name}: '{id_col}'-ээр {removed} давхардсан мөр хаягдлаа")
-
-            # pandas.to_sql ашиглах
-            from sqlalchemy import create_engine
-            from decouple import config
-            
-            # PostgreSQL холболт
-            db_name = config('DB_NAME', default='tae')
-            db_user = config('DB_USER', default='postgres')
-            db_password = config('DB_PASSWORD', default='')
-            db_host = config('DB_HOST', default='localhost')
-            db_port = config('DB_PORT', default='5432')
-            
-            engine = create_engine(f'postgresql://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}')
-            
-            # Хадгалах
-            df.to_sql(table_name, engine, if_exists='replace', index=False)
-            
-            return len(df)
-            
+    def _save_to_postgres(self, df, table_name: str, columns: list) -> int:
+        """DataFrame-ийг PostgreSQL-д хадгалах - түр хүснэгтэд COPY-оор бичээд атомаар солино
+        (datamigration.sync.write_dataframe; давхардсан Id-г хасна)."""
+        try:
+            from datamigration.sync import write_dataframe
+            return write_dataframe(df, table_name)
         except Exception as e:
             logger.error(f"PostgreSQL-д хадгалах алдаа: {str(e)}")
             return 0

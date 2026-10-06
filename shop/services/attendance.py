@@ -8,10 +8,16 @@
                                      нэгтгэж, тухайн огнооны мужид харуулах хүснэгтийн мөрүүдийг тооцоолно.
                                      Урьд нь хадгалсан (AttendanceRecord) мөр байвал тооцоолсноос илүү тэрийг харуулна.
 4. save_attendance_row()          - хэрэглэгчийн засварласан нэг мөрийг AttendanceRecord-д upsert хийнэ
+5. add_attendance_row()           - хуруу дарахаа мартсан гэх мэт үед шинэ мөрийг гараар нэмнэ
+6. mark_attendance_row_deleted()  - мөрийг хүснэгтээс нууна (AttendanceRecord.is_deleted)
+
+Нэг өдөрт ажилтны үндсэн мөр ганц байна; албан тушаал хавсарч ажилласан бол тухайн өдөр өөр албан тушаалын
+нэмэлт мөрүүд (AttendanceRecord.is_additional, албан тушаал бүрт нэг) нэмэгдэж, Хоног бүртгэлд тэр албан
+тушаалын мөрөнд тоологдоно.
 """
 import os
 import re
-from datetime import datetime, time as dt_time
+from datetime import date, datetime, time as dt_time
 
 import pandas as pd
 from django.conf import settings
@@ -116,6 +122,12 @@ def import_merchandiser_visits(file_path=None, file_obj=None):
     Мөр бүрийн 'Үүссэн огноо' болон 'Зассан огноо' баганыг тус тусад нь нэг цохолт мэт авч,
     хожим build_attendance_rows() тэдгээрийн доторх хамгийн эхний/сүүлийн цагийг тооцоолно.
 
+    (document_number, source_column) хослол өмнө нь орсон байвал шинэчилнэ (update_or_create) -
+    учир нь түгээлтийн программ дээр баримтыг өөр мерчандайзерт дахин хуваарилах/засварлах тохиолдолд
+    (Мерчандайзерийн код солигдох гэх мэт) л 'Зассан огноо' өөрчлөгддөг ч баримтын дугаар хэвээрээ
+    байдаг тул зөвхөн шинээр нэмэх (ignore_conflicts) байвал ийм засварыг дахин импортлоход
+    орхигдуулна.
+
     Буцаах: (fetched, created)
     """
     from shop.models import MerchandiserVisitLog
@@ -148,7 +160,8 @@ def import_merchandiser_visits(file_path=None, file_obj=None):
 
     body = raw.iloc[header_row_idx + 1:]
 
-    logs = []
+    fetched = 0
+    created = 0
     for _, row in body.iterrows():
         doc_no = row[idx_doc_no]
         employee_code = row[idx_code]
@@ -167,33 +180,112 @@ def import_merchandiser_visits(file_path=None, file_obj=None):
                 continue
             ts = pd.to_datetime(raw_ts).to_pydatetime()
             aware_ts = timezone.make_aware(ts) if timezone.is_naive(ts) else ts
-            logs.append(MerchandiserVisitLog(
+
+            fetched += 1
+            _, was_created = MerchandiserVisitLog.objects.update_or_create(
                 document_number=doc_no,
-                employee_code=employee_code,
-                employee_name=employee_name,
-                customer_name=customer_name,
-                timestamp=aware_ts,
                 source_column=source_column,
-            ))
+                defaults={
+                    'employee_code': employee_code,
+                    'employee_name': employee_name,
+                    'customer_name': customer_name,
+                    'timestamp': aware_ts,
+                },
+            )
+            if was_created:
+                created += 1
 
-    before = MerchandiserVisitLog.objects.count()
-    MerchandiserVisitLog.objects.bulk_create(logs, ignore_conflicts=True, batch_size=500)
-    after = MerchandiserVisitLog.objects.count()
-
-    return len(logs), after - before
+    return fetched, created
 
 
-WORKDAY_MINUTES = 8 * 60  # 'бусад' албан тушаалд: ирсэн цагаас хойш ажиллах ёстой 8 цаг
+# 'бусад' албан тушаалд: ирсэн цагаас хойш байх ёстой 9 цаг = 8 цаг ажил + 1 цаг цайны цаг
+# (жиш: 08:00-12:00, 12:00-13:00 цай, 13:00-17:00)
+WORKDAY_MINUTES = 9 * 60
+SATURDAY = 5  # date.weekday()-ийн Бямба гараг
+SATURDAY_START_TIME = dt_time(9, 0)  # Бямба гарагт бүх ажилтны (албан тушаалаас үл хамааран) ажил эхлэх цаг
+SATURDAY_END_TIME = dt_time(15, 0)  # Бямба гарагт бүх ажилтны тарах цаг
+
+
+def is_workday_rule(position_name, start_times):
+    """Албан тушаал нь 'бусад' буюу 8 цагийн дүрэмтэй (тогтмол эхлэх цаггүй) эсэх."""
+    return (start_times.get(position_name) if position_name else None) is None
+
+
+def get_start_time(position_name, start_times, weekday=None):
+    """Тухайн өдөр ажилтны ажил эхлэх ёстой цагийг буцаана, 8 цагийн дүрэм бол None.
+
+    Бямба гарагт бүх ажилтан 09:00-д эхэлнэ ('бусад' буюу 8 цагийн дүрэмтэй албан тушаал ч мөн адил),
+    бусад өдөр албан тушаалын дүрмээр (AttendancePositionRule) тодорхойлно.
+    """
+    if weekday == SATURDAY:
+        return SATURDAY_START_TIME
+    return start_times.get(position_name) if position_name else None
 
 
 def get_position_start_times():
     """{албан тушаал: ажил эхлэх цаг эсвэл None} mapping-г буцаана.
 
     None утга = тухайн албан тушаалд тогтмол эхлэх цаг байхгүй ('бусад') - 8 цагийн
-    дүрмээр (ирсэн цагаас хойш 8 цаг ажиллах ёстой) тооцоологдоно.
+    дүрмээр (ирсэн цагаас хойш цайны цагтайгаа 9 цаг байх ёстой) тооцоологдоно.
     """
     from shop.models import AttendancePositionRule
     return {r.position_name: r.start_time for r in AttendancePositionRule.objects.all()}
+
+
+_REGISTRY_RE = re.compile(r'^\D{2}(\d{2})(\d{2})(\d{2})\d{2}$')
+
+
+def birth_date_from_registry(registry_number):
+    """Регистрийн дугаараас (АА + ОНСАРӨДӨР + 2 орон) төрсөн огноог гаргана, танигдахгүй бол None.
+
+    2000 оноос хойш төрсөн хүний сар дээр 20 нэмэгддэг (жиш: АА05250312 - 2005 оны 5-р сарын 3)."""
+    m = _REGISTRY_RE.match((registry_number or '').strip())
+    if not m:
+        return None
+    yy, mm, dd = (int(g) for g in m.groups())
+    year = 1900 + yy
+    if mm > 20:
+        year, mm = 2000 + yy, mm - 20
+    try:
+        return date(year, mm, dd)
+    except ValueError:
+        return None
+
+
+def get_employee_ages(on=None):
+    """{ажилтны код: нас (бүтэн жилээр, on өдрөөр - анхдагч өнөөдөр)} - регистрийн дугаараас тооцно,
+    танигдахгүй регистртэй ажилтан ороогүй."""
+    from datamigration.models import OpenDataEmployee
+
+    on = on or timezone.localdate()
+    ages = {}
+    for code, registry in OpenDataEmployee.objects.exclude(id__isnull=True).values_list('id', 'registrynumber'):
+        born = birth_date_from_registry(registry)
+        if born:
+            ages[code] = on.year - born.year - ((on.month, on.day) < (born.month, born.day))
+    return ages
+
+
+def age_in_range(age, age_min, age_max):
+    """Насны шүүлт: хязгаар өгөөгүй бол бүгд тохирно, өгсөн үед нас тодорхойгүй ажилтан тохирохгүй."""
+    if age_min is None and age_max is None:
+        return True
+    if age is None:
+        return False
+    return (age_min is None or age >= age_min) and (age_max is None or age <= age_max)
+
+
+def get_position_choices():
+    """Цаг бүртгэлд мөрийн албан тушаалыг сонгох жагсаалт: дүрэм тохируулсан болон идэвхтэй ажилчдын албан тушаалууд."""
+    from datamigration.models import OpenDataEmployee
+    from shop.models import AttendancePositionRule
+
+    names = set(AttendancePositionRule.objects.values_list('position_name', flat=True))
+    names.update(
+        OpenDataEmployee.objects.filter(isreclusion='N').exclude(positionname__isnull=True)
+        .values_list('positionname', flat=True)
+    )
+    return sorted(n for n in names if n)
 
 
 def get_employee_positions(employee_codes):
@@ -203,6 +295,15 @@ def get_employee_positions(employee_codes):
     if not codes:
         return {}
     return dict(OpenDataEmployee.objects.filter(id__in=codes).values_list('id', 'positionname'))
+
+
+def get_employee_names(employee_codes):
+    """{ажилтны код: ажилтны мэдээлэл дэх (OpenDataEmployee) албан ёсны нэр} mapping-г буцаана."""
+    from datamigration.models import OpenDataEmployee
+    codes = [c for c in set(employee_codes) if c]
+    if not codes:
+        return {}
+    return dict(OpenDataEmployee.objects.filter(id__in=codes).values_list('id', 'name'))
 
 
 def _bucket_delay(delay_minutes):
@@ -217,20 +318,35 @@ def _bucket_delay(delay_minutes):
     return 10, 10, delay - 20
 
 
-def compute_lateness(position_name, start_times, arrival_time, left_time):
+def compute_lateness(position_name, start_times, arrival_time, left_time, weekday=None):
     """Албан тушаалын дүрмээр хоцролтыг тооцоолж (late_1_10, late_11_20, late_20_plus) буцаана.
 
+    - Бямба гараг (weekday == 5): бүх ажилтан 09:00-15:00 ажиллана - 09:00-с хойш ирсэн минут хоцролт.
+      'Бусад' (8 цагийн дүрэмтэй) ажилтан 15:00-с хойш үлдсэн минутаараа хоцролтоо нөхнө: хоцорсон
+      минут нь нөхсөн минутаас бага бол хоцролтгүй, илүү бол зөрүүг нь тооцно.
     - Тогтмол эхлэх цагтай албан тушаал (position_name нь start_times-д байгаа): ирсэн цаг
       тэр цагаас хойш байвал зөрүүг хоцролтоор тооцно.
-    - 'Бусад' (start_times-д байхгүй эсвэл start_time нь NULL): ирсэн цагаас хойш 8 цаг
-      (480 минут) ажиллаагүй бол дутсан минутыг хоцролтоор тооцно (тарсан цаг тодорхойгүй бол 0).
+    - 'Бусад' (start_times-д байхгүй эсвэл start_time нь NULL): ирсэн цагаас хойш 9 цаг
+      (8 цаг ажил + 1 цаг цай, 540 минут) байгаагүй бол дутсан минутыг хоцролтоор тооцно
+      (тарсан цаг тодорхойгүй бол 0).
     """
-    start_time = start_times.get(position_name) if position_name else None
+    start_time = get_start_time(position_name, start_times, weekday)
+
+    # Хүснэгтэд ЦЦ:ММ-ээр харуулдаг (JS-ийн дахин тооцоолол ч мөн адил) тул секундыг хаяж минутын
+    # нарийвчлалаар тооцно - эс бөгөөс 09:00:40-д ирснийг 09:00 гэж харуулчихаад 1 минут хоцорсон гэнэ
+    arrival_time = arrival_time.replace(second=0, microsecond=0)
+    if left_time:
+        left_time = left_time.replace(second=0, microsecond=0)
 
     if start_time is not None:
         start_dt = datetime.combine(datetime.today(), start_time)
         arrival_dt = datetime.combine(datetime.today(), arrival_time)
         delay = (arrival_dt - start_dt).total_seconds() / 60
+        if weekday == SATURDAY and left_time and is_workday_rule(position_name, start_times):
+            end_dt = datetime.combine(datetime.today(), SATURDAY_END_TIME)
+            left_dt = datetime.combine(datetime.today(), left_time)
+            overtime = max(0, (left_dt - end_dt).total_seconds() / 60)
+            delay -= overtime
         return _bucket_delay(delay)
 
     if not left_time:
@@ -246,29 +362,37 @@ def compute_lateness(position_name, start_times, arrival_time, left_time):
     return _bucket_delay(deficit)
 
 
-def build_attendance_rows(date_from, date_to):
+def build_attendance_rows(date_from, date_to, employee_code=None):
     """Сонгосон огнооны мужид харуулах ирцийн хүснэгтийн мөрүүдийг буцаана (нэр асц, огноо буурахаар эрэмбэлнэ).
+
+    employee_code өгвөл зөвхөн тэр ажилтны мөрүүдийг (хувийн мэдээлэл дэх "Цагийн бүртгэл" гэх мэт) буцаана -
+    төхөөрөмжийн бүртгэлийг EmployeeFingerprint-д тохируулсан хурууны кодоор нь шүүнэ.
 
     Тухайн (ажилтны код, огноо) хослолд өмнө нь гараар хадгалсан AttendanceRecord байвал
     түүхий бүртгэлээс тооцоолсныг орлуулж харуулна. Хоцролтыг ажилтны албан тушаалын дүрмээр
     (AttendancePositionRule) тооцоолно - compute_lateness() тайлбарыг үз.
     """
-    from shop.models import AttendanceRawLog, AttendanceRecord, MerchandiserVisitLog
+    from shop.models import AttendanceRawLog, AttendanceRecord, EmployeeFingerprint, MerchandiserVisitLog
 
     start_dt = timezone.make_aware(datetime.combine(date_from, dt_time.min))
     end_dt = timezone.make_aware(datetime.combine(date_to, dt_time.max))
 
-    raw_qs = AttendanceRawLog.objects.filter(
-        timestamp__gte=start_dt, timestamp__lte=end_dt
-    ).values('device_user_id', 'timestamp')
-    raw_df = pd.DataFrame(list(raw_qs))
+    raw_qs = AttendanceRawLog.objects.filter(timestamp__gte=start_dt, timestamp__lte=end_dt)
+    visit_qs = MerchandiserVisitLog.objects.filter(timestamp__gte=start_dt, timestamp__lte=end_dt)
+    saved_qs = AttendanceRecord.objects.filter(date__gte=date_from, date__lte=date_to)
+    if employee_code is not None:
+        device_user_ids = list(
+            EmployeeFingerprint.objects.filter(employee_code=employee_code)
+            .exclude(device_user_id='')
+            .values_list('device_user_id', flat=True)
+        )
+        raw_qs = raw_qs.filter(device_user_id__in=device_user_ids)
+        visit_qs = visit_qs.filter(employee_code=employee_code)
+        saved_qs = saved_qs.filter(employee_code=employee_code)
 
-    visit_qs = MerchandiserVisitLog.objects.filter(
-        timestamp__gte=start_dt, timestamp__lte=end_dt
-    ).values('employee_code', 'employee_name', 'customer_name', 'timestamp')
-    visit_df = pd.DataFrame(list(visit_qs))
-
-    saved_qs = list(AttendanceRecord.objects.filter(date__gte=date_from, date__lte=date_to))
+    raw_df = pd.DataFrame(list(raw_qs.values('device_user_id', 'timestamp')))
+    visit_df = pd.DataFrame(list(visit_qs.values('employee_code', 'employee_name', 'customer_name', 'timestamp')))
+    saved_qs = list(saved_qs)
 
     users_df = None
     if not raw_df.empty:
@@ -298,10 +422,19 @@ def build_attendance_rows(date_from, date_to):
 
     start_times = get_position_start_times()
     employee_positions = get_employee_positions(all_codes)
+    employee_names = get_employee_names(all_codes)
 
-    def rule_start_str(position_name):
-        """JS-д дамжуулах туслах утга: тогтмол эхлэх цагтай бол 'ЦЦ:ММ', 'бусад' (8ц дүрэм) бол хоосон."""
-        st = start_times.get(position_name) if position_name else None
+    def rule_end_str(position_name, d):
+        """JS-д дамжуулах туслах утга: Бямба гарагт 8 цагийн дүрэмтэй ажилтан хоцролтоо нөхөх
+        тарах цаг ('15:00'), бусад тохиолдолд хоосон."""
+        if d.weekday() == SATURDAY and is_workday_rule(position_name, start_times):
+            return SATURDAY_END_TIME.strftime('%H:%M')
+        return ''
+
+    def rule_start_str(position_name, d):
+        """JS-д дамжуулах туслах утга: тогтмол эхлэх цагтай бол 'ЦЦ:ММ' (Бямба гарагт үргэлж '09:00'),
+        'бусад' (8ц дүрэм) бол хоосон."""
+        st = get_start_time(position_name, start_times, d.weekday())
         return st.strftime('%H:%M') if st else ''
 
     rows_by_key = {}
@@ -316,6 +449,7 @@ def build_attendance_rows(date_from, date_to):
             late_1_10, late_11_20, late_20_plus = compute_lateness(
                 position_name, start_times, arrived_dt.time(),
                 left_dt.time() if left_dt != arrived_dt else None,
+                weekday=d.weekday(),
             )
 
             effective_code = employee_code or f'device:{device_user_id}'
@@ -333,7 +467,10 @@ def build_attendance_rows(date_from, date_to):
                 'late_20_plus': late_20_plus,
                 'total_late_minutes': late_1_10 + late_11_20 + late_20_plus,
                 'customer_name': '',
-                'rule_start': rule_start_str(position_name),
+                'position_name': position_name or '',
+                'default_position': position_name or '',
+                'rule_start': rule_start_str(position_name, d),
+                'rule_end': rule_end_str(position_name, d),
                 'is_saved': False,
             }
 
@@ -346,10 +483,18 @@ def build_attendance_rows(date_from, date_to):
             late_1_10, late_11_20, late_20_plus = compute_lateness(
                 position_name, start_times, arrived_dt.time(),
                 left_dt.time() if left_dt != arrived_dt else None,
+                weekday=d.weekday(),
             )
 
-            names = [n for n in group['employee_name'].tolist() if n]
-            name = names[0] if names else ''
+            # Ажилтны мэдээлэл (OpenDataEmployee)-д байгаа албан ёсны нэрийг ашиглана - Document.xlsx-ийн
+            # 'Мерчандайзерийн нэр' баганад тохирохгүй/өөр бичигдсэн байж болзошгүй тул зөвхөн
+            # ажилтны мэдээлэлд олдоогүй тохиолдолд л баримтын нэрийг нөөц болгон ашиглана
+            official_name = employee_names.get(employee_code)
+            if official_name:
+                name = official_name
+            else:
+                doc_names = [n for n in group['employee_name'].tolist() if n]
+                name = doc_names[0] if doc_names else ''
             customers = sorted({c for c in group['customer_name'].tolist() if c})
 
             key = (employee_code, d)
@@ -366,17 +511,31 @@ def build_attendance_rows(date_from, date_to):
                 'late_20_plus': late_20_plus,
                 'total_late_minutes': late_1_10 + late_11_20 + late_20_plus,
                 'customer_name': ', '.join(customers),
-                'rule_start': rule_start_str(position_name),
+                'position_name': position_name or '',
+                'default_position': position_name or '',
+                'rule_start': rule_start_str(position_name, d),
+                'rule_end': rule_end_str(position_name, d),
                 'is_saved': False,
             }
 
     for rec in saved_qs:
-        key = (rec.employee_code, rec.date)
-        position_name = employee_positions.get(rec.employee_code)
+        # Хавсарсан албан тушаалын нэмэлт мөр нь үндсэн мөрөөс тусдаа (албан тушаал бүрт нэг) түлхүүртэй
+        key = (rec.employee_code, rec.date, rec.position_name) if rec.is_additional else (rec.employee_code, rec.date)
+        if rec.is_deleted:
+            # Устгасан гэж тэмдэглэсэн мөр - түүхий бүртгэлээс тооцоолсон мөрийг ч хасна
+            rows_by_key.pop(key, None)
+            continue
+        default_position = employee_positions.get(rec.employee_code) or ''
+        # Тухайн өдөр өөр албан тушаалд шилжин ажилласан бол түүний дүрмээр
+        position_name = rec.position_name or default_position
+        # Ажилтны мэдээлэлд (OpenDataEmployee) байгаа албан ёсны нэрийг харуулна - хадгалсан
+        # мөрийн 'name' нь хуучин/буруу утга (жиш нь Document.xlsx-ийн нэр) байж болзошгүй тул
+        # зөвхөн ажилтны мэдээлэлд олдоогүй тохиолдолд (device:XX гэх мэт) хадгалсан утгыг ашиглана
+        display_name = employee_names.get(rec.employee_code) or rec.name
         rows_by_key[key] = {
             'employee_code': rec.employee_code,
             'device_user_id': rec.device_user_id,
-            'name': rec.name,
+            'name': display_name,
             'date': rec.date,
             'weekday': rec.weekday,
             'arrived_time': rec.arrived_time,
@@ -386,12 +545,22 @@ def build_attendance_rows(date_from, date_to):
             'late_20_plus': rec.late_20_plus,
             'total_late_minutes': rec.total_late_minutes,
             'customer_name': rec.customer_name,
-            'rule_start': rule_start_str(position_name),
+            'position_name': position_name,
+            'default_position': default_position,
+            'rule_start': rule_start_str(position_name, rec.date),
+            'rule_end': rule_end_str(position_name, rec.date),
             'is_saved': True,
+            'is_additional': rec.is_additional,
+            # Нэмэлт мөрийг (ажилтан, огноо)-оор ялгах боломжгүй тул засах/устгахад id-аар нь хандана
+            'record_id': rec.id if rec.is_additional else '',
         }
 
     rows = list(rows_by_key.values())
-    # Тогтвортой эрэмбэлэлт ашиглан: нэрээр өсөхөөр, огноогоор буурахаар
+    for r in rows:
+        r.setdefault('is_additional', False)
+        r.setdefault('record_id', '')
+    # Тогтвортой эрэмбэлэлт ашиглан: нэрээр өсөхөөр, огноогоор буурахаар, нэг өдөрт үндсэн мөр эхэндээ
+    rows.sort(key=lambda r: r['is_additional'])
     rows.sort(key=lambda r: r['date'], reverse=True)
     rows.sort(key=lambda r: r['name'] or '')
     return rows
@@ -434,9 +603,38 @@ def save_attendance_row(data, user):
     except (TypeError, ValueError):
         raise ValueError('хоцролтын минут тоо биш байна')
 
+    employee_code = data['employee_code']
+    default_position = get_employee_positions([employee_code]).get(employee_code) or ''
+    position_name = (data.get('position_name') or '').strip()[:200]
+    record_id = str(data.get('record_id') or '').strip()
+    is_additional = bool(record_id) or bool(data.get('is_additional'))
+    if is_additional:
+        # Хавсарсан албан тушаалын мөрт албан тушаал заавал (хоосон бол үндсэн албан тушаал)
+        position_name = position_name or default_position
+        if not position_name:
+            raise ValueError('хавсарсан мөрийн албан тушаалыг сонгоно уу')
+    elif position_name == default_position:
+        # Үндсэн албан тушаалтай ижил бол хоосон хадгална - ажилтны албан тушаал өөрчлөгдөхөд дагаж шинэчлэгдэнэ
+        position_name = ''
+
+    # Нэг өдөр нэг албан тушаалаар хоёр мөр байж болохгүй (үндсэн мөр болон хавсарсан мөрүүдийн хооронд)
+    effective_position = position_name or default_position
+    for other in build_attendance_rows(data['date'], data['date'], employee_code=employee_code):
+        is_same_row = (str(other['record_id']) == record_id) if is_additional else not other['is_additional']
+        if not is_same_row and other['position_name'] == effective_position:
+            raise ValueError(f'энэ өдөр "{effective_position}" албан тушаалаар мөр аль хэдийн байна')
+
+    if record_id:
+        lookup = {'pk': record_id, 'employee_code': employee_code, 'date': data['date'], 'is_additional': True}
+        if not AttendanceRecord.objects.filter(**lookup).exists():
+            raise ValueError('хавсарсан мөр олдсонгүй (устгагдсан байж магадгүй)')
+    elif is_additional:
+        lookup = {'employee_code': employee_code, 'date': data['date'], 'position_name': position_name, 'is_additional': True}
+    else:
+        lookup = {'employee_code': employee_code, 'date': data['date'], 'is_additional': False}
+
     AttendanceRecord.objects.update_or_create(
-        employee_code=data['employee_code'],
-        date=data['date'],
+        **lookup,
         defaults={
             'device_user_id': (data.get('device_user_id', '') or '')[:50],
             'name': (data.get('name', '') or '')[:200],
@@ -448,6 +646,97 @@ def save_attendance_row(data, user):
             'late_20_plus': late_20_plus,
             'total_late_minutes': late_1_10 + late_11_20 + late_20_plus,
             'customer_name': (data.get('customer_name', '') or '')[:1000],
+            'position_name': position_name,
+            'is_deleted': False,
+            'updated_by': user,
+        }
+    )
+
+
+def add_attendance_row(employee_code, row_date, arrived_time, left_time, customer_name, user, position_name=''):
+    """Хуруу дарахаа мартсан гэх мэт шалтгаанаар бүртгэлгүй өдөрт шинэ мөрийг гараар нэмнэ.
+
+    position_name өгвөл (өөр албан тушаалд шилжин ажилласан өдөр) хоцролтыг тэр албан тушаалын,
+    үгүй бол ажилтны үндсэн албан тушаалын дүрмээр (compute_lateness) тооцоолно.
+
+    Тухайн өдөр мөр аль хэдийн байвал: өөр албан тушаал сонгосон бол албан тушаал хавсарч ажилласан
+    нэмэлт мөр (is_additional) болж нэмэгдэнэ; тэр албан тушаалаар мөр байвал (давхардахгүйн тулд)
+    ValueError шиднэ - тэр мөрийг хүснэгт дээрээ засна.
+    """
+    from shop.models import AttendanceRecord
+
+    arrived = _normalize_time_str(arrived_time, 'Ирсэн цаг')
+    left = _normalize_time_str(left_time, 'Тарсан цаг')
+    if not arrived:
+        raise ValueError('ирсэн цагийг оруулна уу')
+
+    names = get_employee_names([employee_code])
+    if employee_code not in names:
+        raise ValueError('ажилтан олдсонгүй')
+    position_name = (position_name or '').strip() or get_employee_positions([employee_code]).get(employee_code)
+
+    existing_rows = build_attendance_rows(row_date, row_date, employee_code=employee_code)
+    if any(r['position_name'] == (position_name or '') for r in existing_rows):
+        raise ValueError(
+            'энэ өдөр мөр аль хэдийн байна, хүснэгт дээрээ засна уу'
+            if not position_name else f'энэ өдөр "{position_name}" албан тушаалаар мөр аль хэдийн байна'
+        )
+    is_additional = bool(existing_rows)
+
+    arrived_t = datetime.strptime(arrived, '%H:%M').time()
+    left_t = datetime.strptime(left, '%H:%M').time() if left else None
+    late_1_10, late_11_20, late_20_plus = compute_lateness(
+        position_name, get_position_start_times(), arrived_t, left_t, weekday=row_date.weekday(),
+    )
+
+    device_user_id = ''
+    existing = AttendanceRecord.objects.filter(employee_code=employee_code, date=row_date, is_additional=False).first()
+    if existing and not is_additional:
+        device_user_id = existing.device_user_id
+
+    save_attendance_row({
+        'employee_code': employee_code,
+        'device_user_id': device_user_id,
+        'name': names[employee_code],
+        'date': row_date,
+        'weekday': DAYS_OF_WEEK_MN[row_date.weekday()],
+        'arrived_time': arrived,
+        'left_time': left,
+        'late_1_10': late_1_10,
+        'late_11_20': late_11_20,
+        'late_20_plus': late_20_plus,
+        'customer_name': customer_name,
+        'position_name': position_name or '',
+        'is_additional': is_additional,
+    }, user)
+
+
+def mark_attendance_row_deleted(employee_code, row_date, name, user, record_id=None):
+    """(ажилтан, огноо)-ны мөрийг хүснэгтээс нууна. Гараар засварласан утга байсан бол дарж бичигдэнэ.
+
+    record_id өгвөл хавсарсан албан тушаалын нэмэлт мөрийг (төхөөрөмжийн бүртгэлгүй тул) шууд устгана."""
+    from shop.models import AttendanceRecord
+
+    if record_id:
+        AttendanceRecord.objects.filter(pk=record_id, employee_code=employee_code, is_additional=True).delete()
+        return
+
+    AttendanceRecord.objects.update_or_create(
+        employee_code=employee_code,
+        date=row_date,
+        is_additional=False,
+        defaults={
+            'name': (name or '')[:200],
+            'weekday': DAYS_OF_WEEK_MN[row_date.weekday()],
+            'arrived_time': '',
+            'left_time': '',
+            'late_1_10': 0,
+            'late_11_20': 0,
+            'late_20_plus': 0,
+            'total_late_minutes': 0,
+            'customer_name': '',
+            'position_name': '',
+            'is_deleted': True,
             'updated_by': user,
         }
     )
