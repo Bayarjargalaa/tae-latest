@@ -149,12 +149,20 @@ view_mode: 'table' | 'dashboard' | 'breakdown' - зөвхөн хүснэгтэд
     </div>
     {% endif %}
 
-    <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 mb-4">
+    <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4 mb-4">
         <div>
             <label class="block text-sm font-medium mb-1">Бараа (олноор сонгож болно)</label>
             <select name="item" id="item-select" multiple>
                 {% for name, code in item_options %}
                 <option value="{{ name }}" {% if name in filters.items %}selected{% endif %}>{% if code %}{{ code }} - {% endif %}{{ name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div>
+            <label class="block text-sm font-medium mb-1">Барааны бүлэг (олноор сонгож болно)</label>
+            <select name="item_group" id="item-group-select" multiple>
+                {% for name in item_group_options %}
+                <option value="{{ name }}" {% if name in filters.item_groups %}selected{% endif %}>{{ name }}</option>
                 {% endfor %}
             </select>
         </div>
@@ -248,6 +256,7 @@ document.addEventListener('DOMContentLoaded', function () {
         ...choicesOptions, placeholderValue: 'Бүх бараа (код эсвэл нэрээр хайх)',
         searchFields: ['label'], fuseOptions: { threshold: 0.1, ignoreLocation: true },
     });
+    new Choices('#item-group-select', { ...choicesOptions, placeholderValue: 'Бүх бүлэг' });
     new Choices('#customer-select', { ...choicesOptions, placeholderValue: 'Бүх харилцагч' });
     new Choices('#customer-group-select', { ...choicesOptions, placeholderValue: 'Бүх бүлэг' });
     const channelChoices = new Choices('#channel-select', {

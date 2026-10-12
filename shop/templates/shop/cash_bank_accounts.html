@@ -13,7 +13,8 @@
         <div class="flex flex-wrap items-center justify-between gap-2 mb-6">
             <div>
                 <h1 class="text-2xl lg:text-3xl font-bold text-gray-900">🏦 Бэлэн цалингийн данс</h1>
-                <p class="text-gray-600 mt-2">Бэлэн болон хосолсон цалинтай ажилчдын данс, {{ month_label }}ын бэлэн цалингийн олгох дүн{% if not close %} (урьдчилсан){% endif %}</p>
+                <p class="text-gray-600 mt-2">Бэлэн болон хосолсон цалинтай ажилчдын данс, {{ month_label }}ын бэлэн цалингийн олгох дүн{% if not close %} (урьдчилсан){% endif %},
+                    ачааны мөнгө, хоолны мөнгө ба нийлбэр. Ачааны / хоолны мөнгөтэй картын цалинтай ажилчид ч орно.</p>
             </div>
             <a href="{{ export_url }}" class="bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50 transition whitespace-nowrap">⬇ Excel</a>
         </div>
@@ -97,14 +98,18 @@
                 <div class="text-xs text-gray-500">{{ summary.with_account }} нь данстай</div>
             </div>
             <div class="bg-white rounded-lg shadow p-4 ring-2 ring-primary">
-                <div class="text-sm text-gray-500">Бэлэн олгох дүн</div>
-                <div class="text-2xl font-bold text-primary">{{ summary.payout|floatformat:'0g' }}₮</div>
-                <div class="text-xs text-gray-500">{{ month_label }}{% if close %} · 🔒 хаагдсан{% endif %}</div>
+                <div class="text-sm text-gray-500">Нийт олгох дүн</div>
+                <div class="text-2xl font-bold text-primary">{{ summary.total|floatformat:'-2g' }}₮</div>
+                <div class="text-xs text-gray-500 space-y-0.5 mt-1">
+                    <div class="flex justify-between gap-2"><span>Бэлэн цалин{% if close %} 🔒{% endif %}</span><span>{{ summary.payout|floatformat:'-2g' }}</span></div>
+                    <div class="flex justify-between gap-2"><span>Ачааны мөнгө</span><span>{{ summary.unloading|floatformat:'-2g' }}</span></div>
+                    <div class="flex justify-between gap-2"><span>Хоолны мөнгө</span><span>{{ summary.meal|floatformat:'-2g' }}</span></div>
+                </div>
             </div>
             <div class="bg-white rounded-lg shadow p-4">
                 <div class="text-sm text-gray-500">Банкаар</div>
                 <div class="text-xs text-gray-700 mt-1 space-y-0.5">
-                    {% for bank, count, amount in summary.by_bank %}<div class="flex justify-between gap-2"><span>{{ bank }} ({{ count }})</span><b>{{ amount|floatformat:'0g' }}</b></div>{% empty %}-{% endfor %}
+                    {% for bank, count, amount in summary.by_bank %}<div class="flex justify-between gap-2"><span>{{ bank }} ({{ count }})</span><b>{{ amount|floatformat:'-2g' }}</b></div>{% empty %}-{% endfor %}
                 </div>
             </div>
             <div class="bg-white rounded-lg shadow p-4">
@@ -149,23 +154,40 @@
                                     <span class="font-mono tracking-wide text-gray-900" {% if r.raw != r.account %}title="Бичсэн: {{ r.raw }}"{% endif %}>{{ r.account }}</span>
                                     <button type="button" class="text-xs text-gray-500 hover:text-gray-900 border border-gray-200 rounded px-1.5 py-0.5 hover:bg-white" data-copy="{{ r.account }}" title="Хуулах">⧉</button>
                                     {% if r.status == 'invalid' %}<span class="text-xs text-amber-700" title="IBAN нь MN + 18 оронтой тоо байх ёстой - Цалингийн тохиргоонд шалгана уу">⚠ шалгах</span>{% endif %}
+                                    {% if r.account_source == 'system' %}<span class="text-xs text-blue-700" title="Бэлэн цалингийн данс оруулаагүй тул ажилтны мэдээлэл дэх (картын цалингийн) данс">ажилтны мэдээллээс</span>{% endif %}
                                 </span>
                                 {% endif %}
                             </td>
-                            <td class="px-3 py-2 text-right whitespace-nowrap">{% if r.payout is None %}<span class="text-gray-300">-</span>{% else %}{{ r.payout|floatformat:'0g' }}{% endif %}</td>
+                            {% comment %} Нийт = бэлэн олгох + ачааны мөнгө + хоолны мөнгө; таслалгүй тоогоор хуулна {% endcomment %}
+                            <td class="px-3 py-2 text-right whitespace-nowrap bg-gray-50">
+                                {% if r.total is None %}<span class="text-gray-300">-</span>{% else %}
+                                <span class="inline-flex items-center gap-2 justify-end">
+                                    <span class="font-semibold text-gray-900">{{ r.total|floatformat:'-2g' }}</span>
+                                    <button type="button" class="text-xs text-gray-500 hover:text-gray-900 border border-gray-200 rounded px-1.5 py-0.5 hover:bg-white" data-copy="{{ r.total|floatformat:'-2u' }}" title="Хуулах">⧉</button>
+                                </span>
+                                {% endif %}
+                            </td>
+                            <td class="px-3 py-2 text-right whitespace-nowrap">{% if r.payout is None %}<span class="text-gray-300">-</span>{% else %}{{ r.payout|floatformat:'-2g' }}{% endif %}</td>
+                            <td class="px-3 py-2 text-right whitespace-nowrap">{% if r.unloading %}{{ r.unloading|floatformat:'-2g' }}{% else %}<span class="text-gray-300">-</span>{% endif %}</td>
+                            <td class="px-3 py-2 text-right whitespace-nowrap">{% if r.meal %}{{ r.meal|floatformat:'-2g' }}{% else %}<span class="text-gray-300">-</span>{% endif %}</td>
                         </tr>
                         {% endfor %}
                     </tbody>
                     <tfoot>
                         <tr class="border-t-2 border-gray-300 font-semibold bg-gray-50">
                             <td class="px-3 py-2" colspan="6">Нийт ({{ summary.count }} ажилтан)</td>
-                            <td class="px-3 py-2 text-right whitespace-nowrap">{{ summary.payout|floatformat:'0g' }}</td>
+                            <td class="px-3 py-2 text-right whitespace-nowrap">{{ summary.total|floatformat:'-2g' }}</td>
+                            <td class="px-3 py-2 text-right whitespace-nowrap">{{ summary.payout|floatformat:'-2g' }}</td>
+                            <td class="px-3 py-2 text-right whitespace-nowrap">{{ summary.unloading|floatformat:'-2g' }}</td>
+                            <td class="px-3 py-2 text-right whitespace-nowrap">{{ summary.meal|floatformat:'-2g' }}</td>
                         </tr>
                     </tfoot>
                 </table>
             </div>
-            <p class="text-xs text-gray-500 mt-3">Дансыг "MN"-ийн араас тоонуудыг зайгүйгээр харуулав. Засах бол
-                <a href="{% url 'shop:payroll_settings' %}" class="text-primary underline">Цалингийн тохиргоо</a>-нд.</p>
+            <p class="text-xs text-gray-500 mt-3">Дансыг "MN"-ийн араас тоонуудыг зайгүйгээр харуулав. Бэлэн цалингийн данс оруулаагүй бол
+                ажилтны мэдээлэл дэх данс ("ажилтны мэдээллээс", {{ summary.from_system }} ажилтан). Засах бол
+                {% if 'payroll_card' in visible_menu_keys or 'payroll_cash' in visible_menu_keys %}<a href="{% url 'shop:payroll_settings' %}" class="text-primary underline">Цалингийн тохиргоо</a>{% else %}Цалингийн тохиргоо{% endif %}-нд.
+                Ачааны мөнгө - Ачаа буулгалтын сарын нэгтгэл, хоолны мөнгө - Хоолны мөнгөний хуудас.</p>
             {% endif %}
         </div>
     </main>

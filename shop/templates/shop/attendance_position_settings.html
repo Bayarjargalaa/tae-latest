@@ -52,6 +52,7 @@
                                 <th class="px-4 py-2 font-semibold text-gray-700 whitespace-nowrap">Ажлын горим</th>
                                 <th class="px-4 py-2 font-semibold text-gray-700">Цаг бүртгүүлдэггүй</th>
                                 <th class="px-4 py-2 font-semibold text-gray-700 whitespace-nowrap">Унааны мөнгөгүй</th>
+                                <th class="px-4 py-2 font-semibold text-gray-700 whitespace-nowrap" title="Хоол идээгүй өдөрт олгох мөнгө - хоосон бол анхдагч">Хоолны мөнгө (өдөрт)</th>
                                 <th class="px-4 py-2 font-semibold text-gray-700">Тайлбар</th>
                             </tr>
                         </thead>
@@ -83,12 +84,18 @@
                                     <input type="checkbox" name="no_transport" value="{{ row.position_name }}" {% if row.no_transport %}checked{% endif %}
                                            title="Цалин бодолтод унааны мөнгө бодохгүй">
                                 </td>
+                                <td class="px-4 py-2">
+                                    <input type="text" inputmode="decimal" name="meal_allowance_per_day"
+                                           value="{% if row.meal_allowance_per_day is not None %}{{ row.meal_allowance_per_day|floatformat:'-2u' }}{% endif %}"
+                                           placeholder="{{ default_meal_rate|floatformat:'-2g' }}" title="Хоосон бол анхдагч хоолны мөнгө"
+                                           class="border border-gray-300 rounded-lg px-3 py-1.5 w-28 text-right">
+                                </td>
                                 <td class="px-4 py-2 text-gray-500 text-xs">
                                     {% if row.start_time %}Ирсэн цаг {{ row.start_time }}-с хойш байвал хоцролт{% else %}Хоосон - "бусад" 8 цагийн дүрэм{% endif %}
                                 </td>
                             </tr>
                             {% empty %}
-                            <tr><td colspan="7" class="px-4 py-4 text-center text-gray-500">Албан тушаал олдсонгүй.</td></tr>
+                            <tr><td colspan="8" class="px-4 py-4 text-center text-gray-500">Албан тушаал олдсонгүй.</td></tr>
                             {% endfor %}
                         </tbody>
                     </table>

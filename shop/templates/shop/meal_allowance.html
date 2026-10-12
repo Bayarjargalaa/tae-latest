@@ -1,0 +1,358 @@
+{% extends 'base.html' %}
+
+{% block title %}Хоолны мөнгө - Euro Foods{% endblock %}
+
+{% block hide_mobile_menu %}hidden{% endblock %}
+
+{% block extra_css %}
+<style>
+.ma-table td, .ma-table th { border: 1px solid #e5e7eb; }
+.ma-table th { white-space: normal; line-height: 1.2; vertical-align: bottom; }
+.ma-rate { width: 7rem; border: 1px solid #d1d5db; border-radius: 0.25rem; padding: 2px 6px; text-align: right; }
+.ma-rate.ma-custom, .ma-day.ma-custom { background: #fff8e6; border-color: #f2d48a; }
+.ma-day { width: 4rem; border: 1px solid #d1d5db; border-radius: 0.25rem; padding: 2px 6px; text-align: right; }
+/* Тоон доорх тайлбар: албан тушаал бүрийн хоног, давхардсан өдөр, идсэн өдрийн тоо */
+.ma-sub { font-size: 0.7rem; line-height: 1.15; color: #6b7280; font-weight: 400; white-space: nowrap; margin-top: 2px; }
+.pr-print-table .ma-sub { font-size: 0.65em; color: #000; }
+{% include 'shop/_print_fit_css.html' %}
+.pr-print-table td, .pr-print-table th { padding-left: 6px; padding-right: 6px; }
+.pr-print-title { margin: 0.6em 0 0.4em; }
+/* Мөнгө багана нарийн: албан тушаалаар задарвал албан тушаал, тооцоог 2 мөрөнд жижиг үсгээр */
+.pr-print-table th.ma-print-rate, .pr-print-table td.ma-print-rate { width: 1%; }
+.pr-print-table td.ma-print-rate div { font-size: 0.7em; line-height: 1.1; }
+.pr-print-table td.ma-print-rate .ma-print-pos { text-align: left; font-weight: 400; }
+@media print {
+    @page { size: A4 portrait; margin: 10mm; }
+    #sidebar, #sidebar-open-button, #sidebar-overlay, header, footer, .no-print, .screen-area, #ai-chat-widget { display: none !important; }
+    main { margin: 0 !important; padding: 0 !important; }
+    body { background: white !important; }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+{% load l10n %}
+<div class="flex min-h-screen bg-gray-50">
+    {% include 'shop/_sidebar.html' with active_page=active_page %}
+
+    <main class="flex-1 p-2 lg:p-8 lg:ml-0 min-w-0">
+        <div class="flex flex-wrap items-center justify-between gap-2 mb-6 no-print">
+            <div>
+                <h1 class="text-2xl lg:text-3xl font-bold text-gray-900">🍱 Хоолны мөнгө</h1>
+                <p class="text-gray-600 mt-2">Ажилласан ч байгууллагын хоол идээгүй өдрийн мөнгө · ажилласан хоног Хоног бүртгэлээс, идсэн өдөр Хоол идэх нэрсийн бүртгэлээс</p>
+            </div>
+            <div class="flex gap-2">
+                {% comment %} Бусад хуудасны холбоосыг зөвхөн цэсний эрхтэй (visible_menu_keys) үед харуулна {% endcomment %}
+                {% if 'timesheet' in visible_menu_keys %}<a href="{% url 'shop:timesheet' %}?year={{ year|unlocalize }}&month={{ month }}" class="bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50 transition whitespace-nowrap">📅 Хоног бүртгэл</a>{% endif %}
+                {% if 'meal_attendance' in visible_menu_keys %}<a href="{% url 'shop:meal_attendance_list' %}" class="bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50 transition whitespace-nowrap">🍽 Хоол идэх нэрс</a>{% endif %}
+                <button type="button" onclick="window.print()" class="bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50 transition whitespace-nowrap">🖨 Хэвлэх</button>
+                <a href="{% url 'shop:meal_allowance_export' %}?{{ querystring }}" class="bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50 transition whitespace-nowrap">⬇ Excel</a>
+            </div>
+        </div>
+
+        <form method="get" id="ma-filter" class="bg-white rounded-lg shadow p-4 mb-6 no-print">
+            <div class="flex flex-wrap items-end gap-3">
+                <a href="?year={{ prev_month.year|unlocalize }}&month={{ prev_month.month }}" class="bg-white border border-gray-300 text-gray-700 px-3 py-2 rounded-lg hover:bg-gray-50 transition" title="Өмнөх сар">←</a>
+                <div>
+                    <label for="ma-year" class="block text-sm font-medium mb-1">Он</label>
+                    <select id="ma-year" name="year" class="ma-auto border border-gray-300 rounded-lg px-3 py-2">
+                        {% for y in years %}<option value="{{ y|unlocalize }}" {% if y == year %}selected{% endif %}>{{ y|unlocalize }}</option>{% endfor %}
+                    </select>
+                </div>
+                <div>
+                    <label for="ma-month" class="block text-sm font-medium mb-1">Сар</label>
+                    <select id="ma-month" name="month" class="ma-auto border border-gray-300 rounded-lg px-3 py-2">
+                        {% for num, label in months %}<option value="{{ num }}" {% if num == month %}selected{% endif %}>{{ label }}</option>{% endfor %}
+                    </select>
+                </div>
+                <a href="?year={{ next_month.year|unlocalize }}&month={{ next_month.month }}" class="bg-white border border-gray-300 text-gray-700 px-3 py-2 rounded-lg hover:bg-gray-50 transition" title="Дараагийн сар">→</a>
+                <div class="flex-1 min-w-[12rem]">
+                    <label for="ma-q" class="block text-sm font-medium mb-1">Хайх</label>
+                    <input id="ma-q" type="search" name="q" value="{{ filters.q|default:'' }}" placeholder="Нэр, код, албан тушаал"
+                           class="border border-gray-300 rounded-lg px-3 py-2 w-full">
+                </div>
+            </div>
+            <div class="flex flex-wrap items-end gap-3 mt-3">
+                <div>
+                    <label for="ma-meals" class="block text-sm font-medium mb-1">Хоолны мөнгө</label>
+                    <select id="ma-meals" name="meals" class="ma-auto border border-gray-300 rounded-lg px-3 py-2">
+                        {% for key, label in meals_labels.items %}<option value="{{ key }}" {% if filters.meals|default:'' == key %}selected{% endif %}>{{ label }}</option>{% endfor %}
+                    </select>
+                </div>
+                <div>
+                    <label for="ma-position" class="block text-sm font-medium mb-1">Албан тушаал</label>
+                    <select id="ma-position" name="position" class="ma-auto border border-gray-300 rounded-lg px-3 py-2">
+                        <option value="">Бүгд</option>
+                        {% for p in positions %}<option value="{{ p }}" {% if filters.position == p %}selected{% endif %}>{{ p }}</option>{% endfor %}
+                    </select>
+                </div>
+                <div>
+                    <label for="ma-department" class="block text-sm font-medium mb-1">Хэлтэс</label>
+                    <select id="ma-department" name="department" class="ma-auto border border-gray-300 rounded-lg px-3 py-2">
+                        <option value="">Бүгд</option>
+                        {% for d in departments %}<option value="{{ d }}" {% if filters.department == d %}selected{% endif %}>{{ d }}</option>{% endfor %}
+                    </select>
+                </div>
+                <div>
+                    <label for="ma-pay" class="block text-sm font-medium mb-1">Цалин олгох хэлбэр</label>
+                    <select id="ma-pay" name="pay_type" class="ma-auto border border-gray-300 rounded-lg px-3 py-2">
+                        <option value="">Бүгд</option>
+                        {% for key, label in pay_types %}<option value="{{ key }}" {% if filters.pay_type == key %}selected{% endif %}>{{ label }}</option>{% endfor %}
+                    </select>
+                </div>
+                <div>
+                    <label for="ma-show" class="block text-sm font-medium mb-1">Харуулах</label>
+                    <select id="ma-show" name="show" class="ma-auto border border-gray-300 rounded-lg px-3 py-2">
+                        {% for key, label in show_labels.items %}<option value="{{ key }}" {% if filters.show|default:'' == key %}selected{% endif %}>{{ label }}</option>{% endfor %}
+                    </select>
+                </div>
+                <div>
+                    <label for="ma-account" class="block text-sm font-medium mb-1">Банкны данс</label>
+                    <select id="ma-account" name="account" class="ma-auto border border-gray-300 rounded-lg px-3 py-2">
+                        {% for key, label in account_labels.items %}<option value="{{ key }}" {% if filters.account|default:'' == key %}selected{% endif %}>{{ label }}</option>{% endfor %}
+                    </select>
+                </div>
+                <div>
+                    <label for="ma-sort" class="block text-sm font-medium mb-1">Эрэмбэ</label>
+                    <select id="ma-sort" name="sort" class="ma-auto border border-gray-300 rounded-lg px-3 py-2">
+                        {% for key, label in sort_labels.items %}<option value="{{ key }}" {% if filters.sort|default:'' == key %}selected{% endif %}>{{ label }}</option>{% endfor %}
+                    </select>
+                </div>
+                <button type="submit" class="bg-primary text-white px-6 py-2 rounded-lg hover:bg-green-700 transition">Шүүх</button>
+                {% if has_filters or filters.sort %}<a href="?year={{ year|unlocalize }}&month={{ month }}" class="bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50 transition">Цэвэрлэх</a>{% endif %}
+            </div>
+        </form>
+
+        {% if messages %}
+        <div class="mb-6 space-y-2 no-print">
+            {% for message in messages %}
+            <div class="p-3 rounded-lg {% if message.tags == 'error' %}bg-red-100 text-red-800{% elif message.tags == 'warning' %}bg-yellow-100 text-yellow-800{% else %}bg-green-100 text-green-800{% endif %}">{{ message }}</div>
+            {% endfor %}
+        </div>
+        {% endif %}
+
+        {% if unmatched %}
+        <div class="mb-6 p-3 rounded-lg bg-yellow-50 border border-yellow-200 text-sm text-yellow-900 no-print">
+            ℹ️ Ажилчдын жагсаалтад байхгүй нэр хүснэгтийн төгсгөлд идсэн өдрөөрөө орсон (хоолны мөнгө олгохгүй):
+            {% for name, days in unmatched %}<b>{{ name }}</b> ({{ days }} өдөр){% if not forloop.last %}, {% endif %}{% endfor %}.
+            Ажилтан бол нэрийг {% if 'meal_attendance' in visible_menu_keys %}<a href="{% url 'shop:meal_attendance_list' %}" class="underline">Хоол идэх нэрс</a>{% else %}Хоол идэх нэрс{% endif %}-ээс ажилтны нэрээр засна уу.
+        </div>
+        {% endif %}
+
+        {% if can_edit_days %}
+        {% comment %} Ерөнхий нягтлан: Нягтланд хоолны мөнгө харах, бодох эрх (унтраавал хоол идэх нэрсийн хуудсан дээрх товч ч алга болно) {% endcomment %}
+        <form method="post" class="mb-4 flex flex-wrap items-center gap-3 px-4 py-2.5 rounded-lg bg-blue-50 border border-blue-200 text-sm text-blue-900 no-print">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="accountant_access">
+            <input type="hidden" name="querystring" value="{{ querystring }}">
+            <label class="flex items-center gap-2 cursor-pointer select-none">
+                <input type="hidden" name="accountant_access" value="0">
+                <input type="checkbox" name="accountant_access" value="1" {% if setting.meal_allowance_accountant_access %}checked{% endif %}
+                       onchange="this.form.submit()" class="w-4 h-4">
+                <b>Нягтланд хоолны мөнгө харах, бодох эрх олгох</b>
+            </label>
+            <span class="text-blue-800/80">Гар засвар болон хоног бүртгэлтэй тулгалт зөвхөн Ерөнхий нягтланд харагдана.</span>
+        </form>
+        {% endif %}
+
+        <form method="post" class="screen-area bg-white rounded-lg shadow p-4 lg:p-6">
+            {% csrf_token %}
+            <input type="hidden" name="year" value="{{ year|unlocalize }}">
+            <input type="hidden" name="month" value="{{ month }}">
+            <input type="hidden" name="querystring" value="{{ querystring }}">
+            <div class="flex flex-wrap items-end justify-between gap-3 mb-4">
+                <div>
+                    <h2 class="text-lg font-bold text-gray-900">{{ print_title }}</h2>
+                    <p class="text-sm text-gray-500">{{ rows|length }}{% if rows|length != all_count %} / {{ all_count }}{% endif %} хүн ·
+                        Олгох дүн = идээгүй өдөр x өдрийн мөнгө (албан тушаал бүрээр - шилжин ажилласан өдрүүд тэр албан тушаалын мөнгөөр).
+                        Ажиллаагүй, хоол идээгүй хүн харагдахгүй. Ажилтны мөнгийг хоосон орхивол албан тушаалын
+                        ({% if 'attendance_calc' in visible_menu_keys %}<a href="{% url 'shop:attendance_position_settings' %}" class="text-primary underline">Албан тушаалын тохиргоо</a>{% else %}Албан тушаалын тохиргоо{% endif %}), тэр нь хоосон бол анхдагч дүн; 0 бол олгохгүй.
+                        Мөнгө олгохгүй ажилчдыг {% if 'payroll_card' in visible_menu_keys or 'payroll_cash' in visible_menu_keys %}<a href="{% url 'shop:payroll_settings' %}" class="text-primary underline">Цалингийн тохиргоо</a>{% else %}Цалингийн тохиргоо{% endif %}-ноос тохируулна.
+                        Данс: бэлэн цалингийн данс, байхгүй бол картын цалингийн данс.
+                        {% if can_edit_days %}<br><b class="text-gray-700">Ажилласан / идсэн / идээгүй өдрийг гараар засна</b> (зөвхөн Ерөнхий нягтлан) - хоосон бол автомат утга (саарал);
+                        идээгүй өдрийг бичвэл олгох дүн = түүнийг x мөнгө; зөвхөн ажилласан / идсэн өдрийг бичвэл идээгүй өдөр тэр өөрчлөлтөөр нэмэгдэж / хорогдоно.{% else %} ✎ - Ерөнхий нягтлан гараар засварласан.{% endif %}</p>
+                </div>
+                <div class="flex flex-wrap items-end gap-2">
+                    <div>
+                        <label for="ma-default" class="block text-sm font-medium mb-1">Анхдагч мөнгө (өдөрт, ₮)</label>
+                        <input id="ma-default" type="text" inputmode="decimal" name="default_rate" value="{{ setting.meal_allowance_per_day|floatformat:'-2u' }}"
+                               class="ma-rate border border-gray-300 rounded-lg px-3 py-2 w-36">
+                    </div>
+                    <button type="submit" class="bg-primary text-white px-6 py-2 rounded-lg hover:bg-green-700 transition whitespace-nowrap">💾 Хадгалаад бодох</button>
+                </div>
+            </div>
+
+            {% if not rows %}
+            <p class="text-gray-500">{% if all_count %}Шүүлтэд тохирох ажилтан алга.{% else %}Энэ сард Хоног бүртгэлд ажилтан алга.{% endif %}</p>
+            {% else %}
+            <div class="overflow-x-auto">
+                <table class="ma-table min-w-full text-sm">
+                    <thead>
+                        <tr class="bg-gray-100 text-center">
+                            <th class="px-2 py-2 w-10">Дд</th>
+                            <th class="px-3 py-2 text-left">Нэрс</th>
+                            <th class="px-3 py-2 text-left">Албан тушаал</th>
+                            <th class="px-2 py-2">Ажилласан хоног</th>
+                            <th class="px-2 py-2" title="Хоол идэх нэрсийн бүртгэлд бичигдсэн тоо - хоолны нэгтгэлтэй тэнцүү (харуул нэг өдөр 2 удаа идвэл 2). Идээгүй өдрийг өдрөөр нь тоолно.">Идсэн өдөр</th>
+                            <th class="px-2 py-2">Идээгүй өдөр</th>
+                            <th class="px-2 py-2">Мөнгө (өдөрт)</th>
+                            <th class="px-2 py-2">Олгох мөнгөн дүн</th>
+                            <th class="px-3 py-2 text-left">Банкны данс</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in rows %}
+                        <tr class="text-right{% if not row.is_employee %} bg-gray-50{% endif %}">
+                            <td class="px-2 py-1.5 text-center text-gray-500">{{ forloop.counter }}</td>
+                            <td class="px-3 py-1.5 text-left font-medium text-gray-900 whitespace-nowrap">
+                                {{ row.name }}
+                                {% if row.is_employee %}<input type="hidden" name="employee_code" value="{{ row.employee_code }}">
+                                {% else %}<span class="ml-1 text-xs font-normal text-amber-700" title="Хоол идэх нэрсийн бүртгэлд байгаа ч ажилчдын жагсаалтад байхгүй">жагсаалтад байхгүй</span>{% endif %}
+                            </td>
+                            <td class="px-3 py-1.5 text-left text-gray-600 whitespace-nowrap">{{ row.positionname|default:'-' }}</td>
+                            {% if can_edit_days and row.is_employee %}
+                            {% comment %} Ерөнхий нягтлан: хоосон бол автомат утга (саарал placeholder), бичвэл түүгээр {% endcomment %}
+                            <td class="px-2 py-1.5"><input type="hidden" name="day_code" value="{{ row.employee_code }}">
+                                <input type="text" inputmode="decimal" name="manual_worked_days" value="{% if row.manual.worked_days is not None %}{{ row.manual.worked_days|floatformat:'-1u' }}{% endif %}"
+                                       placeholder="{{ row.auto.worked_days|floatformat:'-1' }}" title="Автомат: {{ row.auto.worked_days|floatformat:'-1' }}{% if row.moved_days %} (шилжин ажилласан {{ row.moved_days|floatformat:'-1' }} хоног багтсан){% endif %}"
+                                       class="ma-day{% if row.manual.worked_days is not None %} ma-custom{% endif %}">{% include 'shop/_meal_allowance_sub.html' with kind='worked' %}</td>
+                            <td class="px-2 py-1.5">
+                                <input type="text" inputmode="decimal" name="manual_eaten_days" value="{% if row.manual.eaten_days is not None %}{{ row.manual.eaten_days|floatformat:'-1u' }}{% endif %}"
+                                       placeholder="{{ row.auto.eaten_days|floatformat:'-1' }}" title="Автомат: {{ row.auto.eaten_days|floatformat:'-1' }}"
+                                       class="ma-day{% if row.manual.eaten_days is not None %} ma-custom{% endif %}">{% include 'shop/_meal_allowance_sub.html' with kind='eaten' %}</td>
+                            <td class="px-2 py-1.5">
+                                <input type="text" inputmode="decimal" name="manual_not_eaten_days" value="{% if row.manual.not_eaten_days is not None %}{{ row.manual.not_eaten_days|floatformat:'-1u' }}{% endif %}"
+                                       placeholder="{{ row.not_eaten_days|floatformat:'-1' }}" title="Автомат: {{ row.auto.not_eaten_days|floatformat:'-1' }} - бичвэл олгох дүн = энэ x мөнгө"
+                                       class="ma-day font-semibold{% if row.manual.not_eaten_days is not None %} ma-custom{% endif %}">{% include 'shop/_meal_allowance_sub.html' with kind='not_eaten' %}</td>
+                            {% else %}
+                            <td class="px-2 py-1.5 align-top" {% if row.manual.worked_days is not None %}title="Гараар засварласан (автомат: {{ row.auto.worked_days|floatformat:'-1' }})"{% endif %}>{{ row.worked_days|floatformat:'-1g' }}{% if row.manual.worked_days is not None %}<span class="text-xs text-amber-600">✎</span>{% endif %}{% include 'shop/_meal_allowance_sub.html' with kind='worked' %}</td>
+                            <td class="px-2 py-1.5 align-top" {% if row.manual.eaten_days is not None %}title="Гараар засварласан (автомат: {{ row.auto.eaten_days|floatformat:'-1' }})"{% endif %}>{{ row.eaten_days|floatformat:'-1g' }}{% if row.manual.eaten_days is not None %}<span class="text-xs text-amber-600">✎</span>{% endif %}{% include 'shop/_meal_allowance_sub.html' with kind='eaten' %}</td>
+                            <td class="px-2 py-1.5 align-top {% if row.not_eaten_days %}font-semibold{% else %}text-gray-400{% endif %}" {% if row.manual.not_eaten_days is not None %}title="Гараар засварласан (автомат: {{ row.auto.not_eaten_days|floatformat:'-1' }})"{% endif %}>{{ row.not_eaten_days|floatformat:'-1g' }}{% if row.manual.not_eaten_days is not None %}<span class="text-xs text-amber-600">✎</span>{% endif %}{% include 'shop/_meal_allowance_sub.html' with kind='not_eaten' %}</td>
+                            {% endif %}
+                            <td class="px-2 py-1.5">
+                                {% if not row.is_employee %}
+                                <span class="text-gray-400">-</span>
+                                {% elif row.eats_meals %}
+                                <input type="text" inputmode="decimal" name="rate" value="{% if row.custom_rate is not None %}{{ row.custom_rate|floatformat:'-2u' }}{% endif %}"
+                                       placeholder="{% if row.rate is None %}албан тушаалаар{% else %}{{ row.default_rate|floatformat:'-2g' }}{% endif %}"
+                                       class="ma-rate{% if row.custom_rate is not None %} ma-custom{% endif %}"
+                                       title="Хоосон бол албан тушаалын (тохируулаагүй бол анхдагч) дүн; бичвэл бүх албан тушаалд нь энэ дүн">
+                                {% for b in row.breakdown %}<div class="text-xs text-gray-500 whitespace-nowrap mt-0.5">{{ b.position }}: {{ b.not_eaten_days|floatformat:'-1g' }} x {{ b.rate|floatformat:'-2g' }}={{ b.amount|floatformat:'-2u' }}</div>{% endfor %}
+                                {% else %}
+                                <input type="hidden" name="rate" value="{% if row.custom_rate is not None %}{{ row.custom_rate|floatformat:'-2u' }}{% endif %}">
+                                <span class="text-xs text-gray-400" title="Цалингийн тохиргоонд хоолны мөнгө олгохгүй гэж тохируулсан">мөнгө олгохгүй</span>
+                                {% endif %}
+                            </td>
+                            <td class="px-2 py-1.5 font-semibold">{{ row.amount|floatformat:'-2g' }}</td>
+                            <td class="px-3 py-1.5 text-left whitespace-nowrap {% if row.account_source == 'card' %}text-gray-500{% endif %}"
+                                {% if row.account_source == 'card' %}title="Картын цалингийн данс (бэлэн цалингийн данс бүртгэгдээгүй)"{% endif %}>{{ row.account|default:'-' }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                    <tfoot>
+                        <tr class="bg-gray-100 font-semibold text-right">
+                            <td colspan="3" class="px-3 py-2 text-left">Нийт</td>
+                            <td class="px-2 py-2">{{ totals.worked_days|floatformat:'-1g' }}</td>
+                            <td class="px-2 py-2">{{ totals.eaten_days|floatformat:'-1g' }}</td>
+                            <td class="px-2 py-2">{{ totals.not_eaten_days|floatformat:'-1g' }}</td>
+                            <td></td>
+                            <td class="px-2 py-2">{{ totals.amount|floatformat:'-2g' }}</td>
+                            <td></td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+            {% endif %}
+
+            {% if can_edit_days and reconcile %}
+            {% comment %} Хоног бүртгэлтэй тулгалт - зөвхөн Ерөнхий нягтланд, хэвлэхэд гарахгүй {% endcomment %}
+            <div class="mt-6 p-4 rounded-lg border border-gray-200 bg-gray-50 text-sm no-print">
+                <h3 class="font-bold text-gray-900 mb-2">🔍 Хоног бүртгэлтэй тулгах (ажилласан хоног)</h3>
+                <table class="text-sm">
+                    <tr><td class="pr-6 py-0.5">Хоног бүртгэлийн нийт ажилласан хоног</td><td class="text-right font-semibold">{{ reconcile.timesheet_total|floatformat:'-1g' }}</td></tr>
+                    {% for r in reconcile.reasons %}
+                    <tr title="{{ r.hint }}">
+                        <td class="pr-6 py-0.5 align-top">{% if r.total > 0 %}+{% endif %} {{ r.label }}
+                            <div class="text-xs text-gray-500">{% for name, v in r.people %}{{ name }} {% if v > 0 %}+{% endif %}{{ v|floatformat:'-1g' }}{% if not forloop.last %}, {% endif %}{% endfor %}</div>
+                        </td>
+                        <td class="text-right align-top {% if r.total < 0 %}text-red-600{% else %}text-green-700{% endif %}">{% if r.total > 0 %}+{% endif %}{{ r.total|floatformat:'-1g' }}</td>
+                    </tr>
+                    {% endfor %}
+                    {% if reconcile.unexplained %}
+                    <tr><td class="pr-6 py-0.5 text-red-700">Тайлбарлагдаагүй зөрүү</td><td class="text-right text-red-700 font-semibold">{{ reconcile.unexplained|floatformat:'-1g' }}</td></tr>
+                    {% endif %}
+                    <tr class="border-t border-gray-300"><td class="pr-6 py-1 font-semibold">Хоолны мөнгөний нийт ажилласан хоног</td><td class="text-right font-semibold">{{ reconcile.meal_total|floatformat:'-1g' }}</td></tr>
+                </table>
+                <p class="text-xs text-gray-500 mt-2">Шүүлтгүй, бүх ажилтнаар (зөрүү {{ reconcile.diff|floatformat:'-1g' }}).{% if has_filters %} Дээрх хүснэгт шүүгдсэн тул нийт дүн нь өөр байж болно.{% endif %}</p>
+            </div>
+            {% endif %}
+        </form>
+
+        {% comment %} Хэвлэх загвар (дэлгэцэнд харагдахгүй) - шүүсэн мөрүүдээр, A4 босоо {% endcomment %}
+        {% if rows %}
+        <div class="pr-print" aria-hidden="true" data-page-w="700" data-page-h="1010" data-max-zoom="1.4">
+            <section class="pr-print-page">
+                <div class="pr-print-head">
+                    <div class="pr-print-company">{{ setting.company_name }}</div>
+                    <div class="pr-print-approve">Батлав: Захирал ....................... /{{ setting.cash_approver }}/</div>
+                </div>
+                <div class="pr-print-title">{{ print_title }}</div>
+                <table class="pr-print-table">
+                    <thead>
+                        <tr>
+                            <th>Дд</th>
+                            <th>Нэрс</th>
+                            <th>Албан тушаал</th>
+                            <th>Ажилласан хоног</th>
+                            <th>Идсэн өдөр</th>
+                            <th>Идээгүй өдөр</th>
+                            <th class="ma-print-rate">Мөнгө</th>
+                            <th>Олгох мөнгөн дүн</th>
+                            <th>Банкны данс</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in rows %}
+                        <tr>
+                            <td class="c">{{ forloop.counter }}</td>
+                            <td class="t">{{ row.name }}</td>
+                            <td class="t">{{ row.positionname }}</td>
+                            <td class="c">{{ row.worked_days|floatformat:'-1g' }}{% include 'shop/_meal_allowance_sub.html' with kind='worked' %}</td>
+                            <td class="c">{{ row.eaten_days|floatformat:'-1g' }}{% include 'shop/_meal_allowance_sub.html' with kind='eaten' %}</td>
+                            <td class="c">{{ row.not_eaten_days|floatformat:'-1g' }}{% include 'shop/_meal_allowance_sub.html' with kind='not_eaten' %}</td>
+                            <td class="ma-print-rate">{% if row.breakdown %}{% for b in row.breakdown %}{% if b.not_eaten_days %}<div class="ma-print-pos">{{ b.position }}:</div><div>{{ b.not_eaten_days|floatformat:'-1g' }} x {{ b.rate|floatformat:'-2g' }}={{ b.amount|floatformat:'-2u' }}</div>{% endif %}{% endfor %}{% elif row.rate %}{{ row.rate|floatformat:'-2g' }}{% else %}-{% endif %}</td>
+                            <td>{% if row.amount %}{{ row.amount|floatformat:'-2g' }}{% else %}-{% endif %}</td>
+                            <td class="t">{{ row.account }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                    <tfoot>
+                        <tr>
+                            <td colspan="3" class="t">Дүн</td>
+                            <td class="c">{{ totals.worked_days|floatformat:'-1g' }}</td>
+                            <td class="c">{{ totals.eaten_days|floatformat:'-1g' }}</td>
+                            <td class="c">{{ totals.not_eaten_days|floatformat:'-1g' }}</td>
+                            <td></td>
+                            <td>{{ totals.amount|floatformat:'-2g' }}</td>
+                            <td></td>
+                        </tr>
+                    </tfoot>
+                </table>
+                <div class="pr-print-foot">Нягтлан бодогч: ....................................... /{{ setting.prepared_by }}/</div>
+            </section>
+        </div>
+        {% endif %}
+    </main>
+</div>
+{% include 'shop/_print_fit_js.html' %}
+<script>
+// Сонголт солиход шууд шүүнэ; ажилтны мөнгө бичсэн нүдийг тодруулна
+(function () {
+    const form = document.getElementById('ma-filter');
+    form.querySelectorAll('.ma-auto').forEach((s) => s.addEventListener('change', () => form.submit()));
+    document.querySelectorAll('input[name="rate"], input.ma-day').forEach((input) => {
+        input.addEventListener('input', () => input.classList.toggle('ma-custom', input.value.trim() !== ''));
+    });
+})();
+</script>
+{% endblock %}

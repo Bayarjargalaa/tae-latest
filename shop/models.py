@@ -263,7 +263,8 @@ class MealAttendance(models.Model):
         return get_menu_number_for_date(self.date)
 
     @property
-    def meals(self):
+    def scheduled_meals(self):
+        """Циклийн дугаараар товлогдсон хоолнууд (солилтгүй)."""
         number = self.menu_number
         if not number:
             return Meal.objects.none()
@@ -271,6 +272,42 @@ class MealAttendance(models.Model):
             Meal.objects.filter(Meal.visible_on_q(self.date), numbers__number=number)
             .prefetch_related('ingredients').distinct()
         )
+
+    # Товлоогүй өдөр ч "Хоол солих"-оор сонгож нэмэх боломжтой байлгах хоолны төрөл (хачир)
+    ALWAYS_SLOT_MEAL_TYPES = ('3',)
+
+    @staticmethod
+    def slot_key(original=None, meal_type=None):
+        """Солилтын түлхүүр: товлосон хоолны id, товлоогүй төрөлд 'type-<төрөл>'."""
+        return str(original.pk) if original else f'type-{meal_type}'
+
+    def meal_slots(self, swaps=None):
+        """Тухайн өдрийн хоолны байрууд: [{key, meal_type, original (товлосон, эсвэл None), meal (бодит)}].
+        "Хоол солих"-оор сольсон бол meal нь сольсон хоол; ALWAYS_SLOT_MEAL_TYPES-ийн товлоогүй төрөлд
+        original=None, сонгоогүй бол meal=None. swaps: {key: Meal} - өгөөгүй бол хадгалагдсан солилтоор."""
+        if swaps is None:
+            swaps = {
+                self.slot_key(s.original_meal, s.meal.meal_type): s.meal for s in self.swaps.all()
+            } if self.pk else {}
+        scheduled = list(self.scheduled_meals)
+        slots = []
+        for m in scheduled:
+            key = self.slot_key(m)
+            slots.append({'key': key, 'meal_type': m.meal_type, 'type_label': m.get_meal_type_display(),
+                          'original': m, 'meal': swaps.get(key, m)})
+        present = {m.meal_type for m in scheduled}
+        for meal_type in self.ALWAYS_SLOT_MEAL_TYPES:
+            if meal_type not in present:
+                key = self.slot_key(meal_type=meal_type)
+                slots.append({'key': key, 'meal_type': meal_type, 'type_label': dict(Meal.MEAL_TYPE_CHOICES)[meal_type],
+                              'original': None, 'meal': swaps.get(key)})
+        slots.sort(key=lambda s: s['meal_type'])
+        return slots
+
+    @property
+    def meals(self):
+        """Тухайн өдрийн бодит хоолнууд (сольсон хоол товлосныхоо байранд) - нэгтгэл, орцонд үүгээр тооцно."""
+        return [s['meal'] for s in self.meal_slots() if s['meal']]
 
     def ingredients_for_meal(self, meal):
         """Тухайн өдөрт хадгалагдсан орцны хувилбар (байхгүй бол стандарт жор)."""
@@ -300,6 +337,27 @@ class MealAttendanceIngredient(models.Model):
 
     def __str__(self):
         return f"{self.attendance.date} - {self.meal.name} - {self.item_id}"
+
+
+class MealAttendanceSwap(models.Model):
+    """Тухайн өдөр товлосон хоолыг (1-р/2-р хоол, хачир) өөр хоолоор сольсон бүртгэл. original_meal хоосон бол
+    товлоогүй төрлийн (хачир) хоолыг нэмсэн."""
+    attendance = models.ForeignKey(MealAttendance, on_delete=models.CASCADE, related_name='swaps')
+    original_meal = models.ForeignKey(Meal, on_delete=models.CASCADE, related_name='+', verbose_name='Товлосон хоол',
+                                      null=True, blank=True)
+    meal = models.ForeignKey(Meal, on_delete=models.CASCADE, related_name='attendance_swaps', verbose_name='Сольсон хоол')
+
+    class Meta:
+        db_table = 'shop_meal_attendance_swap'
+        constraints = [
+            models.UniqueConstraint(fields=['attendance', 'original_meal'], name='uniq_meal_attendance_swap'),
+        ]
+        verbose_name = 'Хоол солилт'
+        verbose_name_plural = 'Хоол солилтууд'
+
+    def __str__(self):
+        original = self.original_meal.name if self.original_meal else 'товлоогүй'
+        return f"{self.attendance.date}: {original} -> {self.meal.name}"
 
 
 class MealAttendanceName(models.Model):
@@ -533,6 +591,8 @@ class AttendancePositionRule(models.Model):
     worked_equals_required = models.BooleanField('Ажилласан хоног = ажиллавал зохих хоног', default=False)
     # Цалин бодолтод тухайн албан тушаалын ажилтанд унааны мөнгө бодохгүй (Имарт худалдагч гэх мэт)
     no_transport = models.BooleanField('Унааны мөнгө бодохгүй', default=False)
+    # Хоолны мөнгө (өдөрт) - хоосон бол PayrollSetting-ийн анхдагч; ажилтнаар (EmployeePayProfile) дарж бичиж болно
+    meal_allowance_per_day = models.DecimalField('Хоолны мөнгө (өдөрт, ₮)', max_digits=10, decimal_places=2, null=True, blank=True)
     updated_at = models.DateTimeField('Шинэчилсэн огноо', auto_now=True)
 
     class Meta:
@@ -678,6 +738,11 @@ class EmployeePayProfile(models.Model):
     ndsh_employer_rate = models.DecimalField('НДШ байгууллага (%)', max_digits=5, decimal_places=2, null=True, blank=True)
     # Бэлэн цалин шилжүүлэх данс (банкны нэртэй чөлөөт бичвэр) - ажилтны мэдээлэл дэх данс нь картын цалингийнх тул тусад нь
     cash_bank_account = models.CharField('Бэлэн цалингийн данс', max_length=100, blank=True)
+    # Хоолны мөнгө олгох эсэх - False бол олгохгүй (хоолны нэрсийн бүртгэлд бичигдэж, идсэн тоонд нь орно)
+    eats_meals = models.BooleanField('Хоолны мөнгө олгох', default=True)
+    # Хоолны мөнгө (өдөрт) - хоосон бол албан тушаалын (AttendancePositionRule), тэр нь хоосон бол
+    # PayrollSetting.meal_allowance_per_day; 0 бол олгохгүй
+    meal_allowance_per_day = models.DecimalField('Хоолны мөнгө (өдөрт, ₮)', max_digits=10, decimal_places=2, null=True, blank=True)
     updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, verbose_name='Засварласан хэрэглэгч')
     updated_at = models.DateTimeField('Засварласан огноо', auto_now=True)
 
@@ -690,6 +755,28 @@ class EmployeePayProfile(models.Model):
         return f"{self.employee_code} - {self.get_pay_type_display() or '-'}"
 
 
+class MealAllowanceEntry(models.Model):
+    """Хоолны мөнгөний сарын гар засвар (зөвхөн Ерөнхий нягтлан): ажилласан / идсэн / идээгүй өдөр.
+    Хоосон (NULL) талбарт автомат утга (shop.services.meal_allowance) хэрэглэгдэнэ."""
+    employee_code = models.CharField('Ажилтны код', max_length=50)
+    year = models.PositiveSmallIntegerField('Он')
+    month = models.PositiveSmallIntegerField('Сар')
+    worked_days = models.DecimalField('Ажилласан хоног', max_digits=5, decimal_places=1, null=True, blank=True)
+    eaten_days = models.DecimalField('Идсэн өдөр', max_digits=5, decimal_places=1, null=True, blank=True)
+    not_eaten_days = models.DecimalField('Идээгүй өдөр', max_digits=5, decimal_places=1, null=True, blank=True)
+    updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, verbose_name='Засварласан хэрэглэгч')
+    updated_at = models.DateTimeField('Засварласан огноо', auto_now=True)
+
+    class Meta:
+        db_table = 'shop_meal_allowance_entry'
+        unique_together = [('employee_code', 'year', 'month')]
+        verbose_name = 'Хоолны мөнгөний гар засвар'
+        verbose_name_plural = 'Хоолны мөнгөний гар засварууд'
+
+    def __str__(self):
+        return f"{self.employee_code} {self.year}-{self.month:02d}"
+
+
 class PayrollSetting(models.Model):
     """Цалин бодолтын нэгдсэн тохиргоо (ганц мөр, pk=1) - хуулиар өөрчлөгдөх хувь хэмжээг хуудаснаас засна."""
     ndsh_employee_rate = models.DecimalField('НДШ ажилтан (%)', max_digits=5, decimal_places=2, default=Decimal('11.5'))
@@ -698,6 +785,10 @@ class PayrollSetting(models.Model):
     pit_rate = models.DecimalField('ХХОАТ (%)', max_digits=5, decimal_places=2, default=Decimal('10'))
     saturday_hours_per_day = models.DecimalField('Бямба гарагийн ажлын цаг', max_digits=4, decimal_places=1, default=Decimal('6'))
     transport_per_day = models.DecimalField('Унааны мөнгө (хоногт, ₮)', max_digits=10, decimal_places=2, default=Decimal('1000'))
+    # Хоолны мөнгө: ажилласан ч хоол идээгүй өдөр бүрт олгох дүн (ажилтнаар EmployeePayProfile-д өөрчилж болно)
+    meal_allowance_per_day = models.DecimalField('Хоолны мөнгө (өдөрт, ₮)', max_digits=10, decimal_places=2, default=Decimal('0'))
+    # Нягтлан албан тушаалд хоолны мөнгө харах, бодох эрх олгох эсэх (Ерөнхий нягтлан хоолны мөнгөний хуудаснаас)
+    meal_allowance_accountant_access = models.BooleanField('Нягтланд хоолны мөнгө харах, бодох эрх', default=True)
     # Хэвлэх хуудасны толгой, гарын үсгийн мөр
     company_name = models.CharField('Байгууллагын нэр', max_length=200, blank=True, default='Төгс Амин Эрдэнэ ХХК')
     card_approver = models.CharField('Картын цалин батлах захирал', max_length=100, blank=True, default='Б.Болор-Эрдэнэ')

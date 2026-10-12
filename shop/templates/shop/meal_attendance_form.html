@@ -107,9 +107,24 @@
             </div>
             {% else %}
             <div id="meal-groups-grid" class="meal-groups-grid grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-                {% for meal, ing_forms in meal_ingredient_groups %}
-                <div class="border rounded-lg p-4 min-w-0" data-meal-card>
-                    <h3 class="font-bold text-gray-900 mb-2 break-words">{{ meal.get_meal_type_display }}: {{ meal.name }}</h3>
+                {% for slot in meal_slots %}{% with original=slot.original meal=slot.meal %}
+                <div class="border rounded-lg p-4 min-w-0{% if not meal %} print-hide-empty{% endif %}" data-meal-card data-original-meal-id="{{ original.pk|default_if_none:'' }}" data-rendered-meal-id="{{ meal.pk|default_if_none:'' }}">
+                    {% comment %} Хоол солих: чеклэвэл ижил төрлийн хоолноос сонгож, орц нь тэр хоолны жороор солигдоно.
+                    Хачир товлоогүй өдөр ч карт нь байж, чеклээд сонговол хачир нэмэгдэнэ {% endcomment %}
+                    <div class="no-print mb-2 text-xs">
+                        <label class="inline-flex items-center gap-1 text-gray-600 cursor-pointer">
+                            <input type="checkbox" name="swap-{{ slot.key }}" value="1" class="meal-swap-toggle" {% if meal.pk != original.pk %}checked{% endif %}>
+                            Хоол солих
+                        </label>
+                        <select name="swap_meal-{{ slot.key }}" class="meal-swap-select mt-1 w-full border border-gray-300 rounded-lg px-2 py-1{% if meal.pk == original.pk %} hidden{% endif %}">
+                            <option value="">- хоол сонгох -</option>
+                            {% for choice in slot.choices %}{% if choice.pk != original.pk %}
+                            <option value="{{ choice.pk }}" {% if choice.pk == meal.pk %}selected{% endif %}>{% if choice.number_display %}{{ choice.number_display }}. {% endif %}{{ choice.name }}</option>
+                            {% endif %}{% endfor %}
+                        </select>
+                    </div>
+                    <h3 class="font-bold text-gray-900 mb-2 break-words">{{ slot.type_label }}: <span data-meal-name data-empty-label="товлогдоогүй">{% if meal %}{{ meal.name }}{% else %}<span class="font-normal text-gray-400">товлогдоогүй</span>{% endif %}</span>
+                        <span data-swapped-from class="text-xs font-normal text-amber-700{% if meal.pk == original.pk %} hidden{% endif %}">({% if original %}товлосон: {{ original.name }}{% else %}товлоогүй өдөр нэмсэн{% endif %})</span></h3>
                     <table data-meal-table class="w-full text-xs table-fixed">
                         <thead>
                             <tr class="text-left text-gray-500">
@@ -120,8 +135,8 @@
                                 <th class="no-print py-1 w-5"></th>
                             </tr>
                         </thead>
-                        <tbody class="ingredient-rows-body" data-meal-id="{{ meal.pk }}">
-                            {% for ing_form in ing_forms %}
+                        <tbody class="ingredient-rows-body">
+                            {% for ing_form in slot.forms %}
                             <tr class="ingredient-row border-t">
                                 {{ ing_form.id }}
                                 {{ ing_form.meal }}
@@ -144,8 +159,9 @@
                             {% endfor %}
                         </tbody>
                     </table>
-                    <button type="button" class="add-ingredient-btn no-print text-primary hover:underline text-xs mt-2" data-meal-id="{{ meal.pk }}">+ Орц нэмэх</button>
+                    <button type="button" class="add-ingredient-btn no-print text-primary hover:underline text-xs mt-2{% if not meal %} hidden{% endif %}">+ Орц нэмэх</button>
                 </div>
+                {% endwith %}
                 {% empty %}
                 <p class="text-gray-500 md:col-span-3">Энэ дугаарт хоол бүртгэгдээгүй байна. Эхлээд "Хоолны бүртгэл" цэснээс {{ menu_number }} дугаартай хоол нэмнэ үү.</p>
                 {% endfor %}
@@ -160,6 +176,9 @@
 
             <h2 class="text-lg font-bold text-gray-900 mb-2">Ажилчдын нэрс</h2>
             {{ formset.management_form }}
+            <datalist id="employee-names">
+                {% for name, position in employee_names %}<option value="{{ name }}">{{ position|default:'' }}</option>{% endfor %}
+            </datalist>
             <table id="attendance-names-table" class="text-sm border border-gray-300 mb-3 max-w-2xl w-full">
                 <thead>
                     <tr class="bg-gray-50 text-left">
@@ -233,6 +252,7 @@
 </script>
 {% endif %}
 
+{{ swap_recipes|json_script:'meal-swap-recipes' }}
 <script>
 document.addEventListener('DOMContentLoaded', function () {
     const rowsContainer = document.getElementById('name-rows');
@@ -377,21 +397,101 @@ document.addEventListener('DOMContentLoaded', function () {
             updateTotals();
         });
 
+        // Картын одоогийн хоол (Хоол солих-оор сольсон бол сонгосон хоол)
+        function cardMealId(card) {
+            const toggle = card.querySelector('.meal-swap-toggle');
+            const select = card.querySelector('.meal-swap-select');
+            return (toggle && toggle.checked && select && select.value) ? select.value : card.dataset.originalMealId;
+        }
+
+        function appendIngredientRow(card, ingredient) {
+            const tbody = card.querySelector('.ingredient-rows-body');
+            const formIndex = parseInt(ingredientTotalForms.value, 10);
+            const wrapper = document.createElement('table');
+            wrapper.innerHTML = emptyIngredientTemplate.replace(/__prefix__/g, formIndex).trim();
+            const newRow = wrapper.querySelector('tr');
+            const mealInput = newRow.querySelector('input[name$="-meal"]');
+            if (mealInput) mealInput.value = cardMealId(card);
+            if (ingredient) {
+                // Сольсон хоолны жорын орц - хадгалагдсан мөр шиг нэрийг нь текстээр (сонголтгүй)
+                newRow.classList.remove('is-new');
+                newRow.dataset.swapGenerated = '1';
+                const select = newRow.querySelector('.ingredient-item-select');
+                const cell = select.closest('td');
+                const hidden = document.createElement('input');
+                hidden.type = 'hidden';
+                hidden.name = select.name;
+                hidden.value = ingredient.item_id;
+                const label = document.createElement('span');
+                label.className = 'text-gray-800';
+                label.textContent = ingredient.name;
+                cell.replaceChildren(hidden, label);
+                newRow.querySelector('.ingredient-qty-input').value = ingredient.quantity;
+                newRow.querySelector('input[name$="-unit"]').value = ingredient.unit;
+            }
+            tbody.appendChild(newRow);
+            ingredientTotalForms.value = formIndex + 1;
+            return newRow;
+        }
+
         mealGroupsGrid.querySelectorAll('.add-ingredient-btn').forEach(function (btn) {
             btn.addEventListener('click', function () {
-                const mealId = btn.dataset.mealId;
-                const tbody = mealGroupsGrid.querySelector('.ingredient-rows-body[data-meal-id="' + mealId + '"]');
-                const formIndex = parseInt(ingredientTotalForms.value, 10);
-                const newRowHtml = emptyIngredientTemplate.replace(/__prefix__/g, formIndex);
-                const wrapper = document.createElement('table');
-                wrapper.innerHTML = newRowHtml.trim();
-                const newRow = wrapper.querySelector('tr');
-                const mealInput = newRow.querySelector('input[name$="-meal"]');
-                if (mealInput) mealInput.value = mealId;
-                tbody.appendChild(newRow);
-                ingredientTotalForms.value = formIndex + 1;
+                appendIngredientRow(btn.closest('[data-meal-card]'), null);
                 updateTotals();
             });
+        });
+
+        // --- Хоол солих: сонгосон хоолны жороор орцыг солино (ачаалахад байсан мөрийг нууж, буцаахад сэргээнэ) ---
+        const swapRecipes = JSON.parse(document.getElementById('meal-swap-recipes').textContent || '{}');
+
+        function setRowActive(row, active) {
+            const idInput = row.querySelector('input[name$="-id"]');
+            const deleteInput = row.querySelector('input[name$="-DELETE"]');
+            if (idInput && idInput.value) {
+                // Хадгалагдсан мөр - устгах тэмдгээр (хэрэглэгч өөрөө ✕ дарж устгасныг сэргээхгүй)
+                if (!active) {
+                    row.dataset.swapDeleted = deleteInput && !deleteInput.checked ? '1' : '';
+                    if (deleteInput) deleteInput.checked = true;
+                } else if (row.dataset.swapDeleted === '1' && deleteInput) {
+                    deleteInput.checked = false;
+                }
+            } else {
+                // Хадгалагдаагүй мөр - илгээхгүй (disabled)
+                row.querySelectorAll('input, select').forEach(function (el) { el.disabled = !active; });
+            }
+            row.style.display = active ? '' : 'none';
+        }
+
+        function applySwap(card) {
+            const mealId = cardMealId(card);
+            const rendered = mealId === card.dataset.renderedMealId;
+            card.querySelectorAll('.ingredient-row').forEach(function (row) {
+                if (row.dataset.swapGenerated) row.remove();
+                else setRowActive(row, rendered);
+            });
+            const recipe = swapRecipes[mealId];
+            if (!rendered && recipe) {
+                recipe.ingredients.forEach(function (ing) { appendIngredientRow(card, ing); });
+            }
+            const nameEl = card.querySelector('[data-meal-name]');
+            nameEl.textContent = recipe ? recipe.name : nameEl.dataset.emptyLabel;
+            // Хоолгүй (товлоогүй хачир, сонгоогүй) карт хэвлэгдэхгүй, орц нэмэх боломжгүй
+            card.classList.toggle('print-hide-empty', !mealId);
+            card.querySelector('.add-ingredient-btn').classList.toggle('hidden', !mealId);
+            card.querySelector('[data-swapped-from]').classList.toggle('hidden', mealId === card.dataset.originalMealId);
+            updateTotals();
+        }
+
+        mealGroupsGrid.querySelectorAll('[data-meal-card]').forEach(function (card) {
+            const toggle = card.querySelector('.meal-swap-toggle');
+            const select = card.querySelector('.meal-swap-select');
+            if (!toggle || !select) return;
+            toggle.addEventListener('change', function () {
+                select.classList.toggle('hidden', !toggle.checked);
+                if (toggle.checked && !select.value) { select.focus(); return; }
+                applySwap(card);
+            });
+            select.addEventListener('change', function () { applySwap(card); });
         });
     }
 

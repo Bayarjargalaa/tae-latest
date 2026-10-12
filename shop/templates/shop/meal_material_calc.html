@@ -75,6 +75,7 @@
                         <tr class="bg-gray-100 text-left">
                             <th class="px-2 py-1.5 font-semibold text-gray-700 whitespace-nowrap">Огноо</th>
                             <th class="px-2 py-1.5 font-semibold text-gray-700">2-р хоол</th>
+                            <th class="px-2 py-1.5 font-semibold text-gray-700">Хачир</th>
                             <th class="px-2 py-1.5 font-semibold text-gray-700">1-р хоол</th>
                         </tr>
                     </thead>
@@ -83,6 +84,7 @@
                         <tr class="border-t">
                             <td class="px-2 py-1.5 whitespace-nowrap">{{ row.date|date:'Y-m-d' }} <span class="text-gray-400 text-xs">({{ row.number }})</span></td>
                             <td class="px-2 py-1.5">{{ row.meal_2|default:'-' }}</td>
+                            <td class="px-2 py-1.5">{{ row.meal_3|default:'-' }}</td>
                             <td class="px-2 py-1.5">{{ row.meal_1|default:'-' }}</td>
                         </tr>
                         {% endfor %}

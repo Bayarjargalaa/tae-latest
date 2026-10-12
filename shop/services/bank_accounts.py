@@ -25,6 +25,15 @@ BANK_NAME_HINTS = [
     ('капитрон', 'Капитрон банк'),
 ]
 UNKNOWN_BANK = 'Тодорхойгүй'
+# Хэвлэхэд дансны ард гарах банкны богино нэр
+BANK_SHORT_NAMES = {
+    'Худалдаа хөгжлийн банк': 'ХХБ',
+    'Хаан банк': 'Хаан',
+    'Голомт банк': 'Голомт',
+    'Хас банк': 'Хас',
+    'Төрийн банк': 'Төрийн',
+    'Капитрон банк': 'Капитрон',
+}
 
 _IBAN_RE = re.compile(r'MN[\s\-]*([\d\s\-]+)', re.IGNORECASE)
 
@@ -45,3 +54,15 @@ def account_info(raw):
     bank = bank or next((name for hint, name in BANK_NAME_HINTS if hint in lowered), UNKNOWN_BANK)
     status = 'ok' if match and len(account) == IBAN_LENGTH else 'invalid'
     return {'raw': raw, 'account': account, 'bank': bank, 'status': status}
+
+
+def print_account(raw):
+    """Хэвлэхэд нэг загвараар: "MN35 0005 00 5070482122 Хаан" (шалгах орон, банкны код, 2 + 10 оронтой данс).
+    IBAN биш (урт буруу) бол гараар бичсэнээр нь."""
+    info = account_info(raw)
+    if info['status'] != 'ok':
+        return info['raw']
+    a = info['account']
+    text = f'{a[:4]} {a[4:8]} {a[8:10]} {a[10:]}'
+    short = BANK_SHORT_NAMES.get(info['bank'])
+    return f'{text} {short}' if short else text

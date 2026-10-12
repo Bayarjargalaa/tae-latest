@@ -70,6 +70,8 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    # Хажуугийн цэснээс нуусан хуудсыг URL-аар ч нээлгэхгүй (shop.access)
+    'shop.middleware.MenuPermissionMiddleware',
 ]
 
 ROOT_URLCONF = 'core.urls'

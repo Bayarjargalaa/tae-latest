@@ -92,11 +92,83 @@ MENU_GROUPS = [
             {'key': 'payroll_report', 'label': 'Цалингийн тайлан', 'icon': '📊', 'url_name': 'shop:payroll_report'},
             {'key': 'payroll_advance_card', 'label': 'Картын урьдчилгаа', 'icon': '💳', 'url_name': 'shop:payroll_advance_card'},
             {'key': 'payroll_advance_cash', 'label': 'Бэлэн урьдчилгаа', 'icon': '💵', 'url_name': 'shop:payroll_advance_cash'},
+            {'key': 'meal_allowance', 'label': 'Хоолны мөнгө', 'icon': '🍱', 'url_name': 'shop:meal_allowance'},
             {'key': 'sales_bonus', 'label': 'Борлуулалтын нэмэгдэл бодох', 'icon': '🎯', 'url_name': 'shop:sales_bonus'},
             {'key': 'employee_fingerprint', 'label': 'Ажилтны хурууны мэдээлэл', 'icon': '👆', 'url_name': 'shop:employee_fingerprint'},
         ],
     },
 ]
+
+
+# --- URL түвшний эрх (shop.access, shop.middleware.MenuPermissionMiddleware) ---------------------------------
+# Хажуугийн цэснээс нуусан хуудсыг хаягаар нь ч нээж болохгүй. Цэсний item бүрийн url_name өөрийн key-ээр
+# автоматаар хамгаалагдана; энд зөвхөн дэд хуудас (экспорт, хадгалах, засах, тохиргоо г.м.)-ыг аль цэсэнд
+# хамаарахыг заана - жагсаасан цэсний аль нэг нь харагддаг бол нээгдэнэ.
+# Энд ч, цэсэнд ч, PUBLIC_URL_NAMES-д ч байхгүй (шинээр нэмсэн г.м.) хуудас зөвхөн superuser-т нээгдэнэ.
+SUBPAGE_MENU_KEYS = {
+    'sales_report_export': ('sales_report',),
+    'sales_report_customers': ('sales_report',),
+    'sales_report_ht_dashboard': ('sales_report_ht',),
+    'sales_report_ht_breakdown': ('sales_report_ht',),
+    'sales_report_ht_export': ('sales_report_ht',),
+    'unloading_export': ('unloading',),
+    'purchase_report_export': ('purchase_report',),
+    'purchase_report_suggest': ('purchase_report',),
+    'receivable_ledger': ('receivable_report',),
+    'receivable_export': ('receivable_report',),
+    'payable_ledger': ('payable_report',),
+    'payable_export': ('payable_report',),
+    'expense_transaction_detail': ('expense_report', 'expense_report_by_year'),
+    'item_prices_export': ('item_prices',),
+    'item_costs_export': ('item_costs',),
+    'meal_create': ('meal_list',),
+    'meal_edit': ('meal_list',),
+    'meal_delete': ('meal_list',),
+    'meal_toggle_active': ('meal_list',),
+    'meal_cycle_settings_update': ('meal_list',),
+    'meal_attendance_summary': ('meal_attendance',),
+    'meal_attendance_create': ('meal_attendance',),
+    'meal_attendance_edit': ('meal_attendance',),
+    'meal_attendance_delete': ('meal_attendance',),
+    'attendance_export': ('attendance_calc',),
+    'attendance_filter_save': ('attendance_calc',),
+    'attendance_sync': ('attendance_calc',),
+    'attendance_sync_merchandiser': ('attendance_calc',),
+    'attendance_save': ('attendance_calc',),
+    'attendance_delete': ('attendance_calc',),
+    'attendance_add': ('attendance_calc',),
+    'attendance_hide': ('attendance_calc',),
+    'attendance_bulk_delete': ('attendance_calc',),
+    'attendance_position_settings': ('attendance_calc',),
+    'timesheet_export': ('timesheet',),
+    'payroll_card_export': ('payroll_card',),
+    'payroll_cash_export': ('payroll_cash',),
+    'payroll_settings': ('payroll_card', 'payroll_cash'),
+    'meal_allowance_export': ('meal_allowance',),
+}
+# Цэсний эрхээс үл хамааран нээлттэй (нэвтрээгүй хэрэглэгчид ч) - эрхийг view өөрөө шалгадаг эсвэл нийтийн хуудас
+PUBLIC_URL_NAMES = {
+    'home', 'products', 'product_detail', 'product_edit', 'register', 'login', 'logout',
+    'password_reset', 'password_reset_done', 'password_reset_confirm', 'password_reset_complete',
+    'ai_chat_message', 'product_stock_lookup',
+}
+
+
+# Зөвхөн superuser - цэсгүй, зориуд хаалттай (тодорхойлоогүй хуудастай адил боловч жагсааснаар тест хянана)
+ADMIN_ONLY_URL_NAMES = {
+    'data_sync', 'data_sync_start', 'data_sync_status', 'data_sync_views', 'menu_permission_config',
+}
+
+
+def get_url_menu_keys():
+    """{url_name: (цэсний key, ...)} - цэсний item-ийн url_name өөрийн key-ээр, дэд хуудас SUBPAGE_MENU_KEYS-ээр."""
+    mapping = {}
+    for group in MENU_GROUPS:
+        for item in group['items']:
+            if not item.get('always_visible'):  # бүх хүнд харагддаг цэс - PUBLIC_URL_NAMES-д
+                mapping.setdefault(item['url_name'].split(':')[-1], (item['key'],))
+    mapping.update(SUBPAGE_MENU_KEYS)
+    return mapping
 
 
 def get_configurable_menu_items():

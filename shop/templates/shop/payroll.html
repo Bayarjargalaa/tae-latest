@@ -167,7 +167,7 @@
                         <col class="pr-col-small"><col class="pr-col-small"><col class="pr-col-money"><col class="pr-col-small"><col class="pr-col-money">
                         <col class="pr-col-money"><col class="pr-col-money"><col class="pr-col-money"><col class="pr-col-money">
                         {% endif %}
-                        {% for field, label, is_manual in deduction_columns %}<col class="pr-col-money">{% endfor %}
+                        {% for field, label, is_manual in deduction_columns %}<col class="pr-col-money">{% if not is_card and field == 'advance' %}<col class="pr-col-money">{% endif %}{% endfor %}
                         {% for field, label in benefit_fields %}<col class="pr-col-money">{% endfor %}
                         <col class="pr-col-money"><col class="pr-col-money"><col class="pr-col-money">
                     </colgroup>
@@ -200,6 +200,7 @@
                             {% endif %}
                             {% for field, label, is_manual in deduction_columns %}
                             <th class="pr-col-money pr-v px-2 py-2" rowspan="2">{{ label }}</th>
+                            {% if not is_card and field == 'advance' %}<th class="pr-col-money pr-v px-2 py-2" rowspan="2" title="Бодогдсон нийт цалин - урьдчилгаа">Олговол зохих</th>{% endif %}
                             {% endfor %}
                             {% for field, label in benefit_fields %}
                             <th class="pr-col-money pr-v px-2 py-2" rowspan="2">{{ label }}</th>
@@ -255,7 +256,7 @@
                             <td class="px-2 py-1.5">{{ row.pit|floatformat:'-2g' }}</td>
                             <td class="px-2 py-1.5 font-semibold">{{ row.total_tax|floatformat:'-2g' }}</td>
                             {% endif %}
-                            {% for field, label, is_manual in deduction_columns %}{% if is_manual %}{% include 'shop/_payroll_input.html' %}{% else %}<td class="px-2 py-1.5" title="Ажилтны мэдээллээс">{{ row|get_item:field|floatformat:'-2g' }}</td>{% endif %}{% endfor %}
+                            {% for field, label, is_manual in deduction_columns %}{% if is_manual %}{% include 'shop/_payroll_input.html' %}{% else %}<td class="px-2 py-1.5" title="Ажилтны мэдээллээс">{{ row|get_item:field|floatformat:'-2g' }}</td>{% endif %}{% if not is_card and field == 'advance' %}<td class="px-2 py-1.5 font-semibold" title="Бодогдсон нийт цалин - урьдчилгаа">{{ row.gross_less_advance|floatformat:'-2g' }}</td>{% endif %}{% endfor %}
                             {% for field, label in benefit_fields %}{% include 'shop/_payroll_input.html' %}{% endfor %}
                             <td class="px-2 py-1.5 font-semibold">{{ row.net_pay|floatformat:'-2g' }}</td>
                             <td class="px-2 py-1.5" title="Ажилтны мэдээллээс (D5)">{{ row.deposit|floatformat:'-2g' }}</td>
@@ -289,7 +290,7 @@
                             <td class="px-2 py-2">{{ totals.pit|floatformat:'-2g' }}</td>
                             <td class="px-2 py-2">{{ totals.total_tax|floatformat:'-2g' }}</td>
                             {% endif %}
-                            {% for field, label, is_manual in deduction_columns %}<td class="px-2 py-2">{% include 'shop/_payroll_total.html' %}</td>{% endfor %}
+                            {% for field, label, is_manual in deduction_columns %}<td class="px-2 py-2">{% include 'shop/_payroll_total.html' %}</td>{% if not is_card and field == 'advance' %}<td class="px-2 py-2">{{ totals.gross_less_advance|floatformat:'-2g' }}</td>{% endif %}{% endfor %}
                             {% for field, label in benefit_fields %}<td class="px-2 py-2">{% include 'shop/_payroll_total.html' %}</td>{% endfor %}
                             <td class="px-2 py-2">{{ totals.net_pay|floatformat:'-2g' }}</td>
                             <td class="px-2 py-2">{{ totals.deposit|floatformat:'-2g' }}</td>

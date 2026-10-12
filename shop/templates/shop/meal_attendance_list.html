@@ -19,6 +19,11 @@
                 <a href="{% url 'shop:meal_attendance_summary' %}" class="bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50 transition whitespace-nowrap">
                     📊 Нэгтгэл
                 </a>
+                {% if can_view_meal_allowance %}
+                <a href="{% url 'shop:meal_allowance' %}" class="bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50 transition whitespace-nowrap">
+                    🍱 Хоолны мөнгө
+                </a>
+                {% endif %}
                 <a href="{% url 'shop:meal_attendance_create' %}" class="bg-primary text-white px-4 py-2 rounded-lg hover:bg-green-700 transition whitespace-nowrap">
                     + Шинэ бүртгэл
                 </a>
@@ -91,6 +96,9 @@
                             <span class="inline-block px-2 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">Өөрчлөлттэй</span>
                             {% else %}
                             <span class="inline-block px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-500">Өөрчлөлтгүй</span>
+                            {% endif %}
+                            {% if attendance.swaps.all %}
+                            <span class="inline-block px-2 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-800" title="{% for sw in attendance.swaps.all %}{{ sw.original_meal.name|default:'(нэмсэн)' }} → {{ sw.meal.name }}{% if not forloop.last %}; {% endif %}{% endfor %}">🔄 Хоол сольсон</span>
                             {% endif %}
                         </td>
                         <td class="px-4 py-3 text-gray-600 max-w-xs">{{ attendance.change_comment|default:'-'|linebreaksbr }}</td>

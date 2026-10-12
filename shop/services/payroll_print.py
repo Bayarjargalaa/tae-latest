@@ -11,6 +11,7 @@
 """
 from decimal import Decimal, InvalidOperation
 
+from shop.services.bank_accounts import print_account
 from shop.services.payroll import BENEFIT_FIELDS, DEDUCTION_COLUMNS, EARNING_FIELDS
 
 # Хуудас бүрийн хүснэгтийн байрлал: (түлхүүр, хуудасны дугаар, тайлбар)
@@ -52,6 +53,8 @@ PRINT_COLUMNS = {
     'pit': {'label': 'ХХОАТ', 'kind': 'money', 'total': True, 'card_only': True},
     'total_tax': {'label': 'Нийт татварын суутгал', 'kind': 'money', 'total': True, 'card_only': True},
     **{f: {'label': label, 'kind': 'money', 'total': True} for f, label, _ in DEDUCTION_COLUMNS},
+    'gross_less_advance': {'label': 'Олговол зохих (нийт цалин - урьдчилгаа)', 'short': 'Олговол зохих',
+                           'kind': 'money', 'total': True, 'bold': True},
     **{f: {'label': label, 'kind': 'money', 'total': True} for f, label in BENEFIT_FIELDS},
     'net_pay': {'label': 'Гарт олгох', 'kind': 'money', 'total': True},
     'deposit': {'label': 'Хадгаламж', 'kind': 'money', 'total': True},
@@ -78,9 +81,12 @@ DEFAULT_PRINT_COLUMNS = {
     'cash': {
         'p1a': _PERSON + ['base_salary', 'seniority_bonus', 'required_days', 'required_hours', 'worked_days',
                           'worked_hours', 'saturday_hours', 'saturday_bonus', *_EARNINGS, 'transport', 'gross'],
-        'p1b': _PERSON + ['gross', *_DEDUCTIONS, *_BENEFITS, 'net_pay', 'deposit', 'payout', 'signature'],
+        'p1b': _PERSON + ['gross', 'advance', 'gross_less_advance', *[f for f in _DEDUCTIONS if f != 'advance'],
+                          *_BENEFITS, 'net_pay', 'deposit', 'payout', 'signature'],
         'p2a': [],
         'p2b': [],
+        # 1, 2-р хүснэгт тус бүр A4 дээр
+        'separate_pages': True,
     },
 }
 
@@ -192,8 +198,8 @@ def _cell(spec, row=None, index=None, totals=None):
     elif kind in ('text', 'code'):
         text = row.get(spec['key']) or ''
     elif kind == 'sign':
-        # Гарын үсгийн баганад бэлэн цалингийн дансыг харуулна (Цалингийн тохиргооноос)
-        text = row.get('cash_bank_account') or ''
+        # Гарын үсгийн баганад бэлэн цалингийн дансыг харуулна (Цалингийн тохиргооноос), нэг загвараар
+        text = print_account(row.get('cash_bank_account'))
     else:
         text = format_print_value(_value(spec, row), kind)
     return {'text': text, 'cls': classes.strip()}
@@ -269,7 +275,8 @@ def table_specs(columns, sheet):
 
 def get_separate_pages(setting, sheet):
     """True бол хүснэгт бүр тусдаа хуудсанд хэвлэгдэнэ (жиш: картын 2-р хуудасны 2 хүснэгт -> 3 хуудас)."""
-    return bool(((setting.print_columns or {}).get(sheet) or {}).get('separate_pages'))
+    saved = (setting.print_columns or {}).get(sheet) or {}
+    return bool(saved.get('separate_pages', DEFAULT_PRINT_COLUMNS[sheet].get('separate_pages')))
 
 
 def page_counts(columns):

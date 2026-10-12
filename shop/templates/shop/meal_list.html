@@ -5,30 +5,54 @@
 
 {% block hide_mobile_menu %}hidden{% endblock %}
 
+{% block extra_css %}
+<style>
+.ml-print-title { display: none; }
+@media print {
+    @page { size: A4 portrait; margin: 10mm; }
+    #sidebar, #sidebar-open-button, #sidebar-overlay, header, footer, .no-print, #ai-chat-widget { display: none !important; }
+    main { margin: 0 !important; padding: 0 !important; }
+    body, .bg-gray-50 { background: white !important; }
+    .ml-print-title { display: block; font-size: 14pt; font-weight: 700; margin-bottom: 6px; }
+    .ml-print-title small { display: block; font-size: 9pt; font-weight: 400; color: #374151; }
+    .ml-table-wrap { box-shadow: none !important; overflow: visible !important; }
+    .ml-table { font-size: 9pt; border-collapse: collapse; }
+    .ml-table > thead { display: table-header-group; }
+    .ml-table > thead > tr > th, .ml-table > tbody > tr > td { padding: 3px 6px !important; border: 1px solid #9ca3af; vertical-align: top; }
+    .ml-table > tbody > tr { break-inside: avoid; page-break-inside: avoid; }
+    .ml-table table { font-size: 8pt; }
+    .ml-table table td, .ml-table table th { padding: 1px 4px !important; }
+}
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="flex min-h-screen bg-gray-50">
     {% include 'shop/_sidebar.html' with active_page='meal_list' %}
 
     <main class="flex-1 p-2 lg:p-8 lg:ml-0">
-        <div class="flex items-center justify-between mb-6">
+        <div class="flex items-center justify-between mb-6 no-print">
             <div>
                 <h1 class="text-2xl lg:text-3xl font-bold text-gray-900">🍲 Хоолны бүртгэл</h1>
                 <p class="text-gray-600 mt-2">Хоол болон орцын жагсаалт</p>
             </div>
+            <div class="flex gap-2">
+            <button type="button" onclick="window.print()" class="bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50 transition whitespace-nowrap">🖨 Хэвлэх</button>
             <a href="{% url 'shop:meal_create' %}" class="bg-primary text-white px-4 py-2 rounded-lg hover:bg-green-700 transition whitespace-nowrap">
                 + Шинэ хоол
             </a>
+            </div>
         </div>
 
         {% if messages %}
-        <div class="mb-4">
+        <div class="mb-4 no-print">
             {% for message in messages %}
             <div class="p-3 rounded-lg {% if message.tags == 'error' %}bg-red-100 text-red-800{% else %}bg-green-100 text-green-800{% endif %} mb-2">{{ message }}</div>
             {% endfor %}
         </div>
         {% endif %}
 
-        <div class="bg-white rounded-lg shadow p-4 mb-6">
+        <div class="bg-white rounded-lg shadow p-4 mb-6 no-print">
             <h2 class="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-2">Хоолны циклийн эхлэл тохируулах</h2>
             <p class="text-xs text-gray-400 mb-3">
                 Огноо болон дугаар сонгож хадгалахад, тэр өдрийг сонгосон дугаартай болгож, түүнээс хойшхи
@@ -64,7 +88,7 @@
             </p>
         </div>
 
-        <form method="get" class="bg-white rounded-lg shadow p-4 mb-4 flex flex-wrap items-end gap-3">
+        <form method="get" class="no-print bg-white rounded-lg shadow p-4 mb-4 flex flex-wrap items-end gap-3">
             <div class="flex-1 min-w-[200px]">
                 <label class="block text-xs text-gray-500 mb-1">Хайх</label>
                 <input type="text" name="q" value="{{ q }}" placeholder="Хоолны нэр, тайлбар, орцын нэр/код..." class="w-full border border-gray-300 rounded-lg px-3 py-2">
@@ -102,18 +126,22 @@
         </form>
 
         {% if is_filtered %}
-        <p class="text-sm text-gray-500 mb-2">Олдсон: <strong>{{ meals|length }}</strong> хоол</p>
+        <p class="text-sm text-gray-500 mb-2 no-print">Олдсон: <strong>{{ meals|length }}</strong> хоол</p>
         {% endif %}
 
-        <div class="bg-white rounded-lg shadow overflow-x-auto">
-            <table class="min-w-full text-sm">
+        {% comment %} Хэвлэхэд: зөвхөн хүснэгт (шүүсэн хоолнууд), Үйлдэл баганагүй {% endcomment %}
+        <div class="ml-print-title">Хоолны бүртгэл
+            <small>{% if q %}Хайлт: «{{ q }}» · {% endif %}{% if filter_meal_type %}Төрөл: {% for value, label in meal_type_choices %}{% if value == filter_meal_type %}{{ label }}{% endif %}{% endfor %} · {% endif %}{% if filter_number %}Дугаар: {{ filter_number }} · {% endif %}{% if filter_status %}{% if filter_status == 'active' %}Идэвхтэй{% else %}Идэвхгүй{% endif %} · {% endif %}{{ meals|length }} хоол · Хэвлэсэн: {% now 'Y-m-d' %}</small>
+        </div>
+        <div class="ml-table-wrap bg-white rounded-lg shadow overflow-x-auto">
+            <table class="ml-table min-w-full text-sm">
                 <thead>
                     <tr class="bg-gray-100 text-left">
                         <th class="px-4 py-3 font-semibold text-gray-700">Төрөл</th>
                         <th class="px-4 py-3 font-semibold text-gray-700">Дугаар</th>
                         <th class="px-4 py-3 font-semibold text-gray-700">Нэр</th>
                         <th class="px-4 py-3 font-semibold text-gray-700">Орц</th>
-                        <th class="px-4 py-3 font-semibold text-gray-700 text-right">Үйлдэл</th>
+                        <th class="px-4 py-3 font-semibold text-gray-700 text-right no-print">Үйлдэл</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -149,7 +177,7 @@
                             <span class="text-gray-400">-</span>
                             {% endif %}
                         </td>
-                        <td class="px-4 py-3 text-right whitespace-nowrap">
+                        <td class="px-4 py-3 text-right whitespace-nowrap no-print">
                             <a href="{% url 'shop:meal_edit' meal.pk %}" class="text-primary hover:underline mr-3">Засах</a>
                             <form method="post" action="{% url 'shop:meal_toggle_active' meal.pk %}" class="inline">
                                 {% csrf_token %}

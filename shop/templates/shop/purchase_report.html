@@ -1,110 +1,830 @@
 {% extends 'base.html' %}
-{% load humanize %}
 
 {% block title %}Татан авалтын тайлан - Euro Foods{% endblock %}
 
 {% block hide_mobile_menu %}hidden{% endblock %}
 
+{% block extra_css %}
+{% include 'shop/reports/_sr_styles.html' %}
+<style>
+    .pr-chips { display: flex; flex-wrap: wrap; gap: .35rem; }
+    .pr-chip { display: inline-flex; align-items: center; gap: .35rem; font-size: .75rem; padding: .2rem .35rem .2rem .6rem; border-radius: 999px; background: #eef4fc; color: #1c5cab; }
+    .pr-chip a { display: inline-flex; width: 1.1rem; height: 1.1rem; align-items: center; justify-content: center; border-radius: 999px; color: #1c5cab; }
+    .pr-chip a:hover { background: #cde2fb; }
+    .sr-table tr.lines-row > td { background: #fafaf9; padding: 0 .6rem .7rem 2.2rem; text-align: left; }
+    .sr-table tr.open td { background: #f3f7fd; }
+    .lines-table { width: 100%; font-size: .76rem; border-collapse: collapse; margin-top: .3rem; }
+    .lines-table th { text-align: right; font-weight: 600; color: var(--muted); padding: .35rem .45rem; border-bottom: 1px solid #e7e5e4; white-space: nowrap; }
+    .lines-table td { text-align: right; padding: .3rem .45rem; border-bottom: 1px solid #f1f1ef; white-space: nowrap; font-variant-numeric: tabular-nums; }
+    .lines-table .l { text-align: left; }
+    .range { font-size: .68rem; color: var(--muted); }
+    .suggest { position: absolute; left: 0; right: 0; top: calc(100% + 4px); z-index: 30; background: #fff; border: 1px solid #e5e7eb; border-radius: .75rem;
+               box-shadow: 0 12px 32px rgba(0,0,0,.12); max-height: 26rem; overflow: auto; padding: .35rem; }
+    .suggest .sg-head { font-size: .68rem; font-weight: 600; text-transform: uppercase; letter-spacing: .03em; color: var(--muted); padding: .45rem .55rem .2rem; }
+    .suggest [role="option"] { display: flex; align-items: center; gap: .5rem; padding: .4rem .55rem; border-radius: .5rem; cursor: pointer; font-size: .82rem; }
+    .suggest [role="option"][aria-selected="true"], .suggest [role="option"]:hover { background: #eef4fc; }
+    .suggest mark { background: #fde68a; color: inherit; border-radius: 2px; padding: 0 1px; }
+    .suggest .sg-meta { margin-left: auto; font-size: .7rem; color: var(--muted); white-space: nowrap; }
+    .suggest .sg-empty { padding: .6rem .55rem; font-size: .8rem; color: var(--muted); }
+    .lv-chip { display: inline-flex; align-items: center; gap: .15rem; font-size: .8rem; font-weight: 500; padding: .2rem .25rem .2rem .55rem; border-radius: .55rem;
+               background: #eef4fc; color: #1c5cab; border: 1px solid #cde2fb; cursor: grab; user-select: none; }
+    .lv-chip.dragging { opacity: .4; } .lv-chip.drop { outline: 2px dashed var(--series-1); outline-offset: 2px; }
+    .lv-chip .n { font-size: .65rem; color: #5598e7; margin-right: .15rem; }
+    .lv-chip button { width: 1.3rem; height: 1.3rem; border-radius: .35rem; display: inline-flex; align-items: center; justify-content: center; color: #1c5cab; }
+    .lv-chip button:hover:not(:disabled) { background: #cde2fb; } .lv-chip button:disabled { opacity: .25; }
+    .lv-sep { color: #9ca3af; font-size: .8rem; }
+    .lv-preset, .lv-depth { font-size: .75rem; padding: .2rem .55rem; border-radius: 999px; border: 1px solid #e5e7eb; color: #4b5563; background: #fff; }
+    .lv-preset:hover, .lv-depth:hover { background: #f3f4f6; color: #111827; }
+    .lv-preset[aria-pressed="true"] { background: #eef4fc; border-color: #86b6ef; color: #1c5cab; }
+    .sr-table tr.tnode { cursor: pointer; }
+    .sr-table tr.tnode td.l { white-space: nowrap; }
+    .sr-table tr.tnode .tw { display: inline-block; width: 1rem; color: #9ca3af; }
+    .sr-table tr.tnode .lvl { font-size: .62rem; color: var(--muted); text-transform: uppercase; letter-spacing: .03em; margin-left: .4rem; }
+    .sr-table tr.tnode.d0 td { background: #f8fafc; font-weight: 600; }
+    .cur-row { display: grid; grid-template-columns: 3.2rem 1fr auto; align-items: center; gap: .6rem; padding: .3rem .4rem; font-size: .8rem; }
+</style>
+{% endblock %}
+
 {% block content %}
+{% load l10n product_filters %}
 <div class="flex min-h-screen bg-gray-50">
-    <!-- Mobile-responsive Sidebar -->
-    {% include 'shop/_sidebar.html' with active_page='purchase_report' %}
-    
-    <!-- Main Content -->
-    <main class="flex-1 p-2 lg:p-8 lg:ml-0">
-        <div class="max-w-7xl mx-auto">
-            <!-- HeaderОдоо summary_tab.html-г үзээд purchase_report-ын template-үүдийг үүсгэе.
-</thinking> -->
-            <div class="mb-4 lg:mb-6">
-                <h1 class="text-2xl lg:text-3xl font-bold text-gray-800">🚚 Татан авалтын тайлан</h1>
-                <p class="text-gray-600 mt-2">
-                    {% if date_from or date_to %}
-                        {% if date_from %}{{ date_from }}{% else %}эхнээс{% endif %} ~ 
-                        {% if date_to %}{{ date_to }}{% else %}одоог хүртэл{% endif %}
-                    {% else %}
-                        БҮХ хугацаа
-                    {% endif %}
-                    • {{ total_records|intcomma }} татан авалт
+    {% include 'shop/_sidebar.html' with active_page=active_page %}
+
+    <main class="sr-root flex-1 p-3 lg:p-8 min-w-0 space-y-5">
+        <div class="flex flex-wrap items-end justify-between gap-3">
+            <div>
+                <div class="text-xs font-medium text-gray-500 mb-1">Хангамж <span class="mx-1 text-gray-300">/</span> OpenDataLandedCost</div>
+                <h1 class="text-2xl lg:text-3xl font-bold tracking-tight">🚚 Татан авалтын тайлан</h1>
+                <p class="text-sm text-gray-500 mt-1">
+                    {% if filters.date_from or filters.date_to %}{{ filters.date_from|date:'Y.m.d'|default:'эхнээс' }} – {{ filters.date_to|date:'Y.m.d'|default:'одоог хүртэл' }}{% else %}Бүх хугацаа ({{ options.first|date:'Y.m.d' }} – {{ options.last|date:'Y.m.d' }}){% endif %}
+                    · дүн бүгд төгрөгөөр (валютын дүн × ханш)
                 </p>
             </div>
-            
-            <!-- Tab Navigation -->
-            <div class="bg-white rounded-lg shadow mb-4 lg:mb-6">
-                <div class="border-b overflow-x-auto">
-                    <nav class="flex space-x-0 lg:space-x-2 px-2 lg:px-4 min-w-max lg:min-w-0" aria-label="Tabs">
-                        <a href="?tab=summary&date_from={{ date_from }}&date_to={{ date_to }}" 
-                           class="px-3 lg:px-6 py-2 lg:py-3 font-medium text-sm lg:text-base whitespace-nowrap transition {% if active_tab == 'summary' %}text-primary border-b-2 border-primary{% else %}text-gray-500 hover:text-gray-700{% endif %}">
-                            📈 Нэгтгэл (Он-Сар)
-                        </a>
-                        <a href="?tab=by_vendor&date_from={{ date_from }}&date_to={{ date_to }}" 
-                           class="px-3 lg:px-6 py-2 lg:py-3 font-medium text-sm lg:text-base whitespace-nowrap transition {% if active_tab == 'by_vendor' %}text-primary border-b-2 border-primary{% else %}text-gray-500 hover:text-gray-700{% endif %}">
-                            🏢 Харилцагчаар
-                        </a>
-                        <a href="?tab=by_item&date_from={{ date_from }}&date_to={{ date_to }}" 
-                           class="px-3 lg:px-6 py-2 lg:py-3 font-medium text-sm lg:text-base whitespace-nowrap transition {% if active_tab == 'by_item' %}text-primary border-b-2 border-primary{% else %}text-gray-500 hover:text-gray-700{% endif %}">
-                            📦 Бараагаар
-                        </a>
-                        <a href="?tab=by_date&date_from={{ date_from }}&date_to={{ date_to }}" 
-                           class="px-3 lg:px-6 py-2 lg:py-3 font-medium text-sm lg:text-base whitespace-nowrap transition {% if active_tab == 'by_date' %}text-primary border-b-2 border-primary{% else %}text-gray-500 hover:text-gray-700{% endif %}">
-                            📅 Өдрөөр
-                        </a>
-                    </nav>
+            <div class="flex flex-wrap gap-2 no-print">
+                <a href="{% url 'shop:purchase_report_export' %}?tab={{ tab }}&{{ query_string }}" class="inline-flex items-center gap-1.5 text-sm font-medium px-3.5 py-2 rounded-lg border border-gray-200 bg-white hover:bg-gray-50">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 3v12m0 0l-4-4m4 4l4-4M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>Excel
+                </a>
+                <button type="button" onclick="window.print()" class="text-sm font-medium px-3.5 py-2 rounded-lg border border-gray-200 bg-white hover:bg-gray-50">🖨 Хэвлэх</button>
+            </div>
+        </div>
+
+        {# Шүүлт - бүх tab-д үйлчилнэ, URL-д хадгалагдана (хуваалцаж, хавчуулж болно) #}
+        <form id="pr-form" method="get" class="sr-card p-4 lg:p-5 space-y-4 no-print">
+            <input type="hidden" name="tab" value="{{ tab }}">
+            {% for d in selected_docs %}<input type="hidden" name="doc" value="{{ d }}">{% endfor %}
+            <div class="flex flex-wrap items-end gap-3">
+                <div class="max-w-full">
+                    <span class="sr-label">Хугацаа</span>
+                    <div class="seg" role="group" aria-label="Хугацааны бэлэн сонголт">
+                        <button type="button" data-preset="month">Энэ сар</button>
+                        <button type="button" data-preset="quarter">Энэ улирал</button>
+                        <button type="button" data-preset="year">Энэ он</button>
+                        <button type="button" data-preset="prev_year">Өнгөрсөн он</button>
+                        <button type="button" data-preset="last12">Сүүлийн 12 сар</button>
+                        <button type="button" data-preset="last36">Сүүлийн 3 жил</button>
+                        <button type="button" data-preset="all">Бүх хугацаа</button>
+                    </div>
+                </div>
+                <div class="flex flex-wrap items-end gap-2">
+                    <label><span class="sr-label">Эхлэх</span><input type="date" name="date_from" id="pr-from" value="{{ filters.date_from|date:'Y-m-d' }}" class="sr-field"></label>
+                    <span class="pb-2 text-gray-400">–</span>
+                    <label><span class="sr-label">Дуусах</span><input type="date" name="date_to" id="pr-to" value="{{ filters.date_to|date:'Y-m-d' }}" class="sr-field"></label>
+                </div>
+                {% comment %} Хайх: бичих явцад тохирох харилцагч, бараа, баримт санал болгоно (дарахад тэрээр шүүнэ);
+                   Enter / "... гэсэн текстээр шүүх" - бичсэн текстийг агуулсан бүх мөрөөр (нэр, код, дугаар) шүүнэ {% endcomment %}
+                <div class="flex-1 min-w-[14rem] relative" id="pr-search">
+                    <label for="pr-q" class="sr-label">Хайх</label>
+                    <input type="search" name="q" id="pr-q" value="{{ filters.q }}" autocomplete="off" role="combobox" aria-expanded="false"
+                           aria-controls="pr-suggest" aria-autocomplete="list" placeholder="Харилцагч, бараа, код, баримтын дугаар - 2 үсгээс санал гарна" class="sr-field w-full">
+                    <div id="pr-suggest" role="listbox" class="suggest" hidden></div>
                 </div>
             </div>
-            
-            <!-- Global Stats -->
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-                <div class="bg-white rounded-lg shadow p-6">
-                    <p class="text-gray-500 text-sm">Нийт тоо ширхэг</p>
-                    <p class="text-3xl font-bold text-green-600 mt-2">{{ stats.total_qty|default:0|floatformat:0|intcomma }}</p>
+            {% comment %} Харилцан хамааралтай: бусад сонголтод (хугацаа, харилцагч, бараа, валют, агуулах) тохирох утга л
+               баримтын тоотойгоо гарна; сонгох бүрт бусад жагсаалт хөтөч дотор шууд нарийсна. Сонгосон утга үргэлж үлдэнэ {% endcomment %}
+            <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-3">
+                {% for key, label, placeholder, values in facets %}
+                <label class="block min-w-0 {% if key == 'item' %}xl:col-span-2{% endif %}"><span class="sr-label">{{ label }} <span class="normal-case font-normal text-gray-400" data-facet-count="{{ key }}"></span></span>
+                    <select name="{{ key }}" id="f-{{ key }}" multiple data-facet="{{ key }}" data-placeholder="{{ placeholder }}">
+                        {% for id, name, n in values %}<option value="{{ id }}" {% if id in filters|get_item:key %}selected{% endif %}>{% if key == 'item' %}{{ id }} - {% endif %}{{ name }} · {{ n }}</option>{% endfor %}
+                    </select></label>
+                {% endfor %}
+            </div>
+            {% if selected_docs %}
+            <div class="pr-chips items-center"><span class="sr-sub">Баримт:</span>
+                {% for d in selected_docs %}<span class="pr-chip">#{{ d|slice:'-6:' }}<a href="#" data-remove-doc="{{ d }}" aria-label="Баримтын шүүлтийг хасах" title="Хасах">✕</a></span>{% endfor %}
+            </div>
+            {% endif %}
+            <div class="flex flex-wrap items-center gap-2">
+                <button type="submit" class="bg-primary text-white text-sm font-semibold px-5 py-2 rounded-lg hover:bg-green-700 transition">Шүүх</button>
+                {% if is_filtered %}<a href="?tab={{ tab }}" class="text-sm px-3 py-2 rounded-lg text-gray-600 hover:bg-gray-100">Бүх шүүлтийг цэвэрлэх</a>{% endif %}
+                <span class="sr-sub ml-auto">Шүүлт бүх tab-д үйлчилнэ · жагсаалтын тоо = одоогийн нөхцөл дэх баримт · хаягийг хуулж хуваалцаж болно</span>
+            </div>
+        </form>
+
+        {% if is_empty %}
+        <div class="sr-card p-4 border-amber-200 bg-amber-50 text-sm text-amber-900 flex flex-wrap items-center gap-3 no-print" role="status">
+            <span>⚠️ Сонгосон шүүлтэд тохирох татан авалт алга.</span>
+            {% if options.latest_match and filters.date_from or options.latest_match and filters.date_to %}
+            <span>Эдгээр шүүлтээр хамгийн сүүлийн татан авалт <b>{{ options.latest_match|date:'Y.m.d' }}</b>.</span>
+            <a class="underline font-medium" href="?tab={{ tab }}&{{ query_string }}" data-clear-dates>Огнооны шүүлтийг арилгах →</a>
+            {% elif is_filtered %}
+            <a class="underline font-medium" href="?tab={{ tab }}">Бүх шүүлтийг цэвэрлэх →</a>
+            {% endif %}
+        </div>
+        {% endif %}
+
+        {# Үзүүлэлтүүд - хугацаа хоёр талдаа заасан бол өмнөх ижил урттай хугацаатай харьцуулна #}
+        {% with c=kpis.current %}
+        <section class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3" aria-label="Үндсэн үзүүлэлт">
+            <div class="sr-card p-4 fade-in"><div class="text-xs font-medium text-gray-600">Нийт өртөг</div><div class="kpi-value sr-num mt-1" data-compact="{{ c.total|unlocalize }}"></div><div class="mt-2" data-delta="total"></div></div>
+            <div class="sr-card p-4 fade-in"><div class="text-xs font-medium text-gray-600">Барааны дүн</div><div class="kpi-value sr-num mt-1" data-compact="{{ c.goods|unlocalize }}"></div><div class="mt-2" data-delta="goods"></div></div>
+            <div class="sr-card p-4 fade-in"><div class="text-xs font-medium text-gray-600">Гааль + бусад зардал</div><div class="kpi-value sr-num mt-1" data-compact="{{ c.expenses|unlocalize }}"></div><div class="mt-2 flex flex-wrap gap-2 items-center"><span data-delta="expenses"></span><span class="sr-sub" title="(гааль + бусад) / барааны дүн">барааны {{ c.expense_pct|floatformat:1 }}%</span></div></div>
+            <div class="sr-card p-4 fade-in"><div class="text-xs font-medium text-gray-600">Хүлээгдэж буй ашиг</div><div class="kpi-value sr-num mt-1" data-compact="{{ c.profit|unlocalize }}"></div><div class="mt-2 flex flex-wrap gap-2 items-center"><span data-delta="profit"></span><span class="sr-sub" title="ашиг / (зарах үнэ × тоо)">ашгийн хувь {{ c.margin|floatformat:1 }}%</span></div></div>
+            <div class="sr-card p-4 fade-in"><div class="text-xs font-medium text-gray-600">Татан авалт</div><div class="kpi-value sr-num mt-1" data-int="{{ c.docs|unlocalize }}"></div><div class="mt-2 flex flex-wrap gap-2 items-center"><span data-delta="docs"></span><span class="sr-sub">{{ c.vendors }} харилцагч</span></div></div>
+            <div class="sr-card p-4 fade-in"><div class="text-xs font-medium text-gray-600">Бараа</div><div class="kpi-value sr-num mt-1" data-int="{{ c.items|unlocalize }}"></div><div class="mt-2 flex flex-wrap gap-2 items-center"><span data-delta="items"></span><span class="sr-sub" data-int-sub="{{ c.qty|unlocalize }}"></span></div></div>
+        </section>
+        {% endwith %}
+
+        <div class="sr-card overflow-hidden">
+            <nav class="tabs px-3 no-print" aria-label="Тайлангийн хэсэг">
+                {% for key, label, icon in tabs %}<a href="?tab={{ key }}&{{ query_string }}" {% if key == tab %}aria-current="page"{% endif %}>{{ icon }} {{ label }}</a>{% endfor %}
+            </nav>
+
+            {% if tab == 'summary' %}
+            <div class="p-4 lg:p-5 space-y-5">
+                <div class="grid grid-cols-1 xl:grid-cols-4 gap-5">
+                    <div class="xl:col-span-3">
+                        <div class="flex flex-wrap items-start justify-between gap-3">
+                            <div><h3>Сарын татан авалт</h3><p class="sr-sub">Нийт өртгийн бүрэлдэхүүн (НӨАТ-гүй), сараар · дарахад тухайн сарын баримтууд</p></div>
+                            <div class="legend"><span><i style="background:var(--series-1)"></i>Барааны дүн</span><span><i style="background:var(--series-2)"></i>Гааль</span><span><i style="background:var(--series-3)"></i>Бусад зардал</span></div>
+                        </div>
+                        <div class="chart-wrap mt-2" id="chart"><div class="tooltip" id="tip"></div></div>
+                    </div>
+                    <div>
+                        <h3>Валютаар</h3><p class="sr-sub">Валютын дүн ба төгрөгөөр (дундаж ханш)</p>
+                        <div id="currency-list" class="mt-3 space-y-1"></div>
+                    </div>
                 </div>
-                <div class="bg-white rounded-lg shadow p-6">
-                    <p class="text-gray-500 text-sm">Дундаж үнэ</p>
-                    <p class="text-3xl font-bold text-blue-600 mt-2">{{ stats.total_price|default:0|floatformat:2|intcomma }}</p>
+                <div class="table-scroll border border-gray-100 rounded-xl">
+                    <table class="sr-table" id="pivot">
+                        <thead><tr><th class="l">Он / сар</th><th>Баримт</th><th>Харилцагч</th><th>Бараа</th><th title="Бүх барааны тоо хэмжээ (кг, ширхэг г.м. холимог нэгж)">Тоо хэмжээ</th><th>Барааны дүн</th><th>Гааль</th><th>Бусад зардал</th><th>Нийт өртөг</th><th title="(гааль + бусад) / барааны дүн">Зардлын %</th><th>Хүлээгдэж буй ашиг</th><th>Ашгийн %</th></tr></thead>
+                        <tbody></tbody><tfoot></tfoot>
+                    </table>
                 </div>
-                <div class="bg-white rounded-lg shadow p-6">
-                   <p class="text-gray-500 text-sm">Нийт дүн (валют)</p>
-                    <p class="text-3xl font-bold text-blue-600 mt-2">{{ stats.total_amount|default:0|floatformat:2|intcomma }}</p>
+                <p class="sr-sub">Он дээр дарахад сарууд нээгдэнэ/хаагдана. Харилцагч, барааны тоо давхардаагүй (жил, нийт түвшинд дахин тоолсон). Нийт өртөг = бараа + гааль + бусад зардал + НӨАТ − ханшийн зөрүү.</p>
+            </div>
+            {% elif tab == 'tree' %}
+            <div class="p-4 lg:p-5 space-y-4">
+                {% comment %} Шатлалын тохиргоо: түвшнүүдийг нэмэх, хасах, зөөх (чирэх эсвэл ← →) - URL-д хадгалагдана {% endcomment %}
+                <div class="no-print space-y-2">
+                    <div class="flex flex-wrap items-center gap-2">
+                        <span class="sr-label" style="margin:0">Шатлал</span>
+                        <div id="lv-chips" class="flex flex-wrap items-center gap-1.5" aria-label="Шатлалын түвшнүүд (чирж эсвэл сумаар зөөнө)"></div>
+                        <select id="lv-add" class="sr-field py-1 text-sm" aria-label="Түвшин нэмэх"></select>
+                    </div>
+                    <div class="flex flex-wrap items-center gap-2">
+                        <span class="sr-sub">Бэлэн:</span>
+                        <button type="button" class="lv-preset" data-levels="vendor,year,month,day,item">Харилцагч › Он › Сар › Өдөр › Бараа</button>
+                        <button type="button" class="lv-preset" data-levels="year,month,vendor,item">Он › Сар › Харилцагч › Бараа</button>
+                        <button type="button" class="lv-preset" data-levels="item,vendor,document">Бараа › Харилцагч › Баримт</button>
+                        <button type="button" class="lv-preset" data-levels="currency,vendor,year">Валют › Харилцагч › Он</button>
+                        <span class="ml-auto flex items-center gap-1" id="lv-depth"></span>
+                    </div>
+                </div>
+                <div class="table-scroll border border-gray-100 rounded-xl">
+                    <table class="sr-table" id="tree-table">
+                        <thead><tr><th class="l" id="tree-head">Нэр</th><th>Баримт</th><th>Бараа</th><th title="Холимог нэгж (кг, ширхэг) - бараа түвшинд нэгжтэйгээ">Тоо хэмжээ</th><th>Барааны дүн</th><th>Гааль + бусад</th><th title="(гааль + бусад) / барааны дүн">Зардлын %</th><th>Нийт өртөг</th><th>Хүлээгдэж буй ашиг</th><th>Ашгийн %</th></tr></thead>
+                        <tbody id="tree-body"></tbody><tfoot id="tree-foot"></tfoot>
+                    </table>
+                </div>
+                <p class="sr-sub">Мөр дээр дарж (эсвэл Enter) дэд түвшинг нээнэ/хаана. Он, сар, өдөр цаг хугацааны дарааллаар, бусад нь нийт өртгөөр (их нь эхэнд) эрэмбэлэгдэнэ. Баримт, барааны тоо түвшин бүрт давхардаагүй.</p>
+            </div>
+            {% else %}
+            <div class="p-4 lg:p-5 space-y-5">
+                {% if tab == 'item' and data.history %}
+                <div>
+                    <div class="flex flex-wrap items-start justify-between gap-3">
+                        <div><h3>Нэгж өртгийн түүх · {{ single_item_name }}</h3><p class="sr-sub">Татан авалт бүрийн нэгж өртөг (₮, гааль, зардал, НӨАТ-тай)</p></div>
+                    </div>
+                    <div class="chart-wrap mt-2" id="chart"><div class="tooltip" id="tip"></div></div>
+                </div>
+                {% elif tab != 'document' %}
+                <div>
+                    <div class="flex flex-wrap items-start justify-between gap-2">
+                        <div><h3>Нийт өртгөөр эхний 10</h3><p class="sr-sub">Дарахад тухайн утгаар шүүгдэж {% if tab == 'vendor' %}бараагаар задарна{% else %}өртгийн түүх нь гарна{% endif %}</p></div>
+                        <span class="sr-sub" id="top-share"></span>
+                    </div>
+                    <div id="top-list" class="mt-3 space-y-0.5"></div>
+                </div>
+                {% endif %}
+                <div>
+                    <div class="flex flex-wrap items-center gap-2 mb-2 no-print">
+                        <input type="search" id="table-search" placeholder="Хүснэгтээс хайх..." class="sr-field w-64 max-w-full" aria-label="Хүснэгтээс хайх">
+                        <span class="sr-sub" id="page-info"></span>
+                        <div class="ml-auto flex items-center gap-2">
+                            <label class="sr-sub flex items-center gap-1">Мөр <select id="page-size" class="sr-field py-1"><option>25</option><option selected>50</option><option>100</option><option value="100000">Бүгд</option></select></label>
+                            <div id="pager" class="flex gap-1"></div>
+                        </div>
+                    </div>
+                    <div class="table-scroll border border-gray-100 rounded-xl">
+                        <table class="sr-table" id="pr-table"><thead></thead><tbody id="pr-tbody"></tbody><tfoot id="pr-tfoot"></tfoot></table>
+                    </div>
+                    <p class="sr-sub mt-2">{% if tab == 'document' %}Мөр дээр дарахад бараа бүрээр задарна.{% elif tab == 'vendor' %}Мөр дээр дарахад тухайн харилцагчийн бараанууд (тоо хэмжээ нэгжтэйгээ) задарна.{% else %}Мөр дээр дарахад тухайн барааны татан авалт бүр задарна. Нэгж өртөг = нийт өртөг / тоо.{% endif %} Баганын толгой дээр дарж эрэмбэлнэ. Нийт тоо хэмжээ нь өөр нэгжтэй (кг, ширхэг) бараануудын нийлбэр.</p>
                 </div>
             </div>
-            
-            <!-- Tab Content -->
-            {% if active_tab == 'summary' %}
-                {% include 'shop/reports/landedcost_summary_tab.html' %}
-            {% elif active_tab == 'by_vendor' %}
-                {% include 'shop/reports/landedcost_vendor_tab.html' %}
-            {% elif active_tab == 'by_item' %}
-                {% include 'shop/reports/landedcost_item_tab.html' %}
-            {% elif active_tab == 'by_date' %}
-                {% include 'shop/reports/landedcost_date_tab.html' %}
             {% endif %}
         </div>
     </main>
 </div>
 
+{{ data|json_script:"pr-data" }}
+{{ kpis|json_script:"pr-kpis" }}
+{{ facet_data|json_script:"pr-facets" }}
+{{ tree_levels|json_script:"pr-levels" }}
+{{ tree_level_labels|json_script:"pr-level-labels" }}
+{{ tree_default|json_script:"pr-level-default" }}
 <script>
-// Table sorting
-function sortTable(tableId, columnIndex, isNumeric) {
-    const table = document.getElementById(tableId);
-    if (!table) return;
-    
-    const tbody = table.querySelector('tbody');
-    const rows = Array.from(tbody.querySelectorAll('tr'));
-    
-    rows.sort((a, b) => {
-        const aText = a.cells[columnIndex].textContent.trim();
-        const bText = b.cells[columnIndex].textContent.trim();
-        
-        if (isNumeric) {
-            const aVal = parseFloat(aText.replace(/[,₮]/g, '')) || 0;
-            const bVal = parseFloat(bText.replace(/[,₮]/g, '')) || 0;
-            return bVal - aVal;  // Descending
-        } else {
-            return aText.localeCompare(bText);  // Ascending для текста
-        }
+(function () {
+    const TAB = '{{ tab }}';
+    const DATA = JSON.parse(document.getElementById('pr-data').textContent);
+    const KPIS = JSON.parse(document.getElementById('pr-kpis').textContent);
+    const QUERY = new URLSearchParams('{{ query_string|escapejs }}');
+    const nf = new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 });
+    const nf2 = new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 });
+    const money = (v) => (v < 0 ? '−' : '') + '₮' + nf.format(Math.abs(Math.round(v || 0)));
+    const int = (v) => nf.format(Math.round(v || 0));
+    const dec = (v) => (v === null || v === undefined ? '' : nf2.format(v));
+    const pct1 = (v) => `${(Math.round((v || 0) * 10) / 10).toFixed(1)}%`;
+    function compact(v) {
+        const a = Math.abs(v), s = v < 0 ? '−' : '';
+        if (a >= 1e9) return `${s}₮${(a / 1e9).toFixed(2)} тэрбум`;
+        if (a >= 1e6) return `${s}₮${(a / 1e6).toFixed(1)} сая`;
+        if (a >= 1e3) return `${s}₮${(a / 1e3).toFixed(0)} мянга`;
+        return `${s}₮${nf.format(Math.round(a))}`;
+    }
+    const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const go = (mutate) => { const q = new URLSearchParams(QUERY); mutate(q); window.location.search = q.toString(); };
+
+    // ---- KPI ----
+    document.querySelectorAll('[data-compact]').forEach((el) => { const v = Number(el.dataset.compact); el.textContent = compact(v); el.title = money(v); });
+    document.querySelectorAll('[data-int]').forEach((el) => { el.textContent = int(Number(el.dataset.int)); });
+    document.querySelectorAll('[data-int-sub]').forEach((el) => { el.textContent = `${int(Number(el.dataset.intSub))} нэгж`; });
+    const COUNTS = ['docs', 'items', 'vendors'];
+    document.querySelectorAll('[data-delta]').forEach((el) => {
+        if (!KPIS.previous) { el.remove(); return; }
+        const k = el.dataset.delta, cur = KPIS.current[k], prev = KPIS.previous[k];
+        if (!prev) { if (cur) el.innerHTML = '<span class="sr-sub">өмнөх хугацаанд 0</span>'; else el.remove(); return; }
+        const d = (cur - prev) / Math.abs(prev) * 100;
+        // Зардал өсөх нь муу, бусад нь сайн гэж тэмдэглэхгүй - чиглэлийг л харуулна (саарал)
+        el.innerHTML = `<span class="delta flat" title="Өмнөх ${esc(KPIS.previous.period)}: ${COUNTS.includes(k) ? int(prev) : money(prev)}">${d > 0 ? '▲' : d < 0 ? '▼' : '■'} ${Math.abs(d).toFixed(1)}%</span>`;
     });
-    
-    rows.forEach(row => tbody.appendChild(row));
-}
+
+    // ---- Шүүлт ----
+    const form = document.getElementById('pr-form');
+    const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const today = new Date(), Y = today.getFullYear(), M = today.getMonth();
+    const presets = {
+        month: [new Date(Y, M, 1), today], quarter: [new Date(Y, Math.floor(M / 3) * 3, 1), today], year: [new Date(Y, 0, 1), today],
+        prev_year: [new Date(Y - 1, 0, 1), new Date(Y - 1, 11, 31)], last12: [new Date(Y, M - 11, 1), today],
+        last36: [new Date(Y - 3, M + 1, 1), today], all: [null, null],
+    };
+    const fromEl = document.getElementById('pr-from'), toEl = document.getElementById('pr-to');
+    let pressed = false;   // ижил хугацаатай хэд хэдэн сонголтоос (жиш: улирлын эхний сард сар = улирал) эхнийхийг л тодруулна
+    document.querySelectorAll('[data-preset]').forEach((btn) => {
+        const [f, t] = presets[btn.dataset.preset];
+        if (!pressed && (f ? iso(f) : '') === fromEl.value && (t ? iso(t) : '') === toEl.value) { btn.setAttribute('aria-pressed', 'true'); pressed = true; }
+        btn.addEventListener('click', () => { fromEl.value = f ? iso(f) : ''; toEl.value = t ? iso(t) : ''; form.submit(); });
+    });
+    document.querySelectorAll('[data-remove-doc]').forEach((a) => a.addEventListener('click', (e) => {
+        e.preventDefault();
+        go((q) => { const keep = q.getAll('doc').filter((d) => d !== a.dataset.removeDoc); q.delete('doc'); keep.forEach((d) => q.append('doc', d)); q.set('tab', TAB); });
+    }));
+    document.querySelectorAll('[data-clear-dates]').forEach((a) => a.addEventListener('click', (e) => {
+        e.preventDefault(); go((q) => { q.delete('date_from'); q.delete('date_to'); q.set('tab', TAB); });
+    }));
+    if (window.Choices) {
+        // Харилцан хамааралтай шүүлт: аль нэгийг сонгоход бусад жагсаалтад зөвхөн тохирох утга (баримтын тоотой) үлдэнэ.
+        // FACETS.rows - хугацаа, хайлтын нөхцөлд тохирох (баримт, харилцагч, бараа, валют, агуулах) хослолууд
+        const FACETS = JSON.parse(document.getElementById('pr-facets').textContent);
+        const F = FACETS.facets, ROWS_F = FACETS.rows;
+        const opts = { removeItemButton: true, searchResultLimit: 100, renderChoiceLimit: -1, shouldSort: false, itemSelectText: '',
+                       noResultsText: 'Хайлтад тохирох утга алга', noChoicesText: 'Сонгох өөр утга алга',
+                       searchFields: ['label', 'value'], fuseOptions: { threshold: 0.2, ignoreLocation: true } };
+        const pickers = {};
+        document.querySelectorAll('#pr-form select[data-facet]').forEach((s) => { pickers[s.dataset.facet] = new Choices(s, { ...opts, placeholderValue: s.dataset.placeholder }); });
+        const label = (f, v) => f === 'item' ? `${v} - ${FACETS.names.item[v] || v}` : f === 'vendor' ? (FACETS.names.vendor[v] || v) : v;
+        const selectedOf = (f) => new Set(pickers[f].getValue(true));
+        let busy = false;   // setChoices өөрөө addItem үүсгэж болох тул давтагдахаас сэргийлнэ
+        function refreshFacets(changed) {
+            if (busy) return;
+            busy = true;
+            try { redraw(changed); } finally { busy = false; }
+        }
+        function redraw(changed) {
+            const sel = Object.fromEntries(F.map((f) => [f, selectedOf(f)]));
+            F.forEach((f, fi) => {
+                if (f === changed) return;   // өөрчилсөн жагсаалтаа дахин зурахгүй (хэрэглэгч дотор нь байна)
+                // Энэ жагсаалтаас бусад сонголтод тохирох мөрүүд -> утга бүрийн давхардаагүй баримт
+                const docs = new Map();
+                for (const r of ROWS_F) {
+                    if (!F.every((g, gi) => g === f || !sel[g].size || sel[g].has(r[gi + 1]))) continue;
+                    const v = r[fi + 1]; if (!v) continue;
+                    if (!docs.has(v)) docs.set(v, new Set()); docs.get(v).add(r[0]);
+                }
+                // Сонгосон утгыг Choices өөрөө (сонгогдсон чип) хадгалдаг - жагсаалтад дахин нэмбэл давхардана
+                const list = [...docs.entries()].filter(([v]) => !sel[f].has(v))
+                    .map(([v, d]) => ({ value: v, label: `${label(f, v)} · ${d.size}` }))
+                    .sort((a, b) => a.label.localeCompare(b.label, 'mn'));
+                const available = list.length;
+                const empty = !list.length && !sel[f].size ? [{ value: '', label: 'Сонгосон хугацаа / шүүлтэд тохирох утга алга - хугацааг өргөсгөнө үү', disabled: true }] : [];
+                pickers[f].clearChoices();
+                pickers[f].setChoices([...list, ...empty], 'value', 'label', true);
+                const counter = document.querySelector(`[data-facet-count="${f}"]`);
+                if (counter) counter.textContent = F.some((g) => g !== f && sel[g].size) ? `· ${available} тохирох` : '';
+            });
+        }
+        F.forEach((f) => {
+            const el = document.getElementById(`f-${f}`);
+            // Нэмэхэд өөрийнхөө жагсаалтыг дахин зурахгүй (хайж байгаа текст арилахгүй); хасахад хасагдсан утга
+            // буцаж орохын тулд бүгдийг
+            el.addEventListener('addItem', () => refreshFacets(f));
+            el.addEventListener('removeItem', () => refreshFacets(null));
+        });
+        refreshFacets(null);
+    }
+
+    // ---- Хайх: бичих явцад санал (харилцагч, бараа, баримт) ----
+    (function () {
+        const input = document.getElementById('pr-q'), box = document.getElementById('pr-suggest');
+        let options = [], active = -1, timer, seq = 0;
+        const hl = (s, q) => { const t = esc(s), i = t.toLowerCase().indexOf(esc(q).toLowerCase()); return i < 0 ? t : `${t.slice(0, i)}<mark>${t.slice(i, i + esc(q).length)}</mark>${t.slice(i + esc(q).length)}`; };
+        const close = () => { box.hidden = true; input.setAttribute('aria-expanded', 'false'); input.removeAttribute('aria-activedescendant'); active = -1; };
+        const choose = (o) => {
+            if (o.kind === 'text') { close(); form.submit(); return; }
+            // Сонгосон утгаар шүүнэ (текст хайлтыг арилгаж), баримт бол баримтын tab руу
+            go((q) => { q.delete('q'); q.append(o.kind, o.id); q.set('tab', o.kind === 'doc' ? 'document' : TAB); });
+        };
+        const mark = (i) => {
+            active = i;
+            box.querySelectorAll('[role="option"]').forEach((el, j) => el.setAttribute('aria-selected', j === i ? 'true' : 'false'));
+            const el = box.querySelector(`#sg-${i}`); if (el) { el.scrollIntoView({ block: 'nearest' }); input.setAttribute('aria-activedescendant', el.id); }
+        };
+        function render(q, data) {
+            options = [{ kind: 'text', label: `“${q}” гэсэн текстээр шүүх`, meta: 'нэр, код, дугаар агуулсан бүх мөр · Enter' }];
+            const groups = [['vendor', 'Харилцагч'], ['item', 'Бараа'], ['doc', 'Баримт']];
+            let html = '';
+            const opt = (o, i) => `<div role="option" id="sg-${i}" aria-selected="false" data-i="${i}">${o.html}<span class="sg-meta">${o.meta}</span></div>`;
+            html += opt({ html: `<span>🔎 ${esc(options[0].label)}</span>`, meta: esc(options[0].meta) }, 0);
+            groups.forEach(([kind, title]) => {
+                const rows = data[kind] || [];
+                if (!rows.length) return;
+                const total = rows[0].total || rows.length;
+                html += `<div class="sg-head">${title}${total > rows.length ? ` · ${rows.length} / ${int(total)} (бүгдийг Enter-ээр)` : ''}</div>`;
+                rows.forEach((r) => {
+                    const o = { kind, id: r.id };
+                    // Нэрийг нэг span-д - мөр нь flex (gap) тул тодруулга (mark) тусдаа зай авахгүй
+                    o.html = kind === 'item' ? `<span class="chip" style="margin:0">${hl(r.id, q)}</span><span>${hl(r.name, q)}</span>`
+                        : kind === 'doc' ? `<span>${hl(r.name, q)} <span class="sr-sub">${esc(r.vendor)}</span></span>` : `<span>${hl(r.name, q)}</span>`;
+                    o.meta = kind === 'doc' ? `${esc(r.last)} · ${int(r.n)} мөр` : `${int(r.n)} баримт · ${esc(r.last || '')}`;
+                    options.push(o); html += opt(o, options.length - 1);
+                });
+            });
+            if (options.length === 1) html += '<div class="sg-empty">Харилцагч, бараа, баримтын дугаараас олдсонгүй</div>';
+            box.innerHTML = html; box.hidden = false; input.setAttribute('aria-expanded', 'true'); mark(-1);
+        }
+        input.addEventListener('input', () => {
+            clearTimeout(timer);
+            const q = input.value.trim();
+            if (q.length < 2) { close(); return; }
+            timer = setTimeout(async () => {
+                const my = ++seq;
+                try {
+                    const res = await fetch(`{% url 'shop:purchase_report_suggest' %}?q=${encodeURIComponent(q)}`, { headers: { Accept: 'application/json' } });
+                    const data = await res.json();
+                    if (my === seq && input.value.trim() === q) render(q, data);
+                } catch (err) { /* санал гаргаж чадаагүй - Enter-ээр текстээр шүүсээр болно */ }
+            }, 160);
+        });
+        input.addEventListener('keydown', (e) => {
+            if (box.hidden) return;
+            if (e.key === 'ArrowDown') { e.preventDefault(); mark(Math.min(active + 1, options.length - 1)); }
+            else if (e.key === 'ArrowUp') { e.preventDefault(); mark(Math.max(active - 1, 0)); }
+            else if (e.key === 'Enter' && active >= 0) { e.preventDefault(); choose(options[active]); }
+            else if (e.key === 'Escape') close();
+        });
+        box.addEventListener('mousedown', (e) => { const el = e.target.closest('[role="option"]'); if (el) { e.preventDefault(); choose(options[Number(el.dataset.i)]); } });
+        input.addEventListener('blur', () => setTimeout(close, 120));
+        input.addEventListener('focus', () => { if (input.value.trim().length >= 2) input.dispatchEvent(new Event('input')); });
+    })();
+
+    // ---- SVG туслах ----
+    const NS = 'http://www.w3.org/2000/svg';
+    const el = (tag, attrs = {}) => { const n = document.createElementNS(NS, tag); Object.entries(attrs).forEach(([k, v]) => n.setAttribute(k, v)); return n; };
+    function niceTicks(min, max, count = 4) {
+        if (max === min) max = min + 1;
+        const step0 = (max - min) / count, mag = Math.pow(10, Math.floor(Math.log10(step0)));
+        const step = [1, 2, 2.5, 5, 10].map((m) => m * mag).find((s) => s >= step0);
+        const ticks = [];
+        for (let v = Math.floor(min / step) * step; v <= Math.ceil(max / step) * step + step / 2; v += step) ticks.push(v);
+        return ticks;
+    }
+    function axisFormatter(ticks) {
+        const max = Math.max(...ticks.map(Math.abs));
+        const [div, unit] = max >= 1e9 ? [1e9, 'тэр'] : max >= 1e6 ? [1e6, 'сая'] : max >= 1e3 ? [1e3, 'мян'] : [1, ''];
+        const digits = ticks.some((t) => Math.abs(t / div - Math.round(t / div)) > 1e-9) ? 1 : 0;
+        return (v) => (v === 0 ? '0' : (v / div).toFixed(digits) + unit);
+    }
+    // Нэг тэнхлэгтэй график. stack - баганыг давхарлана (сегмент хооронд 2px зай), line - шугам + цэг
+    function chart({ points, series, mode, tipHtml, onClick }) {
+        const wrap = document.getElementById('chart'), tip = document.getElementById('tip');
+        if (!wrap) return;
+        wrap.querySelector('svg')?.remove(); wrap.querySelector('.empty')?.remove();
+        if (!points.length) { wrap.insertAdjacentHTML('afterbegin', '<p class="empty sr-sub py-10 text-center">Өгөгдөл алга</p>'); return; }
+        const W = Math.max(wrap.clientWidth, 320), H = 280, Mg = { t: 14, r: 12, b: 28, l: 58 };
+        const iw = W - Mg.l - Mg.r, ih = H - Mg.t - Mg.b, n = points.length, band = iw / n;
+        const tops = points.map((p) => mode === 'stack' ? series.reduce((s, x) => s + Math.max(p[x.key], 0), 0) : Math.max(...series.map((x) => p[x.key])));
+        const ticks = niceTicks(0, Math.max(...tops, 1)), y0 = ticks[0], y1 = ticks[ticks.length - 1], fmt = axisFormatter(ticks);
+        const y = (v) => Mg.t + ih - (v - y0) / (y1 - y0) * ih, cx = (i) => Mg.l + band * (i + 0.5);
+        const svg = el('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': series.map((s) => s.label).join(', ') });
+        ticks.forEach((t) => {
+            svg.append(el('line', { x1: Mg.l, x2: W - Mg.r, y1: y(t), y2: y(t), class: 'grid-line' }));
+            const tx = el('text', { x: Mg.l - 8, y: y(t) + 4, 'text-anchor': 'end', class: 'axis-text' }); tx.textContent = fmt(t); svg.append(tx);
+        });
+        const every = Math.ceil(n / Math.max(4, Math.floor(iw / 64)));
+        points.forEach((p, i) => {
+            if (i % every && i !== n - 1) return;
+            const tx = el('text', { x: cx(i), y: H - 8, 'text-anchor': 'middle', class: 'axis-text' }); tx.textContent = p.label; svg.append(tx);
+        });
+        const marks = [];
+        if (mode === 'stack') {
+            const bw = Math.max(Math.min(band - 4, 30), 2);
+            points.forEach((p, i) => {
+                let base = 0;
+                const segs = series.map((s) => ({ s, v: Math.max(p[s.key], 0) })).filter((x) => x.v > 0);
+                segs.forEach((x, j) => {
+                    const top = y(base + x.v), bottom = y(base), gap = j ? 2 : 0;   // сегментийн хооронд 2px зай
+                    const h = Math.max(bottom - top - gap, 0.5), xx = cx(i) - bw / 2, last = j === segs.length - 1, r = last ? Math.min(4, bw / 2, h) : 0;
+                    svg.append(el('path', { d: `M${xx},${top + h}V${top + r}Q${xx},${top} ${xx + r},${top}H${xx + bw - r}Q${xx + bw},${top} ${xx + bw},${top + r}V${top + h}Z`, fill: x.s.color }));
+                    base += x.v;
+                });
+            });
+        } else {
+            series.forEach((s) => {
+                svg.append(el('path', { d: points.map((p, i) => `${i ? 'L' : 'M'}${cx(i).toFixed(1)},${y(p[s.key]).toFixed(1)}`).join(''), fill: 'none', stroke: s.color, 'stroke-width': 2, 'stroke-linejoin': 'round', 'stroke-linecap': 'round' }));
+                points.forEach((p, i) => svg.append(el('circle', { cx: cx(i), cy: y(p[s.key]), r: 4, fill: s.color, stroke: '#fff', 'stroke-width': 2 })));
+            });
+        }
+        svg.append(el('line', { x1: Mg.l, x2: W - Mg.r, y1: y(0), y2: y(0), stroke: 'var(--axis)' }));
+        const hl = el('rect', { y: Mg.t, height: ih, width: band, fill: 'rgba(17,24,39,.04)', visibility: 'hidden' });
+        svg.insertBefore(hl, svg.firstChild);
+        points.forEach((p, i) => {
+            const hit = el('rect', { x: Mg.l + band * i, y: Mg.t, width: band, height: ih, fill: 'transparent', style: onClick ? 'cursor:pointer' : '' });
+            hit.addEventListener('mouseenter', () => {
+                hl.setAttribute('x', Mg.l + band * i); hl.setAttribute('visibility', 'visible');
+                tip.innerHTML = tipHtml(p);
+                const scale = wrap.clientWidth / W;
+                tip.style.left = `${Math.min(Math.max(cx(i) * scale, 110), wrap.clientWidth - 110)}px`;
+                tip.style.top = `${y(tops[i]) * scale}px`;
+                tip.classList.add('show');
+            });
+            if (onClick) hit.addEventListener('click', () => onClick(p));
+            svg.append(hit);
+        });
+        svg.addEventListener('mouseleave', () => { tip.classList.remove('show'); hl.setAttribute('visibility', 'hidden'); });
+        wrap.prepend(svg);
+    }
+    const onResize = (fn) => { let t; window.addEventListener('resize', () => { clearTimeout(t); t = setTimeout(fn, 150); }); fn(); };
+    const SERIES = [{ key: 'goods', label: 'Барааны дүн', color: 'var(--series-1)' }, { key: 'customs', label: 'Гааль', color: 'var(--series-2)' }, { key: 'other', label: 'Бусад зардал', color: 'var(--series-3)' }];
+
+    // ---- Нэгтгэл ----
+    if (TAB === 'summary') {
+        const S = DATA.summary;
+        const points = S.years.flatMap((y) => y.months.map((m) => ({ ...m, year: y.year, label: `${String(y.year).slice(2)}.${String(m.month).padStart(2, '0')}`, full: `${y.year} оны ${m.month}-р сар` })));
+        const monthRange = (p) => { const last = new Date(p.year, p.month, 0).getDate(); return [`${p.year}-${String(p.month).padStart(2, '0')}-01`, `${p.year}-${String(p.month).padStart(2, '0')}-${last}`]; };
+        onResize(() => chart({
+            points, series: SERIES, mode: 'stack',
+            tipHtml: (p) => `<div class="t-head">${p.full} · ${int(p.docs)} баримт</div>`
+                + SERIES.map((s) => `<div class="t-row"><span><i style="background:${s.color}"></i>${s.label}</span><b>${money(p[s.key])}</b></div>`).join('')
+                + `<div class="t-row" style="opacity:.85"><span>Нийт өртөг (НӨАТ-тай)</span><span>${money(p.total)}</span></div><div class="t-row" style="opacity:.85"><span>Зардлын хувь</span><span>${pct1(p.expense_pct)}</span></div>`,
+            onClick: (p) => go((q) => { const [f, t] = monthRange(p); q.set('date_from', f); q.set('date_to', t); q.set('tab', 'document'); }),
+        }));
+        const cur = DATA.currency, maxGoods = Math.max(...cur.map((c) => c.goods || 0), 1);
+        document.getElementById('currency-list').innerHTML = cur.map((c) => `<a class="block rounded-lg hover:bg-gray-50" href="?${(() => { const q = new URLSearchParams(QUERY); q.delete('currency'); q.append('currency', c.currency); q.set('tab', 'summary'); return q.toString(); })()}">
+            <div class="cur-row"><b>${esc(c.currency)}</b><div class="bar-track"><div class="bar-fill" style="width:${Math.max((c.goods || 0) / maxGoods * 100, 0.5)}%"></div></div><span class="bar-value" title="${money(c.goods)}">${compact(c.goods || 0)}</span></div>
+            <div class="sr-sub pl-[3.8rem] -mt-1 pb-1">${dec(c.fc)} ${esc(c.currency)} · ханш ${dec(c.avg_rate)} · ${int(c.docs)} баримт</div></a>`).join('') || '<p class="sr-sub">Өгөгдөл алга</p>';
+        const row = (label, m, cls, attrs = '') => `<tr class="${cls}" ${attrs}><td class="l">${label}</td><td>${int(m.docs)}</td><td>${int(m.vendors)}</td><td>${int(m.items)}</td>
+            <td class="text-gray-600">${int(m.qty)}</td><td>${money(m.goods)}</td><td class="text-gray-600">${money(m.customs)}</td><td class="text-gray-600">${money(m.other)}</td><td class="font-semibold">${money(m.total)}</td>
+            <td>${pct1(m.expense_pct)}</td><td class="${m.profit < 0 ? 'neg' : ''}">${money(m.profit)}</td><td>${pct1(m.margin)}</td></tr>`;
+        const latest = S.years.length ? S.years[S.years.length - 1].year : null;
+        document.querySelector('#pivot tbody').innerHTML = S.years.slice().reverse().map((y) =>
+            row(`<span class="inline-block w-4 text-gray-500" data-caret>${y.year === latest ? '▾' : '▸'}</span>${y.year} он`, y.total, 'year-row', `data-year="${y.year}" tabindex="0"`)
+            + y.months.map((m) => row(`<span class="pl-6 text-gray-600">${m.month}-р сар</span>`, m, '', `data-month-of="${y.year}" ${y.year === latest ? '' : 'hidden'}`)).join('')
+        ).join('') || '<tr><td colspan="12" class="l" style="padding:2rem;text-align:center;color:var(--muted)">Өгөгдөл алга</td></tr>';
+        if (S.total) document.querySelector('#pivot tfoot').innerHTML = row('Нийт', S.total, '');
+        const tb = document.querySelector('#pivot tbody');
+        tb.addEventListener('click', (e) => {
+            const tr = e.target.closest('tr[data-year]'); if (!tr) return;
+            const rows = document.querySelectorAll(`tr[data-month-of="${tr.dataset.year}"]`), open = rows[0]?.hidden;
+            rows.forEach((r) => { r.hidden = !open; });
+            tr.querySelector('[data-caret]').textContent = open ? '▾' : '▸';
+        });
+        tb.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.matches('tr[data-year]')) e.target.click(); });
+        return;
+    }
+
+    // ---- Шатлал: түвшнийг хэрэглэгч тохируулна, мөрүүдийг хөтөч дотор нэгтгэнэ ----
+    if (TAB === 'tree') {
+        const LABELS = JSON.parse(document.getElementById('pr-level-labels').textContent);
+        const DEFAULT = JSON.parse(document.getElementById('pr-level-default').textContent);
+        let levels = JSON.parse(document.getElementById('pr-levels').textContent);
+        const CI = Object.fromEntries(DATA.columns.map((c, i) => [c, i]));
+        const LINES = DATA.lines;
+        const DOWS = ['Ня', 'Да', 'Мя', 'Лх', 'Пү', 'Ба', 'Бя'];
+        const MEAS = (s) => (s || '').slice(0, 4);
+        const open = new Set();   // нээлттэй зангилааны зам ("vendor:123/year:2026")
+
+        function keyLabel(level, l, parentLevels) {
+            const d = l[CI.date] || '';
+            switch (level) {
+                case 'year': return [d.slice(0, 4), `${d.slice(0, 4)} он`];
+                case 'month': return [d.slice(0, 7), parentLevels.includes('year') ? `${Number(d.slice(5, 7))}-р сар` : d.slice(0, 7).replace('-', '.')];
+                case 'day': { const dt = new Date(d); return [d, `${parentLevels.includes('month') ? d.slice(8) : d.replaceAll('-', '.')} · ${DOWS[dt.getDay()] || ''}`]; }
+                case 'vendor': return [l[CI.vendor_id] || '', l[CI.vendor] || '(тодорхойгүй)'];
+                case 'item': return [l[CI.item_id] || '', l[CI.item] || '(тодорхойгүй)'];
+                case 'document': return [l[CI.doc], l[CI.number] || l[CI.doc]];
+                case 'currency': return [l[CI.currency] || '', l[CI.currency] || '(валютгүй)'];
+                case 'warehouse': return [l[CI.warehouse] || '', l[CI.warehouse] || '(тодорхойгүй)'];
+            }
+            return ['', ''];
+        }
+        function metrics(lines) {
+            const m = { qty: 0, goods: 0, customs: 0, other: 0, total: 0, profit: 0, sale_value: 0 };
+            const docs = new Set(), items = new Set(), measures = new Set();
+            for (const l of lines) {
+                for (const k in m) m[k] += l[CI[k]];
+                docs.add(l[CI.doc]); items.add(l[CI.item_id]); measures.add(l[CI.measure]);
+            }
+            m.docs = docs.size; m.items = items.size; m.expenses = m.customs + m.other;
+            m.expense_pct = m.goods ? m.expenses / m.goods * 100 : 0; m.margin = m.sale_value ? m.profit / m.sale_value * 100 : 0;
+            m.measure = measures.size === 1 ? [...measures][0] : '';   // нэг нэгжтэй бол тоо хэмжээний хажууд
+            return m;
+        }
+        // Зангилааны хүүхдүүд (хэрэгтэй үед л бодно - нээгээгүй түвшинг бодохгүй)
+        const cache = new Map();
+        function children(lines, depth, path) {
+            if (cache.has(path)) return cache.get(path);
+            const level = levels[depth], groups = new Map();
+            for (const l of lines) {
+                const [k, label] = keyLabel(level, l, levels.slice(0, depth));
+                if (!groups.has(k)) groups.set(k, { key: k, label, lines: [] });
+                groups.get(k).lines.push(l);
+            }
+            const nodes = [...groups.values()].map((g) => ({ ...g, level, depth, path: `${path}/${level}:${g.key}`, m: metrics(g.lines) }));
+            // Он/сар/өдөр - сүүлийнх эхэнд, бусад - нийт өртгөөр
+            if (['year', 'month', 'day'].includes(level)) nodes.sort((a, b) => b.key.localeCompare(a.key));
+            else nodes.sort((a, b) => b.m.total - a.m.total);
+            cache.set(path, nodes);
+            return nodes;
+        }
+        const body = document.getElementById('tree-body');
+        function row(n) {
+            const m = n.m, leaf = n.depth >= levels.length - 1, isOpen = open.has(n.path);
+            const code = n.level === 'item' ? ` <span class="chip">${esc(n.key)}</span>` : '';
+            return `<tr class="tnode d${n.depth}" data-path="${esc(n.path)}" ${leaf ? '' : 'tabindex="0" aria-expanded="' + isOpen + '"'} style="${leaf ? 'cursor:default' : ''}">
+                <td class="l"><span style="padding-left:${n.depth * 1.25}rem"></span><span class="tw">${leaf ? '' : isOpen ? '▾' : '▸'}</span>${esc(n.label)}${code}<span class="lvl">${esc(LABELS[n.level])}</span></td>
+                <td>${int(m.docs)}</td><td>${int(m.items)}</td><td>${dec(Math.round(m.qty * 100) / 100)}${m.measure ? ` <span class="sr-sub">${esc(MEAS(m.measure))}</span>` : ''}</td>
+                <td>${money(m.goods)}</td><td class="text-gray-600">${money(m.expenses)}</td><td>${pct1(m.expense_pct)}</td>
+                <td class="font-semibold">${money(m.total)}</td><td class="${m.profit < 0 ? 'neg' : ''}">${money(m.profit)}</td><td>${pct1(m.margin)}</td></tr>`;
+        }
+        const byPath = new Map();
+        function renderTree() {
+            const out = [];
+            byPath.clear();
+            const walk = (lines, depth, path) => {
+                for (const n of children(lines, depth, path)) {
+                    byPath.set(n.path, n); out.push(row(n));
+                    if (open.has(n.path) && depth < levels.length - 1) walk(n.lines, depth + 1, n.path);
+                }
+            };
+            if (LINES.length) walk(LINES, 0, '');
+            body.innerHTML = out.join('') || '<tr><td colspan="10" class="l" style="padding:2.5rem;text-align:center;color:var(--muted)">Шүүлтэд тохирох мөр алга</td></tr>';
+            const t = metrics(LINES);
+            document.getElementById('tree-foot').innerHTML = LINES.length ? `<tr><td class="l">Нийт</td><td>${int(t.docs)}</td><td>${int(t.items)}</td><td>${dec(Math.round(t.qty))}</td>
+                <td>${money(t.goods)}</td><td>${money(t.expenses)}</td><td>${pct1(t.expense_pct)}</td><td>${money(t.total)}</td><td>${money(t.profit)}</td><td>${pct1(t.margin)}</td></tr>` : '';
+            document.getElementById('tree-head').textContent = levels.map((l) => LABELS[l]).join(' › ');
+        }
+        const toggle = (tr) => {
+            const p = tr.dataset.path, n = byPath.get(p);
+            if (!n || n.depth >= levels.length - 1) return;
+            open.has(p) ? open.delete(p) : open.add(p);
+            renderTree();
+            body.querySelector(`tr[data-path="${CSS.escape(p)}"]`)?.focus();
+        };
+        body.addEventListener('click', (e) => { const tr = e.target.closest('tr[data-path]'); if (tr) toggle(tr); });
+        body.addEventListener('keydown', (e) => { const tr = e.target.closest('tr[data-path]'); if (tr && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); toggle(tr); } });
+        // N-р түвшин хүртэл нээх
+        function openTo(depth) {
+            open.clear();
+            const walk = (lines, d, path) => { if (d >= depth) return; for (const n of children(lines, d, path)) { open.add(n.path); walk(n.lines, d + 1, n.path); } };
+            if (depth > 0) walk(LINES, 0, '');
+            renderTree();
+        }
+
+        // ---- Түвшний тохиргоо ----
+        const chips = document.getElementById('lv-chips'), addSel = document.getElementById('lv-add');
+        function syncUrl() {
+            const value = levels.join(',');
+            const url = new URL(window.location.href); url.searchParams.set('levels', value); history.replaceState(null, '', url);
+            // Tab, Excel холбоосонд ч тохиргоо дагана
+            document.querySelectorAll('a[href*="tab="]').forEach((a) => { const u = new URL(a.href, window.location.href); if (u.pathname.startsWith('/dashboard/purchase-report')) { u.searchParams.set('levels', value); a.href = u.pathname + u.search; } });
+        }
+        function setLevels(next) {
+            levels = next.length ? next : [...DEFAULT];
+            cache.clear(); open.clear();
+            renderChips(); syncUrl(); renderTree();
+        }
+        function renderChips() {
+            chips.innerHTML = levels.map((l, i) => `${i ? '<span class="lv-sep" aria-hidden="true">›</span>' : ''}<span class="lv-chip" draggable="true" data-i="${i}">
+                <span class="n">${i + 1}</span>${esc(LABELS[l])}
+                <button type="button" data-move="-1" ${i === 0 ? 'disabled' : ''} aria-label="${esc(LABELS[l])} - өмнө зөөх" title="Өмнө зөөх">‹</button>
+                <button type="button" data-move="1" ${i === levels.length - 1 ? 'disabled' : ''} aria-label="${esc(LABELS[l])} - хойш зөөх" title="Хойш зөөх">›</button>
+                <button type="button" data-remove ${levels.length === 1 ? 'disabled' : ''} aria-label="${esc(LABELS[l])} түвшинг хасах" title="Хасах">✕</button></span>`).join('');
+            const unused = Object.keys(LABELS).filter((k) => !levels.includes(k));
+            addSel.innerHTML = `<option value="">+ Түвшин нэмэх</option>` + unused.map((k) => `<option value="${k}">${esc(LABELS[k])}</option>`).join('');
+            addSel.disabled = !unused.length;
+            document.querySelectorAll('.lv-preset').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.levels === levels.join(','))));
+            document.getElementById('lv-depth').innerHTML = '<span class="sr-sub mr-1">Нээх:</span>'
+                + levels.slice(0, -1).map((l, i) => `<button type="button" class="lv-depth" data-depth="${i + 1}" title="${esc(levels.slice(0, i + 1).map((x) => LABELS[x]).join(' › '))} хүртэл нээх">${esc(LABELS[l])}</button>`).join('')
+                + '<button type="button" class="lv-depth" data-depth="0">Бүгдийг хаах</button>';
+        }
+        chips.addEventListener('click', (e) => {
+            const btn = e.target.closest('button'); if (!btn || btn.disabled) return;
+            const i = Number(btn.closest('.lv-chip').dataset.i), next = [...levels];
+            if (btn.hasAttribute('data-remove')) next.splice(i, 1);
+            else { const j = i + Number(btn.dataset.move); [next[i], next[j]] = [next[j], next[i]]; }
+            setLevels(next);
+        });
+        addSel.addEventListener('change', () => { if (addSel.value) setLevels([...levels, addSel.value]); });
+        document.querySelectorAll('.lv-preset').forEach((b) => b.addEventListener('click', () => setLevels(b.dataset.levels.split(','))));
+        document.getElementById('lv-depth').addEventListener('click', (e) => { const b = e.target.closest('[data-depth]'); if (b) openTo(Number(b.dataset.depth)); });
+        // Чирж зөөх
+        let dragFrom = null;
+        chips.addEventListener('dragstart', (e) => { const c = e.target.closest('.lv-chip'); if (!c) return; dragFrom = Number(c.dataset.i); c.classList.add('dragging'); e.dataTransfer.effectAllowed = 'move'; });
+        chips.addEventListener('dragend', () => chips.querySelectorAll('.lv-chip').forEach((c) => c.classList.remove('dragging', 'drop')));
+        chips.addEventListener('dragover', (e) => { const c = e.target.closest('.lv-chip'); if (!c || dragFrom === null) return; e.preventDefault(); chips.querySelectorAll('.lv-chip').forEach((x) => x.classList.toggle('drop', x === c)); });
+        chips.addEventListener('drop', (e) => {
+            const c = e.target.closest('.lv-chip'); if (!c || dragFrom === null) return; e.preventDefault();
+            const to = Number(c.dataset.i), next = [...levels], [moved] = next.splice(dragFrom, 1); next.splice(to, 0, moved); dragFrom = null; setLevels(next);
+        });
+        renderChips(); renderTree();
+        return;
+    }
+
+    // ---- Задаргааны хүснэгт: баганын тохиргоо tab бүрээр ----
+    const share = (r, total) => { const s = total ? r.total / total * 100 : 0; return `<span class="share"><span class="text-gray-600">${pct1(s)}</span><span class="mini"><b style="width:${Math.min(s, 100)}%"></b></span></span>`; };
+    const COLS = {
+        vendor: [
+            { key: 'name', label: 'Харилцагч', l: true, html: (r) => `<div class="name-cell"><span class="inline-block w-4 text-gray-400" data-caret>▸</span><span class="font-medium text-gray-900" title="${esc(r.name)}">${esc(r.name)}</span>${(r.currencies || '').split(', ').filter(Boolean).map((c) => `<span class="chip">${esc(c)}</span>`).join('')}</div>` },
+            { key: 'docs', label: 'Баримт', fmt: int, sum: true }, { key: 'items', label: 'Бараа', fmt: int },
+            { key: 'qty', label: 'Тоо хэмжээ', fmt: int, sum: true, title: 'Бүх барааны тоо хэмжээ (кг, ширхэг г.м. холимог нэгж) - бараа бүрийнх мөрийг задлахад' },
+            { key: 'goods', label: 'Барааны дүн', fmt: money, sum: true }, { key: 'expenses', label: 'Гааль + бусад', fmt: money, sum: true, cls: 'text-gray-600' },
+            { key: 'expense_pct', label: 'Зардлын %', fmt: pct1, title: '(гааль + бусад) / барааны дүн' },
+            { key: 'total', label: 'Нийт өртөг', fmt: money, sum: true, cls: 'font-semibold' }, { key: '_share', label: 'Хувь', html: (r, t) => share(r, t), sortKey: 'total' },
+            { key: 'margin', label: 'Ашгийн %', fmt: pct1 }, { key: 'last_date', label: 'Сүүлийн', fmt: (v) => v || '', cls: 'text-gray-600' },
+        ],
+        item: [
+            { key: 'name', label: 'Бараа', l: true, html: (r) => `<div class="name-cell"><span class="inline-block w-4 text-gray-400" data-caret>▸</span><span class="font-medium text-gray-900" title="${esc(r.name)}">${esc(r.name)}</span><span class="chip">${esc(r.id)}</span></div><div class="sr-sub name-cell pl-4" title="${esc(r.vendor_names)}">${esc(r.vendor_names)}</div>` },
+            { key: 'qty', label: 'Тоо', html: (r) => `${int(r.qty)} <span class="sr-sub">${esc((r.measure || '').slice(0, 4))}</span>`, fmt: int, sum: true },
+            { key: 'price_fc', label: 'Дундаж үнэ (валют)', html: (r) => r.price_fc === null ? '<span class="sr-sub">олон валют</span>' : `${dec(r.price_fc)} <span class="sr-sub">${esc(r.currencies)}</span>`, title: 'Валютаар жигнэсэн дундаж үнэ' },
+            { key: 'unit_cost', label: 'Нэгж өртөг', fmt: money, title: 'Нийт өртөг / тоо (дундаж)' },
+            { key: 'last_unit_cost', label: 'Сүүлийн нэгж өртөг', html: (r) => `${money(r.last_unit_cost)}<div class="range">${money(r.min_unit_cost)} – ${money(r.max_unit_cost)}</div>`, title: 'Сүүлийн татан авалтын нэгж өртөг (доор нь хамгийн бага – их)' },
+            { key: 'last_sale_price', label: 'Зарах үнэ', fmt: money, title: 'Сүүлийн татан авалтын зарах үнэ' },
+            { key: 'margin', label: 'Ашгийн %', fmt: pct1 },
+            { key: 'total', label: 'Нийт өртөг', fmt: money, sum: true, cls: 'font-semibold' }, { key: '_share', label: 'Хувь', html: (r, t) => share(r, t), sortKey: 'total' },
+            { key: 'docs', label: 'Баримт', fmt: int }, { key: 'last_date', label: 'Сүүлийн', fmt: (v) => v || '', cls: 'text-gray-600' },
+        ],
+        document: [
+            { key: 'date', label: 'Огноо', l: true, fmt: (v) => v || '' },
+            { key: 'name', label: 'Дугаар', l: true, html: (r) => `<span class="inline-block w-4 text-gray-400" data-caret>▸</span><span class="font-medium text-gray-900">${esc(r.name)}</span>` },
+            { key: 'vendor_name', label: 'Харилцагч', l: true, html: (r) => `<div class="name-cell" title="${esc(r.vendor_name)}">${esc(r.vendor_name)}</div>` },
+            { key: 'fc', label: 'Валютын дүн', html: (r) => `${dec(r.fc)} <span class="sr-sub">${esc(r.currency)}</span><div class="range">ханш ${dec(r.rate)}</div>` },
+            { key: 'qty', label: 'Тоо хэмжээ', fmt: int, sum: true, title: 'Баримтын бүх барааны тоо хэмжээ (холимог нэгж) - бараа бүрийнх мөрийг задлахад' },
+            { key: 'goods', label: 'Барааны дүн', fmt: money, sum: true },
+            { key: 'expenses', label: 'Гааль + бусад', sum: true, fmt: money, cls: 'text-gray-600', html: (r) => `${money(r.expenses)}<div class="range">${pct1(r.expense_pct)} · гааль ${compact(r.customs)}</div>`, title: 'Гааль + бусад зардал (доор нь барааны дүнд эзлэх хувь)' },
+            { key: 'total', label: 'Нийт өртөг', fmt: money, sum: true, cls: 'font-semibold' }, { key: 'lines', label: 'Мөр', fmt: int, sum: true },
+        ],
+    }[TAB];
+    const ROWS = DATA.rows;
+    ROWS.forEach((r, i) => { r._i = i; r._s = `${r.name || ''} ${r.id || ''} ${r.vendor_name || ''} ${r.vendor_names || ''} ${r.currencies || r.currency || ''} ${r.date || ''}`.toLowerCase(); });
+    const GRAND = ROWS.reduce((s, r) => s + r.total, 0);
+    const state = { sort: TAB === 'document' ? 'date' : 'total', desc: true, q: '', page: 0, size: 50, open: new Set() };
+    const thead = document.querySelector('#pr-table thead');
+    thead.innerHTML = `<tr>${TAB === 'document' ? '' : '<th class="l">#</th>'}${COLS.map((c) => `<th class="${c.l ? 'l' : ''}" data-sort="${c.sortKey || c.key}" ${c.title ? `title="${esc(c.title)}"` : ''} aria-sort="none">${c.label}<span class="arrow">↕</span></th>`).join('')}</tr>`;
+    function drill(r) {
+        if (TAB === 'vendor') go((q) => { q.delete('vendor'); q.append('vendor', r.id); q.set('tab', 'item'); });
+        else if (TAB === 'item') go((q) => { q.delete('item'); q.append('item', r.id); q.set('tab', 'item'); });
+    }
+    const filterLink = (label, mutate) => `<a class="text-xs text-blue-700 hover:underline" href="?${(() => { const q = new URLSearchParams(QUERY); mutate(q); return q.toString(); })()}">${label}</a>`;
+    // Мөр задлах: харилцагч -> бараанууд, бараа -> татан авалт бүр, баримт -> бараа бүр
+    function detailHtml(r) {
+        if (TAB === 'document') return linesHtml(r);
+        const kids = (DATA.children || {})[String(r.id)] || [];
+        if (TAB === 'vendor') {
+            return `<table class="lines-table"><thead><tr><th class="l">Бараа</th><th>Тоо хэмжээ</th><th>Нэгж өртөг</th><th>Барааны дүн</th><th>Гааль + бусад</th><th>Нийт өртөг</th><th>Баримт</th><th>Сүүлийн</th></tr></thead><tbody>`
+                + kids.map((x) => `<tr><td class="l"><span class="text-gray-900">${esc(x.name)}</span> <span class="chip">${esc(x.id)}</span></td>
+                    <td>${dec(x.qty)} <span class="sr-sub">${esc(x.measure || '')}</span></td><td>${money(x.unit_cost)}</td><td>${money(x.goods)}</td>
+                    <td>${money(x.expenses)} <span class="sr-sub">${pct1(x.expense_pct)}</span></td><td class="font-semibold">${money(x.total)}</td><td>${int(x.docs)}</td><td class="text-gray-600">${esc(x.last_date || '')}</td></tr>`).join('')
+                + `</tbody></table><div class="mt-2 flex gap-4">${filterLink('Энэ харилцагчаар шүүх →', (q) => { q.delete('vendor'); q.append('vendor', r.id); q.set('tab', 'item'); })}</div>`;
+        }
+        return `<table class="lines-table"><thead><tr><th class="l">Огноо</th><th class="l">Баримт</th><th class="l">Харилцагч</th><th>Тоо хэмжээ</th><th>Үнэ (валют)</th><th>Нэгж өртөг</th><th>Зарах үнэ</th><th>Нийт өртөг</th></tr></thead><tbody>`
+            + kids.map((x) => `<tr><td class="l">${esc(x.date)}</td><td class="l">${esc(x.number)}</td><td class="l">${esc(x.vendor)}</td>
+                <td>${dec(x.qty)} <span class="sr-sub">${esc((r.measure || '').slice(0, 4))}</span></td><td>${dec(x.price_fc)} <span class="sr-sub">${esc(x.currency)}</span></td>
+                <td>${money(x.unit_cost)}</td><td>${x.sale_price ? money(x.sale_price) : '<span class="sr-sub">-</span>'}</td><td class="font-semibold">${money(x.total)}</td></tr>`).join('')
+            + `</tbody></table><div class="mt-2">${filterLink('Энэ бараагаар шүүх (нэгж өртгийн график) →', (q) => { q.delete('item'); q.append('item', r.id); q.set('tab', 'item'); })}</div>`;
+    }
+    function linesHtml(r) {
+        const lines = (DATA.lines || {})[r.id] || [];
+        return `<table class="lines-table"><thead><tr><th class="l">Бараа</th><th>Тоо</th><th>Үнэ (${esc(r.currency)})</th><th>Валютын дүн</th><th>Барааны дүн</th><th>Гааль</th><th>Бусад</th><th>Нийт өртөг</th><th>Нэгж өртөг</th><th>Зарах үнэ</th></tr></thead><tbody>`
+            + lines.map((x) => `<tr><td class="l"><span class="text-gray-900">${esc(x.item)}</span> <span class="chip">${esc(x.item_id)}</span></td><td>${dec(x.qty)} <span class="sr-sub">${esc((x.measure || '').slice(0, 4))}</span></td>
+                <td>${dec(x.price)}</td><td>${dec(x.fc)}</td><td>${money(x.goods)}</td><td>${money(x.customs)}</td><td>${money(x.other)}</td><td class="font-semibold">${money(x.total)}</td><td>${money(x.unit_cost)}</td><td>${x.sale_price ? money(x.sale_price) : '<span class="sr-sub">-</span>'}</td></tr>`).join('')
+            + `</tbody></table><div class="mt-2"><a class="text-xs text-blue-700 hover:underline" href="?${(() => { const q = new URLSearchParams(QUERY); q.delete('doc'); q.append('doc', r.id); q.set('tab', 'document'); return q.toString(); })()}">Зөвхөн энэ баримтаар шүүх →</a></div>`;
+    }
+    function list() {
+        const q = state.q.trim().toLowerCase(), out = q ? ROWS.filter((r) => r._s.includes(q)) : ROWS.slice(), k = state.sort;
+        out.sort((a, b) => { const va = a[k] ?? '', vb = b[k] ?? ''; const c = typeof va === 'string' || typeof vb === 'string' ? String(va).localeCompare(String(vb), 'mn') : va - vb; return state.desc ? -c : c; });
+        return out;
+    }
+    function render() {
+        const rows = list(), pages = Math.max(1, Math.ceil(rows.length / state.size));
+        state.page = Math.min(state.page, pages - 1);
+        const slice = rows.slice(state.page * state.size, (state.page + 1) * state.size);
+        const span = COLS.length + (TAB === 'document' ? 0 : 1);
+        document.getElementById('pr-tbody').innerHTML = slice.map((r, i) => {
+            const open = state.open.has(r._i);
+            const cells = COLS.map((c) => `<td class="${c.l ? 'l' : ''} ${c.cls || ''}">${c.html ? c.html(r, GRAND) : c.fmt(r[c.key])}</td>`).join('');
+            return `<tr class="click ${open ? 'open' : ''}" data-i="${r._i}" tabindex="0">${TAB === 'document' ? '' : `<td class="l text-gray-400">${state.page * state.size + i + 1}</td>`}${cells}</tr>`
+                + (open ? `<tr class="lines-row"><td colspan="${span}">${detailHtml(r)}</td></tr>` : '');
+        }).join('') || `<tr><td colspan="${span}" class="l" style="padding:2.5rem;text-align:center;color:var(--muted)">Шүүлтэд тохирох мөр алга</td></tr>`;
+        document.querySelectorAll('#pr-tbody tr.open [data-caret]').forEach((c) => { c.textContent = '▾'; });
+        const sum = (k) => rows.reduce((s, r) => s + (r[k] || 0), 0);
+        const goods = sum('goods'), expenses = sum('expenses');
+        document.getElementById('pr-tfoot').innerHTML = `<tr>${TAB === 'document' ? '' : '<td></td>'}${COLS.map((c, j) => {
+            if (j === 0) return `<td class="l">Нийт · ${int(rows.length)}</td>`;
+            if (c.key === 'expense_pct') return `<td>${pct1(goods ? expenses / goods * 100 : 0)}</td>`;
+            if (c.key === 'margin') { const sv = sum('sale_value'); return `<td>${pct1(sv ? sum('profit') / sv * 100 : 0)}</td>`; }
+            return `<td>${c.sum ? (c.fmt || money)(sum(c.key)) : ''}</td>`;
+        }).join('')}</tr>`;
+        document.getElementById('page-info').textContent = rows.length ? `${int(state.page * state.size + 1)}–${int(Math.min((state.page + 1) * state.size, rows.length))} / ${int(rows.length)}` : '';
+        const pager = document.getElementById('pager'); pager.innerHTML = '';
+        if (pages > 1) {
+            const btn = (label, page, disabled, active) => { const b = document.createElement('button'); b.type = 'button'; b.textContent = label; b.disabled = disabled;
+                b.className = `min-w-[2rem] px-2 py-1 rounded-md text-sm ${active ? 'bg-gray-900 text-white' : 'hover:bg-gray-100 text-gray-700'} disabled:opacity-30`;
+                b.addEventListener('click', () => { state.page = page; render(); }); pager.append(b); };
+            btn('‹', state.page - 1, state.page === 0);
+            const from = Math.max(0, Math.min(state.page - 2, pages - 5));
+            for (let p = from; p < Math.min(pages, from + 5); p++) btn(String(p + 1), p, false, p === state.page);
+            btn('›', state.page + 1, state.page >= pages - 1);
+        }
+        thead.querySelectorAll('th[data-sort]').forEach((th) => {
+            const on = th.dataset.sort === state.sort;
+            th.classList.toggle('sorted', on); th.querySelector('.arrow').textContent = on ? (state.desc ? '↓' : '↑') : '↕';
+            th.setAttribute('aria-sort', on ? (state.desc ? 'descending' : 'ascending') : 'none');
+        });
+    }
+    thead.querySelectorAll('th[data-sort]').forEach((th) => th.addEventListener('click', () => {
+        const k = th.dataset.sort; state.desc = state.sort === k ? !state.desc : !['name', 'vendor_name'].includes(k); state.sort = k; state.page = 0; render();
+    }));
+    let st; document.getElementById('table-search').addEventListener('input', (e) => { clearTimeout(st); st = setTimeout(() => { state.q = e.target.value; state.page = 0; render(); }, 120); });
+    document.getElementById('page-size').addEventListener('change', (e) => { state.size = Number(e.target.value); state.page = 0; render(); });
+    const tbody = document.getElementById('pr-tbody');
+    const activate = (tr) => {
+        const r = ROWS[Number(tr.dataset.i)];
+        state.open.has(r._i) ? state.open.delete(r._i) : state.open.add(r._i);
+        render();
+    };
+    tbody.addEventListener('click', (e) => { if (e.target.closest('a')) return; const tr = e.target.closest('tr[data-i]'); if (tr) activate(tr); });
+    tbody.addEventListener('keydown', (e) => { const tr = e.target.closest('tr[data-i]'); if (tr && e.key === 'Enter') activate(tr); });
+    render();
+
+    if (TAB === 'item' && DATA.history) {
+        // Татан авалт бүр нэг цэг (нэг сард хэд хэд байж болох тул өдөртэй нь)
+        const pts = DATA.history.map((h) => ({ ...h, label: h.date.slice(2).replaceAll('-', '.') }));
+        onResize(() => chart({
+            points: pts, series: [{ key: 'unit_cost', label: 'Нэгж өртөг', color: 'var(--series-1)' }], mode: 'line',
+            tipHtml: (p) => `<div class="t-head">${p.date} · ${esc(p.number)}</div><div class="t-row"><span>Нэгж өртөг</span><b>${money(p.unit_cost)}</b></div>
+                <div class="t-row"><span>Үнэ (валют)</span><span>${dec(p.price_fc)} ${esc(p.currency)}</span></div><div class="t-row"><span>Зарах үнэ</span><span>${p.sale_price ? money(p.sale_price) : '-'}</span></div>
+                <div class="t-row"><span>Тоо</span><span>${dec(p.qty)}</span></div><div class="t-row" style="opacity:.8"><span>${esc(p.vendor)}</span></div>`,
+        }));
+    } else if (TAB !== 'document') {
+        const top = ROWS.slice().sort((a, b) => b.total - a.total).slice(0, 10), max = top[0]?.total || 1;
+        document.getElementById('top-share').textContent = top.length ? `Нийт өртгийн ${pct1(top.reduce((s, r) => s + r.total, 0) / (GRAND || 1) * 100)}` : '';
+        const box = document.getElementById('top-list');
+        box.innerHTML = top.map((r, i) => `<div class="bar-row" tabindex="0" data-i="${i}"><div class="bar-label" title="${esc(r.name)}"><span class="bar-rank">${i + 1}</span>${esc(r.name)}</div>
+            <div class="bar-track"><div class="bar-fill" style="width:0%"></div></div><div class="bar-value" title="${money(r.total)}">${compact(r.total)}</div></div>`).join('') || '<p class="sr-sub">Өгөгдөл алга</p>';
+        requestAnimationFrame(() => box.querySelectorAll('.bar-fill').forEach((b, i) => { b.style.width = `${Math.max(top[i].total / max * 100, 0.5)}%`; }));
+        box.addEventListener('click', (e) => { const r = e.target.closest('[data-i]'); if (r) drill(top[Number(r.dataset.i)]); });
+        box.addEventListener('keydown', (e) => { const r = e.target.closest('[data-i]'); if (r && e.key === 'Enter') drill(top[Number(r.dataset.i)]); });
+    }
+})();
 </script>
 {% endblock %}

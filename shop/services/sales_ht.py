@@ -9,6 +9,7 @@
   Бүлэг мод бүтэцтэй (SortedOrder нь эцгийнхээ кодоор эхэлдэг) тул эх бүлэг сонгоход дэд бүлгүүд нь орно.
 - Бүртгэлтэй ч борлуулалтгүй харилцагч: шүүсэн сувагт бүртгэлтэй харилцагчдаас шүүлтийн
   хугацаанд борлуулалт хийгдээгүйг нь тусад нь гаргана (зөвхөн харилцагч дээд түвшинд үед харагдана).
+- Барааны бүлэг: OpenDataItem.ItemGroupId (борлуулалтын ItemCategoryName хоосон байдаг тул), ItemId-аар холбоно.
 - Харилцагчийн төлөв (OpenDataCustomer.ActiveStatus Y/N)-ийн шүүлт борлуулалт болон бүртгэлтэй
   харилцагчдын аль алинд үйлчилнэ.
 - Үлдэгдэлтэй барааны шүүлт: InventorySnapshot-ын "Агуулах жижиг"-т үлдэгдэлтэй бараа л орно;
@@ -99,6 +100,7 @@ def get_filter_options(channel_ids=None):
     items:           борлуулагдсан бараанууд [(нэр, код)] - шүүлтийн утга нь нэр
     customers:       бүртгэлтэй харилцагчид [(Id, нэр)] - OpenDataCustomer-оос
     customer_groups: бүх бүлэг [(нэр, түвшин)] - OpenDataCustomerGroup-ын модны дарааллаар
+    item_groups:     барааны бүлгүүд [нэр] - OpenDataItem.ItemGroupId
     """
     with connection.cursor() as cursor:
         cursor.execute(
@@ -126,7 +128,17 @@ def get_filter_options(channel_ids=None):
         cursor.execute('SELECT "Id", "SortedOrder" FROM "OpenDataCustomerGroup" ORDER BY "SortedOrder"')
         customer_groups = [(name, max(len(order or '') // 4 - 1, 0)) for name, order in cursor.fetchall()]
 
-    return {'items': items, 'customers': customers, 'customer_groups': customer_groups}
+        cursor.execute('SELECT DISTINCT "ItemGroupId" FROM "OpenDataItem" WHERE "ItemGroupId" <> \'\' ORDER BY 1')
+        item_groups = [row[0] for row in cursor.fetchall()]
+
+    return {'items': items, 'customers': customers, 'customer_groups': customer_groups, 'item_groups': item_groups}
+
+
+def item_names_in_groups(item_groups):
+    """Сонгосон барааны бүлгүүдийн барааны нэрс - нэрээр холбогддог InventorySnapshot-ыг шүүхэд."""
+    with connection.cursor() as cursor:
+        cursor.execute('SELECT "Name" FROM "OpenDataItem" WHERE "ItemGroupId" = ANY(%s)', [item_groups])
+        return [row[0] for row in cursor.fetchall()]
 
 
 def _expand_customer_groups(cursor, group_names):
@@ -179,6 +191,7 @@ def parse_filters(params):
         'date_from': date_from,
         'date_to': date_to,
         'items': [v for v in params.getlist('item') if v],
+        'item_groups': [v for v in params.getlist('item_group') if v],
         'customers': [v for v in params.getlist('customer') if v],
         'channels': [v for v in params.getlist('channel') if v],
         # Суваг сонгоогүй үеийн хүрээ: анхдагчаар бүх суваг, "ht" бол зөвхөн нэр нь "ХТ"-ээр эхэлсэн сувгууд.
@@ -219,6 +232,9 @@ def _sale_conditions(filters, group_names, date_from, date_to):
     if filters['items']:
         where.append('s."ItemName" = ANY(%s)')
         params.append(filters['items'])
+    if filters['item_groups']:
+        where.append('s."ItemId" IN (SELECT "Id" FROM "OpenDataItem" WHERE "ItemGroupId" = ANY(%s))')
+        params.append(filters['item_groups'])
     if filters['customers']:
         where.append('s."CustomerId" = ANY(%s)')
         params.append(filters['customers'])
@@ -320,6 +336,8 @@ def build_report(filters):
             **({'jijig_qty__gt': 0} if filters['stock_only'] else {'total_qty__gt': 0}))
         if filters['items']:
             stocked = stocked.filter(itemname__in=filters['items'])
+        if filters['item_groups']:
+            stocked = stocked.filter(itemname__in=item_names_in_groups(filters['item_groups']))
         idle_item_names = set(stocked.values_list('itemname', flat=True)) - {r[0] for r in sales}
         if filters['item_mode'] == ITEM_MODE_WITHOUT:
             sales = []

@@ -57,6 +57,9 @@
 .missing-on .missing-row { display: table-row; background: #fee2e2; color: #b91c1c; }
 .missing-on .missing-total { display: inline; }
 .missing-row.filtered-out { display: none !important; }
+/* Гаригийн шүүлтийн товчлуур - сонгосон нь ногоон */
+.dow-chip input:checked + span { background: #16a34a; color: #fff; }
+.dow-chip input:focus-visible + span { outline: 2px solid #16a34a; outline-offset: -2px; }
 /* Үндсэн албан тушаалаасаа өөр албан тушаалд шилжин ажилласан өдөр */
 .position-input.position-changed { background: #ffedd5; border-color: #fdba74; font-weight: 600; }
 /* Харилцагчийн нэрийн баганад өргөн өгөхгүй - дэлгэц дээр бусад баганаас үлдсэн бүх зайг (дэлгэцийн төгсгөл хүртэл) эзэлнэ */
@@ -141,6 +144,17 @@
                     <input type="number" id="filter-age-min" name="age_min" min="0" max="120" value="{{ age_min|default_if_none:'' }}" placeholder="-аас" class="border border-gray-300 rounded-lg px-2 py-2 w-20">
                     <span class="text-gray-400">–</span>
                     <input type="number" id="filter-age-max" name="age_max" min="0" max="120" value="{{ age_max|default_if_none:'' }}" placeholder="хүртэл" class="border border-gray-300 rounded-lg px-2 py-2 w-20">
+                </div>
+            </div>
+            <div title="Сонгосон гаригуудын мөрийг л харуулна; юу ч сонгоогүй бол бүх гариг">
+                <span class="block text-sm font-medium mb-1">Гариг</span>
+                <div class="flex rounded-lg border border-gray-300 overflow-hidden" id="filter-weekdays">
+                    {% for num, short, full in weekday_choices %}
+                    <label class="dow-chip cursor-pointer select-none" title="{{ full }}">
+                        <input type="checkbox" class="dow-filter sr-only" value="{{ num }}" {% if num in weekday_filter %}checked{% endif %}>
+                        <span class="block px-2.5 py-2 text-sm {% if not forloop.first %}border-l border-gray-300{% endif %} {% if num == 6 or num == 0 %}text-gray-500{% endif %}">{{ short }}</span>
+                    </label>
+                    {% endfor %}
                 </div>
             </div>
             <button type="submit" class="bg-primary text-white px-6 py-2 rounded-lg hover:bg-green-700 transition">
@@ -328,7 +342,7 @@
                         <tbody>
                             {% for row in table_rows %}
                             {% if row.is_missing %}
-                            <tr class="border-t missing-row" data-filter-text="{{ row.name }} {{ row.employee_code }}" data-age="{{ row.age|default_if_none:'' }}">
+                            <tr class="border-t missing-row" data-filter-text="{{ row.name }} {{ row.employee_code }}" data-age="{{ row.age|default_if_none:'' }}" data-dow="{{ row.date|date:'w' }}">
                                 <td class="no-print"></td>
                                 <td class="print-hide px-2 py-1.5 text-gray-400">-</td>
                                 <td class="print-hide px-2 py-1.5 text-gray-500">{{ row.employee_code }}</td>
@@ -340,7 +354,7 @@
                             </tr>
                             {% else %}
                             <tr class="border-t attendance-row {% if row.is_saved %}bg-yellow-50{% elif row.weekday == 'Бямба' or row.weekday == 'Ням' %}bg-gray-100{% endif %}"
-                                data-filter-text="{{ row.name }} {{ row.employee_code }}" data-age="{{ row.age|default_if_none:'' }}">
+                                data-filter-text="{{ row.name }} {{ row.employee_code }}" data-age="{{ row.age|default_if_none:'' }}" data-dow="{{ row.date|date:'w' }}">
                                 <td class="px-2 py-1.5 no-print">
                                     {% if row.is_saved and not row.is_additional %}
                                     <input type="checkbox" class="row-select" data-employee-code="{{ row.employee_code }}" data-date="{{ row.date|date:'Y-m-d' }}">
@@ -429,7 +443,7 @@
                     </thead>
                     <tbody>
                         {% for rec in deleted_records %}
-                        <tr class="border-t deleted-row" data-filter-text="{{ rec.name|default:'' }} {{ rec.employee_code }}" data-age="{{ rec.age|default_if_none:'' }}">
+                        <tr class="border-t deleted-row" data-filter-text="{{ rec.name|default:'' }} {{ rec.employee_code }}" data-age="{{ rec.age|default_if_none:'' }}" data-dow="{{ rec.date|date:'w' }}">
                             <td class="px-3 py-2">{{ rec.name|default:rec.employee_code }}</td>
                             <td class="px-3 py-2 whitespace-nowrap">{{ rec.date|date:'Y-m-d' }} {{ rec.weekday }}</td>
                             <td class="px-3 py-2 text-gray-500 whitespace-nowrap">{{ rec.updated_by.username|default:'-' }} · {{ rec.updated_at|date:'Y-m-d H:i' }}</td>
@@ -771,6 +785,8 @@ document.addEventListener('DOMContentLoaded', function () {
     const filterInput = document.getElementById('filter-name');
     const ageMinInput = document.getElementById('filter-age-min');
     const ageMaxInput = document.getElementById('filter-age-max');
+    // Гариг: сонгосон гаригуудын мөр л харагдана (data-dow: Ням=0 ... Бямба=6), юу ч сонгоогүй бол бүгд
+    const dowInputs = Array.from(document.querySelectorAll('.dow-filter'));
     if (filterInput) {
         const filterCount = document.getElementById('filter-count');
         const exportLink = document.getElementById('export-link');
@@ -785,10 +801,12 @@ document.addEventListener('DOMContentLoaded', function () {
             const needle = filterInput.value.trim().toLowerCase();
             const ageMin = readAge(ageMinInput);
             const ageMax = readAge(ageMaxInput);
-            const active = !!needle || ageMin !== null || ageMax !== null;
+            const dows = dowInputs.filter(function (i) { return i.checked; }).map(function (i) { return i.value; });
+            const active = !!needle || ageMin !== null || ageMax !== null || dows.length > 0;
 
             function matches(row) {
                 if (needle && !row.dataset.filterText.toLowerCase().includes(needle)) return false;
+                if (dows.length && !dows.includes(row.dataset.dow)) return false;
                 if (ageMin === null && ageMax === null) return true;
                 const age = parseInt(row.dataset.age, 10);
                 if (isNaN(age)) return false;
@@ -823,6 +841,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 url.searchParams.set('q', filterInput.value.trim());
                 url.searchParams.set('age_min', ageMin === null ? '' : ageMin);
                 url.searchParams.set('age_max', ageMax === null ? '' : ageMax);
+                url.searchParams.set('weekdays', dows.join(','));
                 exportLink.href = url.toString();
             }
         }
@@ -835,6 +854,7 @@ document.addEventListener('DOMContentLoaded', function () {
                     q: filterInput.value.trim(),
                     age_min: ageMinInput ? ageMinInput.value.trim() : '',
                     age_max: ageMaxInput ? ageMaxInput.value.trim() : '',
+                    weekdays: dowInputs.filter(function (i) { return i.checked; }).map(function (i) { return i.value; }).join(','),
                 });
                 fetch('{% url "shop:attendance_filter_save" %}?' + params.toString());
             }, 400);
@@ -843,6 +863,7 @@ document.addEventListener('DOMContentLoaded', function () {
         [filterInput, ageMinInput, ageMaxInput].filter(Boolean).forEach(function (input) {
             input.addEventListener('input', onFilterInput);
         });
+        dowInputs.forEach(function (input) { input.addEventListener('change', onFilterInput); });
         applyNameFilter();
     }
 

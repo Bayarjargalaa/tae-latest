@@ -56,9 +56,14 @@ def _attach_base_channel_prices(products):
 
 def home(request):
     """Нүүр хуудас - Featured бүтээгдэхүүнүүд"""
-    # Ажилтан нэвтэрсэн бол шууд хувийн мэдээлэл рүү нь чиглүүлнэ
+    # Ажилтан нэвтэрсэн бол шууд хувийн мэдээлэл рүү нь, тэр цэсний эрхгүй бол үзэх эрхтэй эхний хуудас руу нь
     if request.user.is_authenticated and request.user.is_staff:
-        return redirect('shop:profile')
+        from shop.access import can_access_url, first_allowed_url
+        if can_access_url(request, 'profile'):
+            return redirect('shop:profile')
+        target = first_allowed_url(request)
+        if target:
+            return redirect(target)
     
     # Идэвхтэй бүтээгдэхүүнүүд (эхний 12)
     products = OpenDataItem.objects.filter(activestatus='Y').order_by('-pkid')[:12]
@@ -876,7 +881,7 @@ def sales_report_ht(request):
     filters, scope = _sales_ht_filters(request)
     context = _sales_ht_filter_context(request, filters, scope)
     from shop.services.report_cache import cached
-    context['report'] = cached('ht_report', ['OpenDataSale', 'OpenDataCustomer', 'OpenDataDistributionChannel', 'OpenDataCustomerGroup'], filters, lambda: sales_ht.build_report(filters))
+    context['report'] = cached('ht_report', ['OpenDataSale', 'OpenDataCustomer', 'OpenDataDistributionChannel', 'OpenDataCustomerGroup', 'OpenDataItem'], filters, lambda: sales_ht.build_report(filters))
     return render(request, 'shop/sales_report_ht.html', context)
 
 
@@ -894,7 +899,7 @@ def sales_report_ht_dashboard(request):
     filters, scope = _sales_ht_filters(request)
     context = _sales_ht_filter_context(request, filters, scope)
     from shop.services.report_cache import cached
-    context['dashboard'] = cached('ht_dashboard', ['OpenDataSale', 'OpenDataCustomer', 'OpenDataDistributionChannel', 'OpenDataCustomerGroup'], filters, lambda: build_dashboard(filters))
+    context['dashboard'] = cached('ht_dashboard', ['OpenDataSale', 'OpenDataCustomer', 'OpenDataDistributionChannel', 'OpenDataCustomerGroup', 'OpenDataItem'], filters, lambda: build_dashboard(filters))
     return render(request, 'shop/sales_report_ht_dashboard.html', context)
 
 
@@ -918,7 +923,7 @@ def sales_report_ht_breakdown(request):
     filters, scope = _sales_ht_filters(request, params)
     context = _sales_ht_filter_context(request, filters, scope)
     from shop.services.report_cache import cached
-    context['breakdown'] = cached('ht_breakdown', ['OpenDataSale', 'OpenDataCustomer', 'OpenDataDistributionChannel', 'OpenDataCustomerGroup'], filters, lambda: build_breakdown(filters))
+    context['breakdown'] = cached('ht_breakdown', ['OpenDataSale', 'OpenDataCustomer', 'OpenDataDistributionChannel', 'OpenDataCustomerGroup', 'OpenDataItem'], filters, lambda: build_breakdown(filters))
     return render(request, 'shop/sales_report_ht_breakdown.html', context)
 
 
@@ -939,7 +944,7 @@ def _sales_ht_filter_context(request, filters, scope=None):
 
     from shop.services.report_cache import cached
     channel_ids = scope.channel_ids if scope else None
-    options = cached('ht_options', ['OpenDataSale', 'OpenDataCustomer', 'OpenDataCustomerGroup'],
+    options = cached('ht_options', ['OpenDataSale', 'OpenDataCustomer', 'OpenDataCustomerGroup', 'OpenDataItem'],
                      {'channels': sorted(channel_ids) if channel_ids is not None else None},
                      lambda: sales_ht.get_filter_options(channel_ids=channel_ids))
     channel_options = cached('ht_channels', ['OpenDataDistributionChannel'], {}, sales_ht.get_channels)
@@ -953,6 +958,7 @@ def _sales_ht_filter_context(request, filters, scope=None):
         'customer_options': options['customers'],
         # Модны түвшнээр догол мөр гаргана (Choices.js эхний хоосон зайг хасдаг тул "— " ашиглав)
         'customer_group_options': [(name, '— ' * depth + name) for name, depth in options['customer_groups']],
+        'item_group_options': options['item_groups'],
         'sales_mode_labels': sales_ht.SALES_MODE_LABELS,
         'item_mode_labels': sales_ht.ITEM_MODE_LABELS,
         'customer_status_labels': sales_ht.CUSTOMER_STATUS_LABELS,
@@ -1082,428 +1088,145 @@ def sales_report_ht_export(request):
     return response
 
 
+@login_required
 def purchase_report(request):
-    """Татан авалтын тайлан - OpenDataLandedCost өгөгдлөөс (Pivot: Он-Сар-Харилцагч-Бараа-Өдөр)"""
-    # Зөвхөн ажилтанд зөвшөөрөх
-    if not request.user.is_staff:
-        from django.contrib import messages
-        messages.warning(request, 'Энэ хуудас зөвхөн ажилтанд зориулагдсан.')
-        return redirect('shop:home')
-    
-    from datamigration.models import OpenDataLandedCost
-    
-    # Tab сонголт (summary, by_vendor, by_item, by_date)
-    active_tab = request.GET.get('tab', 'summary')
-    
-    # Шүүлтийн параметрүүд
-    date_from_str = request.GET.get('date_from')
-    date_to_str = request.GET.get('date_to')
-    vendor_filter = request.GET.get('vendor')
-    item_filter = request.GET.get('item')
-    brand_filter = request.GET.get('brand')
-    year_filter = request.GET.get('year')
-    
-    # "None" string болон хоосон утгуудыг цэвэрлэх
-    def clean_param(value):
-        if not value or value.strip() == '' or value.strip().lower() == 'none':
-            return None
-        return value.strip()
-    
-    vendor_filter = clean_param(vendor_filter)
-    item_filter = clean_param(item_filter)
-    brand_filter = clean_param(brand_filter)
-    year_filter = clean_param(year_filter)
-    
-    # Огнооны шүүлт
-    date_from = None
-    date_to = None
-    
-    if date_from_str and date_from_str.strip():
-        try:
-            date_from = datetime.strptime(date_from_str, '%Y-%m-%d').date()
-        except ValueError:
-            pass
-    
-    if date_to_str and date_to_str.strip():
-        try:
-            date_to = datetime.strptime(date_to_str, '%Y-%m-%d').date()
-        except ValueError:
-            pass
-    
-    # OpenDataLandedCost QuerySet - БҮХ өгөгдлөөс эхэлнэ
-    purchase_qs = OpenDataLandedCost.objects.all()
-    
-    # Огноогоор шүүх
-    if date_from:
-        purchase_qs = purchase_qs.filter(documentdate__gte=date_from)
-    
-    if date_to:
-        purchase_qs = purchase_qs.filter(documentdate__lte=date_to)
-    
+    """Татан авалтын тайлан - OpenDataLandedCost (shop.services.purchase_report). Шүүлт (хугацаа, харилцагч,
+    бараа, валют, агуулах, баримт, чөлөөт хайлт) бүх tab-д үйлчилнэ; дүн бүгд төгрөгөөр."""
+    from urllib.parse import urlencode
+    from shop.services import purchase_report as service
+
+    tab = request.GET.get('tab') if request.GET.get('tab') in service.TAB_KEYS else 'summary'
+    filters = service.parse_filters(request.GET)
+    options = service.filter_options(filters)
+    data = {}
+    levels = service.parse_levels(request.GET.get('levels'))
+    if tab == 'summary':
+        data['summary'] = service.summary(filters)
+        data['currency'] = service.currency_mix(filters)
+    elif tab == 'tree':
+        data['lines'] = service.tree_lines(filters)
+        data['columns'] = service.LINE_COLUMNS
+    else:
+        data.update(service.breakdown(filters, tab))
+
+    params = [(k, v) for k in ('date_from', 'date_to', 'q') for v in [request.GET.get(k, '')] if v]
+    if request.GET.get('levels'):
+        params.append(('levels', ','.join(levels)))   # шатлалын тохиргоо tab солиход хадгалагдана
+    params += [(k, v) for k in service.MULTI_FILTERS for v in filters[k]]
+    names = {key: {i: n for i, n, _ in options[key]} for key in ('vendor', 'item')}
     context = {
-        'active_tab': active_tab,
-        'date_from': date_from_str or '',
-        'date_to': date_to_str or '',
-        'selected_vendor': vendor_filter,
-        'selected_item': item_filter,
-        'selected_brand': brand_filter,
-        'selected_year': year_filter,
+        'active_page': 'purchase_report',
+        'tab': tab,
+        'tabs': service.TABS,
+        'filters': filters,
+        'options': options,
+        'kpis': service.kpis(filters),
+        'data': data,
+        'query_string': urlencode(params),
+        'is_filtered': service.is_filtered(filters),
+        # Сонгосон харилцагч / бараа / баримтыг шүүлтийн хэсэгт "чип"-ээр
+        'selected_docs': filters['doc'],
+        'single_item_name': names['item'].get(filters['item'][0]) if len(filters['item']) == 1 else '',
+        # Шүүлтийн жагсаалт: (түлхүүр, нэр, Choices-ийн placeholder, утгууд) - харилцан хамааралтай (бусад
+        # сонголтод тохирох утга л), хөтөч дотор facet_data-гаар шууд нарийсна
+        'facet_data': service.facet_data(filters),
+        'facets': [
+            (key, label, placeholder, options[key])
+            for key, label, placeholder in (
+                ('vendor', 'Харилцагч', 'Бүх харилцагч'), ('item', 'Бараа', 'Бүх бараа (код, нэрээр хайх)'),
+                ('currency', 'Валют', 'Бүгд'), ('warehouse', 'Агуулах', 'Бүгд'),
+            )
+        ],
+        'is_empty': not service.kpis(filters)['current']['lines'],
+        'tree_levels': levels,
+        'tree_level_labels': service.TREE_LEVELS,
+        'tree_default': service.TREE_DEFAULT,
     }
-    
-    if active_tab == 'summary':
-        # НЭГТГЭЛ - Pivot хүснэгт (Харилцагч->Бараа->Он->Сар->Өдөр)
-        summary_qs = purchase_qs
-        pivot_result = _get_purchase_pivot_summary(summary_qs, year_filter)
-        context.update({
-            'pivot_data': pivot_result['data'],
-            'grand_total': pivot_result['grand_total'],
-        })
-        
-        # Статистик - TEXT талбаруудыг CAST хийж тооцоолох
-        from django.db.models.functions import Cast
-        from django.db.models import FloatField
-        
-        stats = summary_qs.annotate(
-            qty_float=Cast('qty', FloatField()),
-            price_float=Cast('price', FloatField()),
-            amount_float=Cast('itemamountfc', FloatField())
-        ).aggregate(
-            total_qty=Sum('qty_float'),
-            total_price=Avg('price_float'),
-            total_amount=Sum('amount_float'),
-            total_orders=Count('documentpkid', distinct=True),
-            total_vendors=Count('vendorname', distinct=True),
-        )
-        context['stats'] = stats
-        context['total_records'] = summary_qs.count()
-        
-    elif active_tab == 'by_vendor':
-        # ХАРИЛЦАГЧААР (Vendor)
-        vendor_qs = purchase_qs
-        
-        if vendor_filter:
-            vendor_qs = vendor_qs.filter(vendorname__icontains=vendor_filter)
-        
-        if item_filter:
-            vendor_qs = vendor_qs.filter(itemname__icontains=item_filter)
-        
-        vendor_analysis = _get_vendor_analysis(vendor_qs)
-        
-        # Dropdown lists
-        vendors_list = purchase_qs.values_list(
-            'vendorname', flat=True
-        ).distinct().exclude(vendorname__isnull=True).exclude(vendorname='').order_by('vendorname')
-        
-        items_list = purchase_qs.values_list(
-            'itemname', flat=True
-        ).distinct().exclude(itemname__isnull=True).exclude(itemname='').order_by('itemname')
-        
-        context.update({
-            'vendor_analysis': vendor_analysis,
-            'vendors': list(vendors_list),
-            'items': [{'name': i} for i in items_list],
-        })
-        
-        # Статистик
-        stats = vendor_qs.aggregate(
-            total_qty=Sum('qty'),
-            total_price=Avg('price'),
-            total_amount=Sum('itemamountfc'),
-            total_orders=Count('documentpkid', distinct=True),
-        )
-        context['stats'] = stats
-        context['total_records'] = vendor_qs.count()
-        
-    elif active_tab == 'by_item':
-        # БАРААГААР
-        item_qs = purchase_qs
-        
-        if item_filter:
-            item_qs = item_qs.filter(itemname__icontains=item_filter)
-        
-        if vendor_filter:
-            item_qs = item_qs.filter(vendorname__icontains=vendor_filter)
-        
-        item_analysis = _get_item_analysis(item_qs)
-        
-        # Dropdown lists
-        items_list = purchase_qs.values_list(
-            'itemname', flat=True
-        ).distinct().exclude(itemname__isnull=True).exclude(itemname='').order_by('itemname')
-        
-        vendors_list = purchase_qs.values_list(
-            'vendorname', flat=True
-        ).distinct().exclude(vendorname__isnull=True).exclude(vendorname='').order_by('vendorname')
-        
-        context.update({
-            'item_analysis': item_analysis,
-            'items': [{'name': i} for i in items_list],
-            'vendors': list(vendors_list),
-        })
-        
-        # Статистик
-        stats = item_qs.aggregate(
-            total_qty=Sum('qty'),
-            total_price=Avg('price'),
-            total_amount=Sum('itemamountfc'),
-            total_orders=Count('documentpkid', distinct=True),
-        )
-        context['stats'] = stats
-        context['total_records'] = item_qs.count()
-        
-    elif active_tab == 'by_date':
-        # ӨДРӨӨР
-        date_qs = purchase_qs
-        
-        date_analysis = _get_purchase_date_analysis(date_qs)
-        
-        # Статистик
-        stats = date_qs.aggregate(
-            total_qty=Sum('qty'),
-            total_price=Avg('price'),
-            total_amount=Sum('itemamountfc'),
-            total_orders=Count('documentpkid', distinct=True),
-        )
-        context['stats'] = stats
-        context['total_records'] = date_qs.count()
-        
-        context['date_analysis'] = date_analysis
-    
     return render(request, 'shop/purchase_report.html', context)
 
 
-# ========== HELPER FUNCTIONS - Purchase Report ==========
-
-def _get_purchase_pivot_summary(purchase_qs, selected_year=None):
-    """Харилцагч->Бараа->Он->Сар->Өдөр бүтэцтэй pivot хүснэгт"""
-    from collections import defaultdict
-    from datetime import datetime
-    
-    # БҮХ өгөгдлийг авах (зөвхөн шаардлагатай талбаруудыг)
-    all_data = purchase_qs.values(
-        'vendorname', 'itemname', 'documentdate', 
-        'qty', 'price', 'itemamountfc', 'documentpkid'
-    ).order_by('vendorname', 'itemname', 'documentdate')
-    
-    # Nested dictionary бүтэц: vendor -> item -> year -> month -> day
-    pivot = defaultdict(lambda: {
-        'items': defaultdict(lambda: {
-            'years': defaultdict(lambda: {
-                'months': defaultdict(lambda: {
-                    'days': defaultdict(lambda: {
-                        'qty': 0,
-                        'price': 0,
-                        'amount': 0,
-                        'orders': set()
-                    }),
-                    'total_qty': 0,
-                    'total_price': 0,
-                    'total_amount': 0,
-                    'total_orders': 0
-                }),
-                'total_qty': 0,
-                'total_price': 0,
-                'total_amount': 0,
-                'total_orders': 0
-            }),
-            'total_qty': 0,
-            'total_price': 0,
-            'total_amount': 0,
-            'total_orders': 0
-        }),
-        'total_qty': 0,
-        'total_price': 0,
-        'total_amount': 0,
-        'total_orders': 0
-    })
-    
-    # Өгөгдлийг бүлэглэх
-    for row in all_data:
-        vendor = row['vendorname'] or 'Тодорхойгүй'
-        item = row['itemname'] or 'Тодорхойгүй'
-        date = row['documentdate']
-        
-        # Type conversion - датабазаас string ирж магадгүй
-        try:
-            qty = float(row['qty']) if row['qty'] else 0
-        except (ValueError, TypeError):
-            qty = 0
-            
-        try:
-            price = float(row['price']) if row['price'] else 0
-        except (ValueError, TypeError):
-            price = 0
-            
-        try:
-            amount = float(row['itemamountfc']) if row['itemamountfc'] else 0
-        except (ValueError, TypeError):
-            amount = 0
-            
-        order_id = row['documentpkid']
-        
-        if not date:
-            continue
-        
-        # Хэрэв date string бол date object болгох
-        if isinstance(date, str):
-            try:
-                date = datetime.strptime(date, '%Y-%m-%d').date()
-            except:
-                continue
-        
-        year = date.year
-        month = date.month
-        day = date.day
-        
-        # Харилцагчийн items доторх item
-        item_data = pivot[vendor]['items'][item]
-        year_data = item_data['years'][year]
-        month_data = year_data['months'][month]
-        day_data = month_data['days'][day]
-        
-        # Өдрийн өгөгдөл
-        day_data['qty'] += qty
-        day_data['price'] = price  # Хамгийн сүүлийн үнэ
-        day_data['amount'] += amount
-        day_data['orders'].add(order_id)
-        
-        # Сарын нийлбэр
-        month_data['total_qty'] += qty
-        month_data['total_price'] = price  # Хамгийн сүүлийн үнэ
-        month_data['total_amount'] += amount
-        if order_id:
-            month_data['total_orders'] = len([d['orders'] for d in month_data['days'].values()])
-        
-        # Оны нийлбэр
-        year_data['total_qty'] += qty
-        year_data['total_price'] = price
-        year_data['total_amount'] += amount
-        
-        # Барааны нийлбэр
-        item_data['total_qty'] += qty
-        item_data['total_price'] = price
-        item_data['total_amount'] += amount
-        
-        # Харилцагчийн нийлбэр
-        pivot[vendor]['total_qty'] += qty
-        pivot[vendor]['total_price'] = price
-        pivot[vendor]['total_amount'] += amount
-    
-    # Dict-рүү хөрвүүлэх
-    result = {}
-    for vendor, vendor_data in sorted(pivot.items()):
-        result[vendor] = {
-            'total_qty': vendor_data['total_qty'],
-            'total_price': vendor_data['total_price'],
-            'total_amount': vendor_data['total_amount'],
-            'items': {}
-        }
-        
-        for item, item_data in sorted(vendor_data['items'].items()):
-            result[vendor]['items'][item] = {
-                'total_qty': item_data['total_qty'],
-                'total_price': item_data['total_price'],
-                'total_amount': item_data['total_amount'],
-                'years': {}
-            }
-            
-            for year, year_data in sorted(item_data['years'].items(), reverse=True):
-                result[vendor]['items'][item]['years'][year] = {
-                    'total_qty': year_data['total_qty'],
-                    'total_price': year_data['total_price'],
-                    'total_amount': year_data['total_amount'],
-                    'months': {}
-                }
-                
-                for month, month_data in sorted(year_data['months'].items()):
-                    result[vendor]['items'][item]['years'][year]['months'][month] = {
-                        'total_qty': month_data['total_qty'],
-                        'total_price': month_data['total_price'],
-                        'total_amount': month_data['total_amount'],
-                        'days': dict(sorted(month_data['days'].items()))
-                    }
-                    
-                    # Өдрийн orders set-ийг тоо болгох
-                    for day, day_data in result[vendor]['items'][item]['years'][year]['months'][month]['days'].items():
-                        day_data['orders'] = len(day_data['orders']) if day_data['orders'] else 0
-    
-    # Grand total
-    grand_total = {
-        'total_qty': sum(v['total_qty'] for v in result.values()),
-        'total_price': sum(v['total_price'] for v in result.values()) / len(result) if result else 0,  # Дундаж үнэ
-        'total_amount': sum(v['total_amount'] for v in result.values()),
-    }
-    
-    return {'data': result, 'grand_total': grand_total}
+@login_required
+def purchase_report_suggest(request):
+    """Татан авалтын тайлангийн хайх талбарын санал (JSON): харилцагч, бараа, баримт."""
+    from django.http import JsonResponse
+    from shop.services import purchase_report as service
+    return JsonResponse(service.suggest(request.GET.get('q')))
 
 
-def _get_purchase_available_years(purchase_qs):
-    """Боломжит жилүүдийг авах"""
-    years = purchase_qs.extra(
-        select={'year': "EXTRACT(year FROM \"DocumentDate\")"}
-    ).values_list('year', flat=True).distinct().order_by('-year')
-    
-    return [int(y) for y in years if y]
+@login_required
+def purchase_report_export(request):
+    """Татан авалтын тайлангийн идэвхтэй tab-ыг (шүүлттэй нь) Excel-ээр. Баримт tab-д мөр бүр (бараагаар) хамт."""
+    from shop.services import purchase_report as service
 
+    tab = request.GET.get('tab') if request.GET.get('tab') in service.TAB_KEYS else 'summary'
+    filters = service.parse_filters(request.GET)
+    period = (f"{filters['date_from'] or 'эхнээс'} ~ {filters['date_to'] or 'одоо'}"
+              if filters['date_from'] or filters['date_to'] else 'бүх хугацаа')
+    money_cols = [('Барааны дүн ₮', 'goods'), ('Гааль', 'customs'), ('Бусад зардал', 'other'), ('НӨАТ', 'vat'),
+                  ('Нийт өртөг', 'total'), ('Зардлын %', 'expense_pct'), ('Хүлээгдэж буй ашиг', 'profit'), ('Ашгийн %', 'margin')]
 
-def _get_vendor_analysis(purchase_qs):
-    """Харилцагчийн (vendor) дэлгэрэнгүй шинжилгээ"""
-    from django.db.models.functions import Cast
-    from django.db.models import FloatField
-    
-    vendor_stats = purchase_qs.annotate(
-        qty_float=Cast('qty', FloatField()),
-        price_float=Cast('price', FloatField()),
-        amount_float=Cast('itemamountfc', FloatField())
-    ).values('vendorname').annotate(
-        total_qty=Sum('qty_float'),
-        total_price=Avg('price_float'),
-        total_amount=Sum('amount_float'),
-        orders=Count('documentpkid', distinct=True),
-        items=Count('itemname', distinct=True)
-    ).order_by('-total_amount')
-    
-    return vendor_stats
+    def values(m):
+        return [round(m[k], 1) if k.endswith('_pct') or k == 'margin' else _excel_number(round(m[k], 2)) for _, k in money_cols]
 
-
-def _get_item_analysis(purchase_qs):
-    """Барааны дэлгэрэнгүй шинжилгээ"""
-    from django.db.models.functions import Cast
-    from django.db.models import FloatField
-    
-    item_stats = purchase_qs.annotate(
-        qty_float=Cast('qty', FloatField()),
-        price_float=Cast('price', FloatField()),
-        amount_float=Cast('itemamountfc', FloatField())
-    ).values('itemname').annotate(
-        total_qty=Sum('qty_float'),
-        total_price=Avg('price_float'),
-        total_amount=Sum('amount_float'),
-        orders=Count('documentpkid', distinct=True),
-        vendors=Count('vendorname', distinct=True)
-    ).order_by('-total_amount')
-    
-    return item_stats
-
-
-def _get_purchase_date_analysis(purchase_qs):
-    """Өдрөөр дэлгэрэнгүй шинжилгээ"""
-    from django.db.models.functions import Cast
-    from django.db.models import FloatField
-    
-    date_stats = purchase_qs.annotate(
-        qty_float=Cast('qty', FloatField()),
-        price_float=Cast('price', FloatField()),
-        amount_float=Cast('itemamountfc', FloatField())
-    ).values('documentdate').annotate(
-        total_qty=Sum('qty_float'),
-        total_price=Avg('price_float'),
-        total_amount=Sum('amount_float'),
-        orders=Count('documentpkid', distinct=True),
-        vendors=Count('vendorname', distinct=True)
-    ).order_by('-documentdate')
-    
-    return date_stats
+    if tab == 'tree':
+        # Шатлал: түвшин бүр догол мөртэй, нэгтгэл мөр бүрт
+        levels = service.parse_levels(request.GET.get('levels'))
+        tree, total = service.tree_rows(filters, levels)
+        headers = ['Түвшин', 'Нэр', 'Баримт', 'Бараа', 'Тоо хэмжээ'] + [h for h, _ in money_cols]
+        rows = [[service.TREE_LEVELS[r['level']], '    ' * r['depth'] + str(r['name']), r['docs'], r['items'],
+                 _excel_number(round(r['qty'], 2))] + values(r) for r in tree]
+        totals = (['Нийт', ' › '.join(service.TREE_LEVELS[l] for l in levels), total['docs'], total['items'],
+                   _excel_number(round(total['qty'], 2))] + values(total)) if total else None
+        widths = [12, 60, 9, 8, 12] + [16] * len(money_cols)
+    elif tab == 'summary':
+        s = service.summary(filters)
+        headers = ['Он', 'Сар', 'Баримт', 'Харилцагч', 'Бараа', 'Тоо хэмжээ'] + [h for h, _ in money_cols]
+        rows = []
+        for y in s['years']:
+            for m in y['months']:
+                rows.append([y['year'], m['month'], m['docs'], m['vendors'], m['items'], _excel_number(round(m['qty'], 2))] + values(m))
+            t = y['total']
+            rows.append([y['year'], 'Нийт', t['docs'], t['vendors'], t['items'], _excel_number(round(t['qty'], 2))] + values(t))
+        t = s['total']
+        totals = (['Нийт', None, t['docs'], t['vendors'], t['items'], _excel_number(round(t['qty'], 2))] + values(t)) if t else None
+        widths = [7, 7, 9, 10, 8, 12] + [16] * len(money_cols)
+    else:
+        b = service.breakdown(filters, tab)
+        lead = {
+            'vendor': (['Код', 'Харилцагч', 'Валют', 'Эхний', 'Сүүлийн', 'Баримт', 'Бараа'],
+                       lambda r: [r['id'], r['name'], r['currencies'], r['first_date'], r['last_date'], r['docs'], r['items']]),
+            'item': (['Код', 'Бараа', 'Нэгж', 'Харилцагч', 'Валют', 'Дундаж үнэ (валют)', 'Сүүлийн нэгж өртөг',
+                      'Хамгийн бага нэгж өртөг', 'Хамгийн их нэгж өртөг', 'Сүүлийн зарах үнэ', 'Сүүлийн огноо', 'Баримт'],
+                     lambda r: [r['id'], r['name'], r['measure'], r['vendor_names'], r['currencies'],
+                                round(r['price_fc'], 4) if r['price_fc'] is not None else None,
+                                _excel_number(round(r['last_unit_cost'] or 0, 2)), _excel_number(round(r['min_unit_cost'] or 0, 2)),
+                                _excel_number(round(r['max_unit_cost'] or 0, 2)), _excel_number(round(r['last_sale_price'] or 0, 2)),
+                                r['last_date'], r['docs']]),
+            'document': (['Огноо', 'Дугаар', 'Харилцагч', 'Валют', 'Ханш', 'Валютын дүн', 'Мөр'],
+                         lambda r: [r['date'], r['name'], r['vendor_name'], r['currency'], r['rate'],
+                                    round(r['fc'] or 0, 2), r['lines']]),
+        }[tab]
+        headers = lead[0] + ['Тоо хэмжээ'] + [h for h, _ in money_cols]
+        rows = [lead[1](r) + [_excel_number(round(r['qty'], 2))] + values(r) for r in b['rows']]
+        totals = None
+        widths = [12, 40] + [12] * (len(lead[0]) - 2) + [12] + [16] * len(money_cols)
+        if tab == 'document':
+            # Баримт бүрийн мөрүүдийг доор нь (догол мөртэй) нэмнэ
+            expanded = []
+            for r, row in zip(b['rows'], rows):
+                expanded.append(row)
+                for line in b['lines'].get(r['id'], []):
+                    expanded.append([None, f"   {line['item']}", line['item_id'], line['measure'], line['price'],
+                                     round(line['fc'] or 0, 2), None, _excel_number(round(line['qty'] or 0, 2)),
+                                     _excel_number(round(line['goods'] or 0, 2)), _excel_number(round(line['customs'] or 0, 2)),
+                                     _excel_number(round(line['other'] or 0, 2)), None, _excel_number(round(line['total'] or 0, 2))])
+            rows = expanded
+    label = dict((k, l) for k, l, _ in service.TABS)[tab]
+    return _xlsx_response(
+        'Татан авалт', f'Татан авалтын тайлан - {label} ({period})', headers, rows,
+        f'purchase_report_{tab}.xlsx', widths=widths, totals=totals,
+        number_cols=tuple(range(1, len(headers) + 1)),
+    )
 
 
 """
@@ -2865,7 +2588,7 @@ def meal_material_calc(request):
     for rows in repetition_by_type.values():
         rows.sort(key=lambda r: (-r['count'], r['name']))
 
-    # Ажлын өдөр бүрийн хоолны хуваарь (огноо, 2-р хоол, 1-р хоол)
+    # Ажлын өдөр бүрийн хоолны хуваарь (огноо, 2-р хоол, хачир, 1-р хоол)
     meals_by_number = {}
     for meal in meals:
         for n in meal.number_list:
@@ -2878,6 +2601,7 @@ def meal_material_calc(request):
                 'date': day,
                 'number': n,
                 'meal_2': ', '.join(m.name for m in day_meals if m.meal_type == '2'),
+                'meal_3': ', '.join(m.name for m in day_meals if m.meal_type == '3'),
                 'meal_1': ', '.join(m.name for m in day_meals if m.meal_type == '1'),
             })
     daily_rows.sort(key=lambda r: r['date'])
@@ -3077,6 +2801,7 @@ def meal_attendance_list(request):
 
     import calendar
     from shop.models import MealAttendance
+    from shop.access import can_access_url
 
     # Анхдагчаар тухайн сарын бүртгэлийг харуулна
     today = timezone.localdate()
@@ -3108,7 +2833,8 @@ def meal_attendance_list(request):
             Q(names__name__icontains=q) | Q(change_comment__icontains=q)
         ).distinct()
     attendances = list(
-        attendances.annotate(headcount=Count('names', distinct=True)).order_by('-date')
+        attendances.annotate(headcount=Count('names', distinct=True))
+        .prefetch_related('swaps__meal', 'swaps__original_meal').order_by('-date')
     )
 
     context = {
@@ -3119,6 +2845,8 @@ def meal_attendance_list(request):
         'q': q,
         'total_headcount': sum(a.headcount for a in attendances),
         'is_filtered': bool(status or q) or (date_from, date_to) != (month_start, month_end),
+        # Нэгтгэлийн хажууд "Хоолны мөнгө" товч - харах эрхтэй үед (Нягтланд Ерөнхий нягтлан эрх олгосон бол)
+        'can_view_meal_allowance': can_access_url(request, 'meal_allowance'),
     }
     return render(request, 'shop/meal_attendance_list.html', context)
 
@@ -3151,7 +2879,7 @@ def meal_attendance_summary(request):
 
     attendances = list(
         MealAttendance.objects.filter(date__gte=date_from, date__lte=date_to)
-        .prefetch_related('names')
+        .prefetch_related('names', 'swaps__meal__ingredients')
         .order_by('date')
     )
     dates = [a.date for a in attendances]
@@ -3230,11 +2958,37 @@ def meal_attendance_form(request, pk=None):
     from django.contrib import messages
     from django.shortcuts import get_object_or_404
     from django.forms import inlineformset_factory
-    from shop.models import MealAttendance, MealAttendanceName, MealAttendanceIngredient
+    from shop.models import Meal, MealAttendance, MealAttendanceName, MealAttendanceIngredient, MealAttendanceSwap
     from shop.forms import (
         MealAttendanceForm, MealAttendanceNameFormSet, MealAttendanceNameForm,
         MealAttendanceIngredientForm,
     )
+
+    def posted_swaps(attendance):
+        """"Хоол солих" чеклэсэн хоолнууд: {байрны key (MealAttendance.meal_slots): сольсон Meal}. Ижил төрлийн,
+        тухайн өдөр харагдах хоолоор л солино; өдрийн өөр хоолтой давхцвал солихгүй. Товлоогүй хачирт
+        (original=None) сонгосон хоол нь нэмэгдэнэ."""
+        slots = attendance.meal_slots({})
+        swaps = {}
+        for slot in slots:
+            key, original = slot['key'], slot['original']
+            if not request.POST.get(f'swap-{key}'):
+                continue
+            meal = Meal.objects.filter(
+                Meal.visible_on_q(attendance.date), pk=request.POST.get(f'swap_meal-{key}') or None,
+                meal_type=slot['meal_type'],
+            ).prefetch_related('ingredients').first()
+            if meal and (original is None or meal.pk != original.pk):
+                swaps[key] = meal
+        taken = set()
+        for slot in slots:
+            meal = swaps.get(slot['key'], slot['original'])
+            if meal and meal.pk in taken:
+                swaps.pop(slot['key'], None)
+                meal = slot['original']
+            if meal:
+                taken.add(meal.pk)
+        return swaps
 
     IngredientFormSet = inlineformset_factory(
         MealAttendance, MealAttendanceIngredient,
@@ -3257,14 +3011,24 @@ def meal_attendance_form(request, pk=None):
         formset = MealAttendanceNameFormSet(request.POST, instance=attendance)
         ingredient_formset = IngredientFormSet(request.POST, instance=attendance)
 
+        swaps = posted_swaps(attendance)
         if form.is_valid() and formset.is_valid() and ingredient_formset.is_valid():
-            meals_before_save = list(attendance.meals)
-
             attendance = form.save()
             formset.instance = attendance
             formset.save()
             ingredient_formset.instance = attendance
             ingredient_formset.save()
+
+            # Хоол солилт: чеклээгүй болсон солилтыг устгаж, шинийг хадгална
+            slots = attendance.meal_slots(swaps)
+            attendance.swaps.all().delete()
+            MealAttendanceSwap.objects.bulk_create([
+                MealAttendanceSwap(attendance=attendance, original_meal=slot['original'], meal=swaps[slot['key']])
+                for slot in slots if slot['key'] in swaps
+            ])
+            day_meals = [slot['meal'] for slot in slots if slot['meal']]
+            # Сольж гарсан хоолны (өдрийн хоолонд ороогүй) орцын хувилбар үлдэхгүй
+            attendance.ingredient_overrides.exclude(meal_id__in=[m.pk for m in day_meals]).delete()
 
             after_snapshot = {
                 (o.meal_id, o.item_id, o.quantity, o.unit)
@@ -3272,7 +3036,7 @@ def meal_attendance_form(request, pk=None):
             }
             template_snapshot = {
                 (m.pk, ing.item_id, ing.quantity, ing.unit)
-                for m in meals_before_save for ing in m.ingredients.all()
+                for m in day_meals for ing in m.ingredients.all()
             }
             changed = after_snapshot != template_snapshot
             if changed != attendance.ingredients_changed:
@@ -3351,24 +3115,55 @@ def meal_attendance_form(request, pk=None):
             current_item_id = ing_form.instance.item_id if ing_form.instance.pk else ing_form.initial.get('item_id')
             ing_form.display_name = item_names.get(current_item_id, current_item_id)
 
-    # Орцны form-уудыг хоол тус бүрээр нь бүлэглэж, загварт харуулахад бэлтгэнэ
-    meals_for_context = list(attendance.meals) if attendance.date else []
+    # Орцны form-уудыг хоол тус бүрээр нь бүлэглэж, загварт харуулахад бэлтгэнэ. Хадгалж чадаагүй (алдаатай)
+    # POST-д илгээсэн солилтоор нь харуулна
+    slots = attendance.meal_slots(swaps if request.method == 'POST' else None) if attendance.date else []
     forms_by_meal = {}
     for ing_form in ingredient_formset.forms:
-        meal_id = ing_form.instance.meal_id or ing_form.initial.get('meal')
-        forms_by_meal.setdefault(meal_id, []).append(ing_form)
-    meal_ingredient_groups = [(meal, forms_by_meal.get(meal.pk, [])) for meal in meals_for_context]
+        meal_id = ing_form.instance.meal_id or ing_form.initial.get('meal') or (
+            ing_form.data.get(ing_form.add_prefix('meal')) if ing_form.is_bound else None)
+        forms_by_meal.setdefault(str(meal_id), []).append(ing_form)
+    for slot in slots:
+        slot['forms'] = forms_by_meal.get(str(slot['meal'].pk), []) if slot['meal'] else []
+
+    # "Хоол солих" сонголт: төрөл тус бүрийн хоолнууд, сонгосон хоолны стандарт жор (JS-ээр орцыг солино)
+    swap_choices, swap_recipes = {}, {}
+    if slots:
+        from datamigration.models import OpenDataItem
+        candidates = list(
+            Meal.objects.filter(Meal.visible_on_q(attendance.date), meal_type__in={slot['meal_type'] for slot in slots})
+            .prefetch_related('ingredients', 'numbers').order_by('name')
+        )
+        recipe_item_names = dict(OpenDataItem.objects.filter(
+            pk__in={ing.item_id for m in candidates for ing in m.ingredients.all()}
+        ).values_list('id', 'name'))
+        for m in candidates:
+            swap_choices.setdefault(m.meal_type, []).append(m)
+            swap_recipes[m.pk] = {
+                'name': m.name,
+                'ingredients': [
+                    {'item_id': ing.item_id, 'name': recipe_item_names.get(ing.item_id, ing.item_id),
+                     'quantity': '' if ing.quantity is None else str(ing.quantity), 'unit': ing.unit or ''}
+                    for ing in m.ingredients.all()
+                ],
+            }
+        for slot in slots:
+            slot['choices'] = swap_choices.get(slot['meal_type'], [])
 
     context = {
         'form': form,
         'formset': formset,
         'ingredient_formset': ingredient_formset,
-        'meal_ingredient_groups': meal_ingredient_groups,
+        'meal_slots': slots,
+        'swap_recipes': swap_recipes,
         'attendance': attendance if attendance.pk else None,
         'selected_date': attendance.date,
         'menu_number': attendance.menu_number,
-        'meals': meals_for_context,
+        'meals': [slot['meal'] for slot in slots if slot['meal']],
         'is_weekend': attendance.date.weekday() >= 5,
+        # Нэр нэмэхэд санал болгох идэвхтэй ажилчид (нэр, албан тушаал)
+        'employee_names': OpenDataEmployee.objects.filter(isreclusion='N').exclude(name__isnull=True).exclude(name='')
+                                                  .order_by('name').values_list('name', 'positionname'),
     }
     return render(request, 'shop/meal_attendance_form.html', context)
 
@@ -3546,8 +3341,8 @@ def _attendance_filter(request):
     today = timezone.localdate()
     saved_filter = dict(request.session.get('attendance_filter') or {})
     # missing: '1' бол ажиллаагүй өдрүүдийг харуулна (хуудсан дээр JS-ээр асааж/унтраана);
-    # age_min/age_max: насны шүүлт (_age_range)
-    for key in ('date_from', 'date_to', 'q', 'missing', 'age_min', 'age_max'):
+    # age_min/age_max: насны шүүлт (_age_range); weekdays: гаригийн шүүлт (_attendance_weekdays)
+    for key in ('date_from', 'date_to', 'q', 'missing', 'age_min', 'age_max', 'weekdays'):
         if key in request.GET:
             saved_filter[key] = request.GET.get(key)
     request.session['attendance_filter'] = saved_filter
@@ -3565,6 +3360,25 @@ def _attendance_filter(request):
     return date_from, date_to, name_query
 
 
+# Гаригийн шүүлтийн сонголт: (JS Date.getDay() / Django date:'w' дугаар - Ням=0, товчлол, бүтэн нэр)
+ATTENDANCE_WEEKDAYS = [
+    (1, 'Да', 'Даваа'), (2, 'Мя', 'Мягмар'), (3, 'Лх', 'Лхагва'), (4, 'Пү', 'Пүрэв'),
+    (5, 'Ба', 'Баасан'), (6, 'Бя', 'Бямба'), (0, 'Ня', 'Ням'),
+]
+
+
+def _attendance_weekdays(request):
+    """Session-д хадгалсан гаригийн шүүлт (Ням=0 ... Бямба=6) - хоосон бол бүх гариг.
+    _attendance_filter-ийн дараа дуудна."""
+    raw = (request.session.get('attendance_filter') or {}).get('weekdays') or ''
+    return {int(v) for v in raw.split(',') if v.strip().isdigit() and int(v) <= 6}
+
+
+def _date_weekday_number(d):
+    """date -> Ням=0 ... Бямба=6 (Python-ий weekday() нь Даваа=0)."""
+    return (d.weekday() + 1) % 7
+
+
 def _matches_name_query(row, name_query):
     """Цаг бүртгэлийн мөр нэрийн шүүлтэд (нэр эсвэл ажилтны кодын хэсэг, том жижиг үсэг ялгахгүй) тохирох эсэх -
     хуудасны JS шүүлттэй ижил дүрэм."""
@@ -3579,7 +3393,7 @@ def attendance_filter_save(request):
     """Цаг бүртгэлийн нэрийн шүүлт, 'ажиллаагүй өдрийг харуулах' сонголтыг (хуудсан дээр өөрчлөх бүрт JS-ээс
     дуудна) session-д хадгална - ингэснээр refresh, засварын дараа ч хэвээр үлдэнэ."""
     from django.http import HttpResponse
-    if request.user.is_staff and any(k in request.GET for k in ('q', 'missing', 'age_min', 'age_max')):
+    if request.user.is_staff and any(k in request.GET for k in ('q', 'missing', 'age_min', 'age_max', 'weekdays')):
         _attendance_filter(request)
     return HttpResponse(status=204)
 
@@ -3712,11 +3526,14 @@ def attendance_export(request):
 
     date_from, date_to, name_query = _attendance_filter(request)
     age_min, age_max = _age_range(request, 'attendance_filter')
+    weekdays = _attendance_weekdays(request)
     ages = get_employee_ages()
     rows = [
         r for r in build_attendance_rows(date_from, date_to)
         if _matches_name_query(r, name_query) and age_in_range(ages.get(r['employee_code']), age_min, age_max)
+        and (not weekdays or _date_weekday_number(r['date']) in weekdays)
     ]
+    weekday_label = (' · гариг: ' + ', '.join(full for n, _, full in ATTENDANCE_WEEKDAYS if n in weekdays)) if weekdays else ''
     headers = [
         'Хурууны код', 'Ажилтны код', 'Нэр', 'Албан тушаал', 'Огноо', 'Гариг', 'Ирсэн цаг', 'Тарсан цаг',
         '1-10 минут', '11-20 минут', '20-с дээш минут', 'Нийт хоцорсон минут', 'Харилцагчийн нэр',
@@ -3738,7 +3555,7 @@ def attendance_export(request):
     return _xlsx_response(
         'Цаг бүртгэл',
         f'Цаг бүртгэл: {date_from:%Y-%m-%d} ~ {date_to:%Y-%m-%d}' + (f' · нэрээр шүүсэн: "{name_query}"' if name_query else '')
-        + _age_range_label(age_min, age_max),
+        + _age_range_label(age_min, age_max) + weekday_label,
         headers, data,
         f'attendance_{date_from:%Y%m%d}_{date_to:%Y%m%d}.xlsx',
         widths=[10, 10, 22, 20, 11, 9, 9, 9, 9, 9, 10, 11, 40],
@@ -3857,6 +3674,9 @@ def attendance_calc(request):
         'name_query': name_query,
         'age_min': age_min,
         'age_max': age_max,
+        # Гаригийн шүүлтийг ч хуудсан дээр JS шүүнэ (мөр бүрийн data-dow)
+        'weekday_choices': ATTENDANCE_WEEKDAYS,
+        'weekday_filter': _attendance_weekdays(request),
         'table_rows': table_rows,
         'missing_count': len(missing_days),
         'show_missing': show_missing,
@@ -4304,7 +4124,10 @@ def payroll_export(request, sheet):
             ('ХХОАТ тооцох дүн', 'taxable'), ('Хөнгөлөлт шатлалаар', 'credit'), ('ХХОАТ', 'pit'),
             ('Нийт татварын суутгал', 'total_tax'),
         ]
-    columns += [(label, field) for field, label, _ in DEDUCTION_COLUMNS]
+    for field, label, _ in DEDUCTION_COLUMNS:
+        columns.append((label, field))
+        if not is_card and field == 'advance':
+            columns.append(('Олговол зохих', 'gross_less_advance'))
     columns += [(label, field) for field, label in BENEFIT_FIELDS]
     columns += [('Гарт олгох', 'net_pay'), ('Хадгаламж', 'deposit'),
                 ('Картанд орох' if is_card else 'Бэлнээр олгох', 'payout')]
@@ -4350,39 +4173,70 @@ def _parse_year_month(value, default):
 @login_required
 def cash_bank_accounts(request):
     """Бэлэн цалингийн данс: бэлэн / хосолсон цалинтай ажилчдын дансыг (Цалингийн тохиргооноос) цэгцэлж харуулна -
-    "MN"-ийн араас тоонуудыг зайгүй (shop.services.bank_accounts). Сонгосон сарын бэлэн цалингийн олгох дүн хамт.
-    Шүүлтүүр: хайлт, банк, албан тушаал, хэлтэс, олгох хэлбэр, дансны төлөв, идэвхтэй эсэх. Excel."""
-    if not request.user.is_staff:
-        from django.contrib import messages
-        messages.warning(request, 'Энэ хуудас зөвхөн ажилтанд зориулагдсан.')
-        return redirect('shop:home')
-
+    "MN"-ийн араас тоонуудыг зайгүй (shop.services.bank_accounts). Сонгосон сарын бэлэн цалингийн олгох дүн,
+    ачааны мөнгө (Ачаа буулгалтын сарын нэгтгэл), хоолны мөнгө (Хоолны мөнгө) ба тэдгээрийн нийлбэр (хуулж болно).
+    Ачааны / хоолны мөнгөтэй картын цалинтай ажилтан ч орно. Бэлэн данс оруулаагүй бол ажилтны мэдээлэл дэх
+    (картын цалингийн) данс. Шүүлтүүр: хайлт, банк, албан тушаал, хэлтэс, олгох хэлбэр, дансны төлөв, идэвхтэй эсэх. Excel."""
     from urllib.parse import urlencode
+    from django.db import connection
     from shop.models import EmployeePayProfile, PayrollEntry
-    from shop.services.bank_accounts import account_info
+    from shop.services.bank_accounts import UNKNOWN_BANK, account_info
+    from shop.services.meal_allowance import build_meal_allowance
     from shop.services.payroll_snapshot import get_payroll
+    from shop.services.unloading import month_data as unloading_month_data
 
     year, month = _month_from_request(request.GET)
-    profiles = list(EmployeePayProfile.objects.filter(
-        pay_type__in=[EmployeePayProfile.PAY_CASH, EmployeePayProfile.PAY_MIXED]))
-    employees = {e.id: e for e in OpenDataEmployee.objects.filter(id__in=[p.employee_code for p in profiles])}
     cash_rows, _, _, close = get_payroll(year, month, PayrollEntry.SHEET_CASH)
     payouts = {r['employee_code']: r['payout'] for r in cash_rows}
+    unloading_amounts = {r['code']: r['amount'] for r in unloading_month_data(year, month)['summary_rows'] if r['amount']}
+    meal_amounts = {r['employee_code']: r['amount'] for r in build_meal_allowance(year, month)[0]
+                    if r['is_employee'] and r['amount']}
+
+    # Бэлэн / хосолсон цалинтай ажилчид + ачааны / хоолны мөнгөтэй бусад (картын) ажилчид
+    profiles = {p.employee_code: p for p in EmployeePayProfile.objects.filter(
+        Q(pay_type__in=[EmployeePayProfile.PAY_CASH, EmployeePayProfile.PAY_MIXED])
+        | Q(employee_code__in=set(unloading_amounts) | set(meal_amounts)))}
+    codes = set(profiles) | set(unloading_amounts) | set(meal_amounts)
+    employees = {e.id: e for e in OpenDataEmployee.objects.filter(id__in=codes)}
+    with connection.cursor() as cursor:
+        cursor.execute('SELECT "Id", "BankName", "BankAccountId" FROM "OpenDataEmployee" WHERE "Id" = ANY(%s)', [list(codes)])
+        system_accounts = {code: (bank or '', account or '') for code, bank, account in cursor.fetchall()}
     pay_labels = dict(EmployeePayProfile.PAY_CHOICES)
 
     all_rows = []
-    for p in profiles:
-        e = employees.get(p.employee_code)
-        info = account_info(p.cash_bank_account)
+    for code in codes:
+        p = profiles.get(code)
+        e = employees.get(code)
+        cash_account = p.cash_bank_account if p else ''
+        info = account_info(cash_account)
+        account_source = 'cash' if info['status'] != 'missing' else ''
+        if info['status'] == 'missing':
+            # Бэлэн данс оруулаагүй бол ажилтны мэдээлэл дэх (картын цалингийн) данс
+            system_bank, system_account = system_accounts.get(code, ('', ''))
+            if system_account.strip():
+                info = account_info(system_account)
+                if info['bank'] == UNKNOWN_BANK and system_bank:
+                    info['bank'] = system_bank
+                account_source = 'system'
+        payout = payouts.get(code)
+        unloading_amount = unloading_amounts.get(code)
+        meal_amount = meal_amounts.get(code)
+        pay_type = p.pay_type if p else ''
         all_rows.append({
-            'code': p.employee_code,
-            'name': e.name if e else p.employee_code,
+            'code': code,
+            'name': e.name if e else code,
             'position': (e.positionname if e else '') or '',
             'department': (e.departmentname if e else '') or '',
             'active': bool(e and e.isreclusion == 'N'),
-            'pay_type': p.pay_type,
-            'pay_label': pay_labels.get(p.pay_type, ''),
-            'payout': payouts.get(p.employee_code),
+            'pay_type': pay_type,
+            'pay_label': pay_labels.get(pay_type, ''),
+            'payout': payout,
+            'unloading': unloading_amount,
+            'meal': meal_amount,
+            # Бэлэн олгох + ачааны мөнгө + хоолны мөнгө (аль нэг нь бодогдсон бол)
+            'total': (sum((v for v in (payout, unloading_amount, meal_amount) if v), Decimal(0))
+                      if any(v is not None for v in (payout, unloading_amount, meal_amount)) else None),
+            'account_source': account_source,
             **info,
         })
 
@@ -4419,6 +4273,9 @@ def cash_bank_accounts(request):
         'bank': lambda r: r['bank'],
         'account': lambda r: r['account'],
         'payout': lambda r: r['payout'] if r['payout'] is not None else Decimal(0),
+        'total': lambda r: r['total'] if r['total'] is not None else Decimal(0),
+        'unloading': lambda r: r['unloading'] or Decimal(0),
+        'meal': lambda r: r['meal'] or Decimal(0),
     }
     sort = request.GET.get('sort') or 'position'
     sort_field = sort.lstrip('-') if sort.lstrip('-') in sort_keys else 'position'
@@ -4427,23 +4284,25 @@ def cash_bank_accounts(request):
     rows = [r for r in all_rows if keep(r)]
     rows.sort(key=lambda r: r['name'] or '')
     rows.sort(key=sort_keys[sort_field], reverse=descending)
-    empty_last = {'position': 'position', 'bank': 'bank', 'account': 'account', 'payout': 'payout'}.get(sort_field)
+    empty_last = {'position': 'position', 'bank': 'bank', 'account': 'account', 'payout': 'payout',
+                  'total': 'total', 'unloading': 'unloading', 'meal': 'meal'}.get(sort_field)
     if empty_last:
         rows.sort(key=lambda r: r[empty_last] in ('', None))
     for i, r in enumerate(rows, start=1):
         r['no'] = i
 
     if request.GET.get('export') == 'xlsx':
+        money_keys = ('total', 'payout', 'unloading', 'meal')
         headers = ['№', 'Ажилтны код', 'Ажилтан', 'Албан тушаал', 'Хэлтэс', 'Олгох хэлбэр', 'Банк', 'Данс',
-                   f'Бэлэн олгох дүн ({year}.{month:02d})']
-        data = [[r['no'], r['code'], r['name'], r['position'], r['department'], r['pay_label'], r['bank'], r['account'],
-                 _excel_number(r['payout']) if r['payout'] is not None else None] for r in rows]
-        total = sum((r['payout'] or 0 for r in rows), Decimal(0))
+                   f'Нийт ({year}.{month:02d})', 'Бэлэн олгох дүн', 'Ачааны мөнгө', 'Хоолны мөнгө']
+        data = [[r['no'], r['code'], r['name'], r['position'], r['department'], r['pay_label'], r['bank'], r['account']]
+                + [_excel_number(r[k]) if r[k] is not None else None for k in money_keys] for r in rows]
         return _xlsx_response(
             'Бэлэн цалингийн данс', f'Бэлэн цалингийн данс - {year} оны {MONTH_NAMES_MN[month - 1]}', headers, data,
-            f'cash_bank_accounts_{year}_{month:02d}.xlsx', widths=[5, 10, 24, 22, 18, 12, 22, 26, 16],
-            totals=['Нийт', None, f'{len(rows)} ажилтан', None, None, None, None, None, _excel_number(total)],
-            number_cols=(9,),
+            f'cash_bank_accounts_{year}_{month:02d}.xlsx', widths=[5, 10, 24, 22, 18, 12, 22, 26, 16, 16, 14, 14],
+            totals=['Нийт', None, f'{len(rows)} ажилтан', None, None, None, None, None]
+            + [_excel_number(sum((r[k] or 0 for r in rows), Decimal(0))) for k in money_keys],
+            number_cols=(9, 10, 11, 12),
         )
 
     def options(key):
@@ -4462,14 +4321,16 @@ def cash_bank_accounts(request):
              ('asc' if sort == key else 'desc' if sort == f'-{key}' else ''))
             for key, label, right in [
                 ('name', 'Ажилтан', False), ('position', 'Албан тушаал', False), ('pay_type', 'Олгох хэлбэр', False),
-                ('bank', 'Банк', False), ('account', 'Данс', False), ('payout', 'Бэлэн олгох дүн', True),
+                ('bank', 'Банк', False), ('account', 'Данс', False), ('total', 'Нийт', True),
+                ('payout', 'Бэлэн олгох дүн', True), ('unloading', 'Ачааны мөнгө', True), ('meal', 'Хоолны мөнгө', True),
             ]
         ],
         'close': close,
         'bank_options': options('bank'),
         'position_options': options('position'),
         'department_options': options('department'),
-        'pay_type_options': [(EmployeePayProfile.PAY_CASH, 'Бэлэн'), (EmployeePayProfile.PAY_MIXED, 'Хосолсон')],
+        'pay_type_options': [(EmployeePayProfile.PAY_CASH, 'Бэлэн'), (EmployeePayProfile.PAY_MIXED, 'Хосолсон'),
+                             (EmployeePayProfile.PAY_CARD, 'Карт')],
         'status_options': [('ok', 'Зөв'), ('invalid', 'Шалгах (урт буруу)'), ('missing', 'Данс оруулаагүй')],
         'has_filters': any(f[k] for k in ('q', 'bank', 'position', 'department', 'pay_type', 'status')),
         'summary': {
@@ -4478,8 +4339,13 @@ def cash_bank_accounts(request):
             'invalid': sum(1 for r in rows if r['status'] == 'invalid'),
             'missing': sum(1 for r in rows if r['status'] == 'missing'),
             'payout': sum((r['payout'] or 0 for r in rows), Decimal(0)),
+            'unloading': sum((r['unloading'] or 0 for r in rows), Decimal(0)),
+            'meal': sum((r['meal'] or 0 for r in rows), Decimal(0)),
+            'total': sum((r['total'] or 0 for r in rows), Decimal(0)),
+            'from_system': sum(1 for r in rows if r['account_source'] == 'system'),
+            # Банкаар - нийт (бэлэн + ачаа + хоол) дүнгээр
             'by_bank': [
-                (bank, sum(1 for r in rows if r['bank'] == bank), sum((r['payout'] or 0 for r in rows if r['bank'] == bank), Decimal(0)))
+                (bank, sum(1 for r in rows if r['bank'] == bank), sum((r['total'] or 0 for r in rows if r['bank'] == bank), Decimal(0)))
                 for bank in sorted({r['bank'] for r in rows if r['bank']})
             ],
         },
@@ -4819,6 +4685,165 @@ def payroll_advance(request, sheet):
     return render(request, 'shop/payroll_advance.html', context)
 
 
+def _meal_allowance_data(request, year, month):
+    """Хоолны мөнгөний шүүсэн мөрүүд, нийт дүн ба шүүлтүүрийн сонголтууд (хуудас, Excel хоёр ижил шүүлттэй)."""
+    from shop.services import meal_allowance as service
+
+    rows, unmatched, setting, reconcile = service.build_meal_allowance(year, month)
+    filtered = service.filter_rows(rows, request.GET)
+    return {
+        'rows': filtered,
+        'all_count': len(rows),
+        'totals': service.totals_of(filtered),
+        'unmatched': unmatched,
+        'reconcile': reconcile,
+        'setting': setting,
+        'positions': sorted({r['positionname'] for r in rows if r['positionname']}),
+        'departments': sorted({r['department'] for r in rows if r['department']}),
+        'pay_types': sorted({(r['pay_type'], r['pay_label']) for r in rows if r['pay_type']}),
+        'show_labels': service.SHOW_LABELS,
+        'account_labels': service.ACCOUNT_LABELS,
+        'meals_labels': service.MEALS_LABELS,
+        'sort_labels': service.SORT_LABELS,
+    }
+
+
+@login_required
+def meal_allowance(request):
+    """Хоолны мөнгө - ажилласан ч хоол идээгүй өдрийн мөнгө (shop.services.meal_allowance). Өдрийн мөнгийг
+    нийтэд нь болон ажилтан бүрээр засна; шүүлттэй, Excel, хэвлэх. Нягтланд харах, бодох эрхийг Ерөнхий нягтлан
+    энэ хуудаснаас асааж / унтраана; гар засвар, хоног бүртгэлтэй тулгалт зөвхөн Ерөнхий нягтланд."""
+    from django.contrib import messages
+    from shop.models import EmployeePayProfile, MealAllowanceEntry, PayrollSetting
+    from shop.access import can_access_url, forbidden_response
+    from shop.services.meal_allowance import MANUAL_FIELDS, can_edit_days
+
+    # Middleware хамгаалдаг ч view өөрөө давхар шалгана
+    if not can_access_url(request, 'meal_allowance'):
+        return forbidden_response(request)
+
+    can_edit = can_edit_days(request.user)
+
+    if request.method == 'POST' and request.POST.get('action') == 'accountant_access':
+        # Нягтланд хоолны мөнгө харах, бодох эрх - зөвхөн Ерөнхий нягтлан
+        if can_edit:
+            setting = PayrollSetting.get()
+            setting.meal_allowance_accountant_access = request.POST.get('accountant_access') == '1'
+            setting.save(update_fields=['meal_allowance_accountant_access', 'updated_at'])
+            messages.success(request, 'Нягтланд хоолны мөнгө харах, бодох эрх '
+                             + ('олголоо.' if setting.meal_allowance_accountant_access else 'хаалаа.'))
+        return redirect(f"{reverse('shop:meal_allowance')}?{request.POST.get('querystring', '')}")
+
+    if request.method == 'POST':
+        year, month = _month_from_request(request.POST)
+        if can_edit:
+            # Ажилласан / идсэн / идээгүй өдрийн гар засвар (зөвхөн Ерөнхий нягтлан) - хоосон бол автомат утга
+            day_codes = request.POST.getlist('day_code')
+            day_lists = {f: request.POST.getlist(f'manual_{f}') for f in MANUAL_FIELDS}
+            for i, code in enumerate(day_codes):
+                values = {}
+                for f in MANUAL_FIELDS:
+                    text = (day_lists[f][i] if i < len(day_lists[f]) else '').strip()
+                    values[f] = _parse_decimal(text, default=None) if text else None
+                if all(v is None for v in values.values()):
+                    MealAllowanceEntry.objects.filter(employee_code=code, year=year, month=month).delete()
+                else:
+                    MealAllowanceEntry.objects.update_or_create(
+                        employee_code=code, year=year, month=month, defaults={**values, 'updated_by': request.user},
+                    )
+        setting = PayrollSetting.get()
+        setting.meal_allowance_per_day = _parse_money(request.POST.get('default_rate'), default=setting.meal_allowance_per_day)
+        setting.save(update_fields=['meal_allowance_per_day', 'updated_at'])
+        # Ажилтны дүн: хоосон бол анхдагч (NULL), 0 бол олгохгүй
+        codes = request.POST.getlist('employee_code')
+        rates = request.POST.getlist('rate')
+        for i, code in enumerate(codes):
+            text = (rates[i] if i < len(rates) else '').strip()
+            value = _parse_money(text) if text else None
+            profile = EmployeePayProfile.objects.filter(employee_code=code).first()
+            if profile is None:
+                if value is not None:
+                    EmployeePayProfile.objects.create(
+                        employee_code=code, meal_allowance_per_day=value, updated_by=request.user)
+                continue
+            if profile.meal_allowance_per_day != value:
+                profile.meal_allowance_per_day = value
+                profile.updated_by = request.user
+                profile.save(update_fields=['meal_allowance_per_day', 'updated_by', 'updated_at'])
+        messages.success(request, 'Хоолны мөнгө хадгалагдлаа.')
+        return redirect(f"{reverse('shop:meal_allowance')}?{request.POST.get('querystring', '')}")
+
+    year, month = _month_from_request(request.GET)
+    data = _meal_allowance_data(request, year, month)
+    params = request.GET.copy()
+    params['year'], params['month'] = str(year), str(month)
+    context = {
+        **_month_nav_context(year, month),
+        **data,
+        'active_page': 'meal_allowance',
+        'can_edit_days': can_edit,
+        'filters': request.GET,
+        'querystring': params.urlencode(),
+        'has_filters': any(request.GET.get(k) for k in ('meals', 'q', 'position', 'department', 'pay_type', 'show', 'account')),
+        'print_title': f'{year} ОНЫ {month:02d} САРЫН ХООЛНЫ МӨНГӨ',
+    }
+    return render(request, 'shop/meal_allowance.html', context)
+
+
+@login_required
+def meal_allowance_export(request):
+    """Хоолны мөнгө - хуудсан дээрх шүүлтээр Excel файлаар татна."""
+    from shop.access import can_access_url, forbidden_response
+    if not can_access_url(request, 'meal_allowance_export'):
+        return forbidden_response(request)
+
+    year, month = _month_from_request(request.GET)
+    data = _meal_allowance_data(request, year, month)
+    headers = ['Дд', 'Ажилтны код', 'Нэрс', 'Албан тушаал', 'Ажилласан хоног', 'Идсэн өдөр', 'Идээгүй өдөр',
+               'Мөнгө (өдөрт)', 'Олгох мөнгөн дүн', 'Банкны данс', 'Тайлбар']
+
+    def note_cell(r):
+        # Хүснэгтийн тоон доорх тайлбартай ижил: албан тушаалаар хоног, давхардсан өдөр, идсэн өдөр, идээгүй өдөр
+        notes = []
+        if r['worked_parts'] and r['manual'].get('worked_days') is None:
+            text = ' + '.join(f'{pos} {_excel_number(d)}' for pos, d in r['worked_parts'])
+            if r['shared_days']:
+                text += f" − давхардсан {_excel_number(r['shared_days'])}"
+            notes.append(f'Ажилласан: {text}')
+        if r['is_employee'] and r['manual'].get('eaten_days') is None:
+            if r['eaten_days'] != r['eaten_day_count']:
+                notes.append(f"Идсэн: {_excel_number(r['eaten_days'])} удаа, {r['eaten_day_count']} өдөр")
+            if r['eaten_outside_days']:
+                notes.append(f"Цаг бүртгэлгүй {r['eaten_outside_days']} өдөр хоол идсэн")
+        if r['not_eaten_parts']:
+            notes.append('Идээгүй: ' + ', '.join(f'{pos} {_excel_number(d)}' for pos, d in r['not_eaten_parts']))
+        if r['is_manual']:
+            notes.append('Гараар засварласан')
+        return '; '.join(notes) or None
+    def rate_cell(r):
+        # Албан тушаалаар өөр мөнгөтэй бол "идээгүй өдөр x мөнгө"-өөр задална
+        if r['breakdown']:
+            return '; '.join(f"{b['position']}: {_excel_number(b['not_eaten_days'])} x {_excel_number(b['rate']):,}"
+                             f"={_excel_number(b['amount'])}" for b in r['breakdown'])
+        return _excel_number(r['rate']) if r['rate'] is not None else None
+
+    rows = [
+        [i, r['employee_code'] or None, r['name'], r['positionname'] or None, _excel_number(r['worked_days']),
+         _excel_number(r['eaten_days']), _excel_number(r['not_eaten_days']), rate_cell(r),
+         _excel_number(r['amount']), r['account'] or None, note_cell(r)]
+        for i, r in enumerate(data['rows'], start=1)
+    ]
+    t = data['totals']
+    total_row = [None, None, 'Нийт', None, _excel_number(t['worked_days']), _excel_number(t['eaten_days']),
+                 _excel_number(t['not_eaten_days']), None, _excel_number(t['amount']), None, None]
+    return _xlsx_response(
+        'Хоолны мөнгө', f'Хоолны мөнгө: {year} оны {MONTH_NAMES_MN[month - 1]}', headers, rows,
+        f'meal_allowance_{year}_{month:02d}.xlsx',
+        widths=[5, 10, 24, 24, 11, 10, 10, 12, 14, 30, 60],
+        totals=total_row, number_cols=(5, 6, 7, 8, 9),
+    )
+
+
 @login_required
 def payroll_settings(request):
     """Цалин бодолтын тохиргоо: татварын хувь хэмжээ, ХХОАТ-ын хөнгөлөлтийн шатлал, ажилтан бүрийн
@@ -4885,6 +4910,11 @@ def payroll_settings(request):
             fields = ['pay_type', 'cash_base_salary', 'card_shift_pay', 'cash_shift_pay',
                       'saturday_bonus_percent', 'ndsh_employee_rate', 'ndsh_employer_rate', 'cash_bank_account']
             lists = {f: request.POST.getlist(f) for f in fields}
+            # "Хоолны мөнгө олгох" - чеклэсэн ажилчдын код ирнэ (анхдагч нь олгоно)
+            eats_meals = set(request.POST.getlist('eats_meals'))
+            # Хоолны мөнгөний хуудаснаас оруулсан ажилтны дүнг энэ маягт засахгүй тул устгахаас хамгаална
+            meal_rate_codes = set(EmployeePayProfile.objects.exclude(meal_allowance_per_day__isnull=True)
+                                  .values_list('employee_code', flat=True))
             # Checkbox зөвхөн чеклэсэн үед (ажилтны кодоор) илгээгддэг. Албан тушаалын горимтой таарвал хадгалахгүй
             # (None) - ингэснээр горим өөрчлөгдөхөд дагаж өөрчлөгдөнө
             saturday_included = set(request.POST.getlist('saturday_in_worked_days'))
@@ -4909,11 +4939,15 @@ def payroll_settings(request):
                         None if (code in saturday_included) == (positions.get(code) in saturday_positions)
                         else code in saturday_included
                     ),
+                    'eats_meals': code in eats_meals,
                 }
-                # Анхдагч утгууд (Бямбын нэмэгдлийн анхдагч хувь, горимоор Бямба) нь "тохиргоо хийсэн" гэж тооцогдохгүй
+                # Анхдагч утгууд (Бямбын нэмэгдлийн анхдагч хувь, горимоор Бямба, хоолны мөнгө олгох) нь "тохиргоо хийсэн" гэж
+                # тооцогдохгүй
                 if not values['pay_type'] and not any(
-                    v for k, v in values.items() if k not in ('pay_type', 'saturday_bonus_percent', 'saturday_in_worked_days')
-                ) and values['saturday_bonus_percent'] == SATURDAY_BONUS_DEFAULT and values['saturday_in_worked_days'] is None:
+                    v for k, v in values.items()
+                    if k not in ('pay_type', 'saturday_bonus_percent', 'saturday_in_worked_days', 'eats_meals')
+                ) and values['saturday_bonus_percent'] == SATURDAY_BONUS_DEFAULT and values['saturday_in_worked_days'] is None \
+                        and values['eats_meals'] and code not in meal_rate_codes:
                     EmployeePayProfile.objects.filter(employee_code=code).delete()
                     continue
                 EmployeePayProfile.objects.update_or_create(
@@ -5061,10 +5095,14 @@ def attendance_position_settings(request):
         sort_orders = request.POST.getlist('sort_order')
         worked_equals_required = set(request.POST.getlist('worked_equals_required'))
         no_transport = set(request.POST.getlist('no_transport'))
+        meal_rates = request.POST.getlist('meal_allowance_per_day')
         valid_schedules = {key for key, _ in AttendancePositionRule.SCHEDULE_CHOICES}
-        for position_name, start_time_str, schedule_type, sort_order_str in zip(
+        for i, (position_name, start_time_str, schedule_type, sort_order_str) in enumerate(zip(
             position_names, start_times, schedule_types, sort_orders
-        ):
+        )):
+            meal_text = (meal_rates[i] if i < len(meal_rates) else '').strip()
+            # Хоосон бол анхдагч (PayrollSetting) хоолны мөнгө
+            meal_rate = _parse_money(meal_text) if meal_text else None
             start_time_str = (start_time_str or '').strip()
             if schedule_type not in valid_schedules:
                 schedule_type = AttendancePositionRule.SCHEDULE_WEEKDAYS
@@ -5079,8 +5117,9 @@ def attendance_position_settings(request):
             auto_worked = position_name in worked_equals_required
             skip_transport = position_name in no_transport
             if (start_time is None and schedule_type == AttendancePositionRule.SCHEDULE_WEEKDAYS
-                    and sort_order is None and not auto_worked and not skip_transport):
-                # Бүх утга анхдагч (8 цагийн дүрэм, Бямбад ажилладаггүй, эрэмбэгүй, унаатай) бол мөр хадгалах шаардлагагүй
+                    and sort_order is None and not auto_worked and not skip_transport and meal_rate is None):
+                # Бүх утга анхдагч (8 цагийн дүрэм, Бямбад ажилладаггүй, эрэмбэгүй, унаатай, анхдагч хоолны мөнгө)
+                # бол мөр хадгалах шаардлагагүй
                 AttendancePositionRule.objects.filter(position_name=position_name).delete()
             else:
                 AttendancePositionRule.objects.update_or_create(
@@ -5091,6 +5130,7 @@ def attendance_position_settings(request):
                         'sort_order': sort_order,
                         'worked_equals_required': auto_worked,
                         'no_transport': skip_transport,
+                        'meal_allowance_per_day': meal_rate,
                     },
                 )
 
@@ -5121,11 +5161,14 @@ def attendance_position_settings(request):
             'sort_order': rule.sort_order if rule and rule.sort_order is not None else '',
             'worked_equals_required': bool(rule and rule.worked_equals_required),
             'no_transport': bool(rule and rule.no_transport),
+            'meal_allowance_per_day': rule.meal_allowance_per_day if rule else None,
         })
 
+    from shop.models import PayrollSetting
     return render(request, 'shop/attendance_position_settings.html', {
         'rows': rows,
         'schedule_choices': AttendancePositionRule.SCHEDULE_CHOICES,
+        'default_meal_rate': PayrollSetting.get().meal_allowance_per_day,
     })
 
 

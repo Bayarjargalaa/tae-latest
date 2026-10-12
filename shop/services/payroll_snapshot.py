@@ -120,6 +120,9 @@ def _load_row(raw):
             except InvalidOperation:
                 pass
         row[key] = value
+    # "Олговол зохих" нэмэгдэхээс өмнө хаагдсан сарын хуулбарт байхгүй
+    if 'gross_less_advance' not in row and 'gross' in row:
+        row['gross_less_advance'] = Decimal(row['gross']) - Decimal(row.get('advance') or 0)
     return row
 
 

@@ -276,6 +276,8 @@ def build_timesheet(year, month, employee_code=None):
             'auto_saturday_days': auto_saturday_days,
             # Бямбад ажилласан өдрүүд ажилласан хоногт орсон эсэх (ороогүй бол унааны мөнгөнд тусад нь нэмнэ)
             'saturday_in_worked_days': with_saturday,
+            # Цаг бүртгэлтэй өдрүүд (энэ албан тушаалаар) - хоолны мөнгөнд идсэн өдрийг албан тушаалтай тулгахад
+            'worked_dates': sorted({r['date'] for r in attendance}),
             'leave_days': leave_days,
             'late_1_10': late_1_10,
             'late_11_20': late_11_20,

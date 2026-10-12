@@ -172,7 +172,9 @@ class MealAttendanceNameForm(forms.ModelForm):
         model = MealAttendanceName
         fields = ['name']
         widgets = {
-            'name': forms.TextInput(attrs={'class': 'attendee-name-input w-full border border-gray-300 rounded-lg px-3 py-1.5', 'placeholder': 'Ажилтны нэр'}),
+            # Ажилчдын нэрсээс санал болгоно (meal_attendance_form.html-ийн #employee-names datalist),
+            # жагсаалтад байхгүй нэрийг бичсэнээр нь хадгална
+            'name': forms.TextInput(attrs={'class': 'attendee-name-input w-full border border-gray-300 rounded-lg px-3 py-1.5', 'placeholder': 'Ажилтны нэр', 'list': 'employee-names', 'autocomplete': 'off'}),
         }
 
 

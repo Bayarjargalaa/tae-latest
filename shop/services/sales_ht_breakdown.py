@@ -19,6 +19,7 @@ from shop.services.sales_ht import (
     _customer_conditions,
     _expand_customer_groups,
     _sale_conditions,
+    item_names_in_groups,
 )
 
 NO_SELLER_LABEL = '(борлуулагчгүй)'
@@ -129,6 +130,8 @@ def build_breakdown(filters):
     snapshot = InventorySnapshot.objects.all()
     if filters['items']:
         snapshot = snapshot.filter(itemname__in=filters['items'])
+    if filters['item_groups']:
+        snapshot = snapshot.filter(itemname__in=item_names_in_groups(filters['item_groups']))
     stock = [
         [name, float(jijig), float(tolgoit), float(altjin)]
         for name, jijig, tolgoit, altjin in snapshot.order_by('itemname').values_list(

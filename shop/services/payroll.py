@@ -23,6 +23,7 @@
     Хөнгөлөлт               = НДШ хассан дүнгийн (ХХОАТ тооцох дүн) шатлалаар (PayrollTaxCredit)
     ХХОАТ                   = max(ХХОАТ тооцох дүн x хувь - хөнгөлөлт, 0)
   Бэлэн хуудсанд татварын суутгал байхгүй.
+- Олговол зохих = бодогдсон нийт цалин - урьдчилгаа (бэлэн хуудсанд урьдчилгааны ард харагдана)
 - Гарт олгох = нийт цалин - нийт татварын суутгал - суутгалууд + ХЧТА (байгууллага, НД-с)
 - Картанд орох / Бэлнээр олгох = гарт олгох - хадгаламж (OpenDataEmployee.D5, ажилтны үндсэн хуудсанд)
 """
@@ -223,6 +224,7 @@ def build_payroll(year, month, sheet, employee_code=None):
             'cash_bank_account': '' if is_card else profile.cash_bank_account,
             'earned_salary': earned_salary,
             'gross': gross,
+            'gross_less_advance': gross - manual['advance'],
             'ndsh_code': (extras.get('insuredtypeid') or '') if is_card else '',
             'ndsh_employee_rate': ndsh_employee_rate,
             'ndsh_employee': ndsh_employee,
@@ -244,7 +246,7 @@ def build_payroll(year, month, sheet, employee_code=None):
 
 TOTAL_KEYS = [
     'base_salary', 'seniority_bonus', 'nominal_salary', 'required_days', 'required_hours', 'worked_days',
-    'worked_hours', 'saturday_hours', 'saturday_bonus', 'transport', 'earned_salary', 'gross', 'ndsh_employee', 'ndsh_employer', 'taxable',
+    'worked_hours', 'saturday_hours', 'saturday_bonus', 'transport', 'earned_salary', 'gross', 'gross_less_advance', 'ndsh_employee', 'ndsh_employer', 'taxable',
     'credit', 'pit', 'total_tax', 'net_pay', 'deposit', 'payout',
 ] + MANUAL_FIELDS + AUTO_DEDUCTION_FIELDS
 

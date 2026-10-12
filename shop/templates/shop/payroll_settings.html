@@ -4,6 +4,23 @@
 
 {% block hide_mobile_menu %}hidden{% endblock %}
 
+{% block extra_css %}
+<style>
+/* Ажилчдын цалингийн мэдээлэл: хүснэгт өөрийн хайрцагтаа хоёр чиглэлд гүйж, толгой нь дээд захдаа, нэр нь зүүн
+   захдаа тогтоно (цалин бодолтын хүснэгттэй адил). border-collapse: separate - sticky нүдний хүрээ алга болохгүй */
+.ps-scroll { max-height: calc(100vh - 11rem); overflow: auto; overscroll-behavior: contain; }
+.ps-table { border-collapse: separate; border-spacing: 0; }
+.ps-table td, .ps-table th { border-bottom: 1px solid #e5e7eb; }
+.ps-table thead th { position: sticky; top: 0; z-index: 2; background: #f3f4f6; }
+.ps-table .ps-sticky-name { position: sticky; left: 0; z-index: 1; background: #fff; box-shadow: inset -2px 0 0 #d1d5db; }
+.ps-table thead .ps-sticky-name { z-index: 3; background: #f3f4f6; }
+@media (max-width: 639px) {
+    .ps-table .ps-sticky-name { max-width: 8.5rem; white-space: normal; }
+    .ps-scroll { max-height: calc(100vh - 9rem); }
+}
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="flex min-h-screen bg-gray-50">
     {% include 'shop/_sidebar.html' with active_page='payroll_card' %}
@@ -131,15 +148,16 @@
                         "Бямбыг хоногт оруулах" - чеклэсэн бол Бямба гарагууд ажиллавал зохих хоногт нэмэгдэж, Бямбад ажилласан өдөр ажилласан хоногт тоологдоно; үгүй бол аль алинд нь тоологдохгүй (Бямбын нэмэгдэлд үргэлж тоологдоно).
                         Анхдагчаар албан тушаалын ажлын горимоор; ✎ - тусгайлан өөрөөр тохируулсан.
                         Бямбын нэмэгдэл % - бодогдсон Бямбад ажилласан нэмэгдлийн (үндсэн цалин / зохих цаг x Бямбад ажилласан цаг) хэдэн хувийг олгох: 100 бүтэн, 50 тал.
-                        НДШ-ийн % зөвхөн тухайн ажилтанд өөр хувь хэрэглэх бол бөглөнө - хоосон бол НДШ-ийн кодын хувь, тэр нь хоосон бол анхдагч хувь.</p>
+                        НДШ-ийн % зөвхөн тухайн ажилтанд өөр хувь хэрэглэх бол бөглөнө - хоосон бол НДШ-ийн кодын хувь, тэр нь хоосон бол анхдагч хувь.
+                        "Хоолны мөнгө олгох" - чеклээгүй ажилтанд <a href="{% url 'shop:meal_allowance' %}" class="text-primary underline">Хоолны мөнгө</a> олгохгүй (хоол идэх нэрсэд бичигдэж, идсэн тоонд нь орно).</p>
                 </div>
                 <button type="submit" class="bg-primary text-white px-6 py-2 rounded-lg hover:bg-green-700 transition whitespace-nowrap">💾 Хадгалах</button>
             </div>
-            <div class="overflow-x-auto">
-                <table class="min-w-full text-sm border border-gray-200">
+            <div class="ps-scroll">
+                <table class="ps-table min-w-full text-sm border border-gray-200">
                     <thead>
                         <tr class="bg-gray-100 text-left align-bottom">
-                            <th class="px-2 py-2 font-semibold text-gray-700">Нэр</th>
+                            <th class="ps-sticky-name px-2 py-2 font-semibold text-gray-700">Нэр</th>
                             <th class="px-2 py-2 font-semibold text-gray-700">Албан тушаал</th>
                             <th class="px-2 py-2 font-semibold text-gray-700">Олгох хэлбэр</th>
                             <th class="px-2 py-2 font-semibold text-gray-700">Картын үндсэн цалин / нэг гарын мөнгө</th>
@@ -151,13 +169,14 @@
                             <th class="px-2 py-2 font-semibold text-gray-700">НДШ ажилтан %</th>
                             <th class="px-2 py-2 font-semibold text-gray-700">НДШ байгууллага %</th>
                             <th class="px-2 py-2 font-semibold text-gray-700" title="Бэлэн цалин хэвлэхэд Гарын үсэг баганад гарна">Бэлэн цалингийн данс</th>
+                            <th class="px-2 py-2 font-semibold text-gray-700" title="Чеклээгүй бол хоолны мөнгө олгохгүй (хоолны нэрсэд бичиж болно)">Хоолны мөнгө олгох</th>
                         </tr>
                     </thead>
                     <tbody>
                         {% for e in employees %}
                         {% with p=e.profile %}
                         <tr class="border-t">
-                            <td class="px-2 py-1.5 font-medium text-gray-900 whitespace-nowrap">
+                            <td class="ps-sticky-name px-2 py-1.5 font-medium text-gray-900 whitespace-nowrap">
                                 {{ e.name }}
                                 <input type="hidden" name="employee_code" value="{{ e.employee_code }}">
                             </td>
@@ -203,6 +222,10 @@
                             <td class="px-2 py-1.5">
                                 <input type="text" name="cash_bank_account" maxlength="100" value="{% if p %}{{ p.cash_bank_account }}{% endif %}" placeholder="жиш: MN35 0005 00 5070482122" class="border border-gray-300 rounded-lg px-2 py-1 w-60">
                                 {% if e.system_bank_account %}<div class="text-xs text-gray-400 mt-0.5" title="Ажилтны мэдээлэл дэх данс (картын цалингийнх)">Системд: {{ e.system_bank_account }}</div>{% endif %}
+                            </td>
+                            <td class="px-2 py-1.5 text-center">
+                                <input type="checkbox" name="eats_meals" value="{{ e.employee_code }}" {% if not p or p.eats_meals %}checked{% endif %}
+                                       title="Чеклээгүй бол хоолны мөнгө олгохгүй">
                             </td>
                         </tr>
                         {% endwith %}
