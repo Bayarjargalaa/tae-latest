@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="mn">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ report.title }}</title>
+<style>
+@page { size: A4 landscape; margin: 10mm; }
+* { box-sizing: border-box; }
+body { font-family: Arial, 'Segoe UI', sans-serif; font-size: 11px; color: #000; margin: 0; padding: 12px; background: #fff; }
+.head { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #000; padding-bottom: 6px; margin-bottom: 8px; }
+.org { font-size: 12px; font-weight: 700; }
+h1 { font-size: 16px; margin: 2px 0 0; }
+.meta { font-size: 11px; text-align: right; }
+.meta div { margin: 1px 0; }
+h3 { font-size: 13px; margin: 12px 0 4px; }
+table { width: 100%; border-collapse: collapse; page-break-inside: auto; }
+tr { page-break-inside: avoid; }
+thead { display: table-header-group; }
+th, td { border: 1px solid #555; padding: 2px 4px; vertical-align: top; }
+th { background: #e5e7eb; text-align: center; font-weight: 700; }
+td.num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+tfoot td { font-weight: 700; background: #f3f4f6; }
+.neg { color: #b91c1c; }
+.empty { text-align: center; color: #666; }
+.notes { margin-top: 6px; font-size: 10px; color: #333; }
+.sign { display: flex; gap: 60px; margin-top: 28px; font-size: 11px; }
+.sign div { flex: 1; }
+.sign span { display: inline-block; border-bottom: 1px solid #000; width: 160px; margin-left: 6px; }
+.toolbar { margin-bottom: 10px; }
+.toolbar button { font-size: 13px; padding: 6px 14px; cursor: pointer; }
+@media print { .toolbar { display: none; } body { padding: 0; } }
+</style>
+</head>
+<body>
+<div class="toolbar"><button onclick="window.print()">🖨 Хэвлэх</button> <button onclick="window.close()">Хаах</button></div>
+<div class="head">
+    <div>
+        <div class="org">ТӨГС АМИН ЭРДЭНЭ ХХК</div>
+        <h1>{{ report.title }}</h1>
+    </div>
+    <div class="meta">
+        {% for k, v in report.meta %}<div>{{ k }}: <b>{{ v }}</b></div>{% endfor %}
+        <div>Хэвлэсэн: {{ printed_at|date:'Y.m.d H:i' }} · {{ printed_by }}</div>
+    </div>
+</div>
+{% if report.need_plate %}<p>Машин сонгоогүй байна.</p>{% endif %}
+{% for table in report.tables %}
+    {% if table.title %}<h3>{{ table.title }}</h3>{% endif %}
+    <table>
+        <thead><tr>{% for c in table.columns %}<th>{{ c.label }}</th>{% endfor %}</tr></thead>
+        <tbody>
+        {% for row in table.cells %}
+            <tr>{% for cell in row %}<td class="{% if cell.num %}num{% endif %}{% if cell.neg %} neg{% endif %}">{{ cell.v }}</td>{% endfor %}</tr>
+        {% empty %}
+            <tr><td colspan="{{ table.columns|length }}" class="empty">Мэдээлэл алга.</td></tr>
+        {% endfor %}
+        </tbody>
+        {% if table.total_cells and table.cells %}
+        <tfoot><tr>{% for cell in table.total_cells %}<td class="{% if cell.num %}num{% endif %}">{{ cell.v }}</td>{% endfor %}</tr></tfoot>
+        {% endif %}
+    </table>
+{% endfor %}
+{% if report.notes %}<div class="notes">{% for n in report.notes %}<div>* {{ n }}</div>{% endfor %}</div>{% endif %}
+<div class="sign">
+    <div>Боловсруулсан:<span></span></div>
+    <div>Хянасан:<span></span></div>
+</div>
+<script>window.addEventListener('load', () => setTimeout(() => window.print(), 300));</script>
+</body>
+</html>

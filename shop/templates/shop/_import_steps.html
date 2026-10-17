@@ -1,0 +1,12 @@
+{# shipment.steps / shipment.step_idx - services.imports.decorate #}
+<div class="steps">
+    {% for step in shipment.steps %}
+    <div class="step {% if step.done %}done{% elif step.plan %}plan{% endif %} {% if forloop.counter0 == shipment.step_idx|add:1 %}cur{% endif %}">
+        <span class="dot"></span>
+        <b>{{ step.label }}</b>
+        <span class="sub" title="{{ step.sub }}">{{ step.sub }}</span>
+        <span class="d">{% if step.date %}{{ step.date|date:'Y-m-d' }}{% elif step.done %}✓{% else %}—{% endif %}</span>
+        {% if step.files %}<span class="d" title="Хавсралт">📎 {{ step.files }}</span>{% endif %}
+    </div>
+    {% endfor %}
+</div>

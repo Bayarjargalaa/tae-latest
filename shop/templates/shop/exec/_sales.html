@@ -1,0 +1,225 @@
+{% load humanize exec_filters %}
+{% with k=data.kpis ch=data.kpi_changes %}
+<!-- KPI -->
+<div class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3 mb-4">
+    {% with net=k.net|mnt_short margin=k.margin|pct aov=k.aov|mnt_short qty=k.qty|floatformat:0|intcomma refund_rate=k.refund_rate|pct %}
+    {% include 'shop/exec/_kpi.html' with label='Борлуулалт (НӨАТ-тэй)' value=k.revenue|mnt_short delta=ch.revenue sub='НӨАТ-гүй '|add:net %}
+    {% include 'shop/exec/_kpi.html' with label='Бохир ашиг' value=k.profit|mnt_short delta=ch.profit sub='Ашгийн хувь '|add:margin hint='НӨАТ-гүй борлуулалт - борлуулалтын өртөг' %}
+    {% include 'shop/exec/_kpi.html' with label='Захиалга' value=k.orders|floatformat:0|intcomma delta=ch.orders sub='Дундаж '|add:aov %}
+    {% include 'shop/exec/_kpi.html' with label='Худалдан авсан харилцагч' value=k.customers|floatformat:0|intcomma delta=ch.customers %}
+    {% include 'shop/exec/_kpi.html' with label='Борлуулсан нэр төрөл' value=k.skus|floatformat:0|intcomma delta=ch.skus sub=qty|add:' ширхэг' %}
+    {% include 'shop/exec/_kpi.html' with label='Буцаалт' value=k.refund|mnt_short delta=ch.refund_rate delta_unit='пп' good='down' sub='Борлуулалтын '|add:refund_rate hint='Өөрчлөлт нь буцаалтын хувийн пунктээр' %}
+    {% endwith %}
+</div>
+
+{% if data.forecast or data.plan_total %}
+<div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
+    {% if data.forecast %}
+    <div class="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
+        <div class="text-xs text-gray-500">🔮 Сарын эцсийн таамаг (өнөөдрийг хүртэлх хурдаар)</div>
+        <div class="text-2xl font-bold text-gray-900">{{ data.forecast|mnt_short }}</div>
+        <div class="text-xs text-gray-500">{{ period.date_to.day }} / {{ period.month_days }} хоног өнгөрсөн{% if data.forecast_pct is not None %} · төлөвлөгөөний {{ data.forecast_pct|pct:0 }}{% endif %}</div>
+    </div>
+    {% endif %}
+    {% if data.plan_total %}
+    {% with pt=data.plan_total %}
+    <div class="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
+        <div class="flex justify-between text-xs text-gray-500"><span>🎯 Төлөвлөгөөний биелэлт (төлөвлөгөөтэй сувгууд)</span>{% if can_plan %}<a href="{% url 'shop:sales_plan' %}?month={{ period.date_from|date:'Y-m' }}" class="text-blue-700 hover:underline">Төлөвлөгөө ✏️</a>{% endif %}</div>
+        <div class="flex items-baseline gap-2"><span class="text-2xl font-bold text-gray-900">{{ pt.pct|pct }}</span><span class="text-sm text-gray-500">{{ pt.actual|mnt_short }} / {{ pt.target|mnt_short }}</span></div>
+        <div class="mt-2 h-2 rounded-full bg-gray-100 overflow-hidden relative" role="progressbar" aria-valuenow="{{ pt.pct|floatformat:0 }}" aria-valuemin="0" aria-valuemax="100">
+            <div class="h-full rounded-full bg-[#2a78d6]" style="width: {{ pt.pct|clamp100 }}%"></div>
+            {% if period.in_progress %}<div class="absolute top-0 h-full w-0.5 bg-gray-700" style="left: {{ data.plans.pace_pct|clamp100 }}%;" title="Өнөөдрийн байх ёстой түвшин"></div>{% endif %}
+        </div>
+    </div>
+    {% endwith %}
+    {% endif %}
+</div>
+{% endif %}
+
+<!-- Хуримтлагдсан борлуулалт -->
+<section class="bg-white rounded-xl border border-gray-100 shadow-sm p-4 mb-4">
+    <div class="flex flex-wrap items-baseline justify-between gap-2 mb-2">
+        <h2 class="font-semibold text-gray-800">📈 Хуримтлагдсан борлуулалт</h2>
+        <span class="text-xs text-gray-500">Өдөр бүрийн хуримтлагдсан дүн{% if period.cmp_from %} - харьцуулах үетэй ижил өдрөөр{% endif %}</span>
+    </div>
+    <div class="h-64"><canvas id="chart-sales" aria-label="Хуримтлагдсан борлуулалтын график" role="img"></canvas></div>
+    {{ data.chart|json_script:'data-sales-chart' }}
+</section>
+{% endwith %}
+
+<!-- ХТ-ийн гүйцэтгэл -->
+<section class="bg-white rounded-xl border border-gray-100 shadow-sm mb-4 overflow-hidden">
+    <div class="p-4 pb-2 flex flex-wrap items-baseline justify-between gap-2">
+        <h2 class="font-semibold text-gray-800">🧑‍💼 Худалдааны төлөөлөгч (ХТ) тус бүр</h2>
+        <a href="{% url 'shop:sales_report_ht' %}?date_from={{ period.date_from|date:'Y-m-d' }}&date_to={{ period.date_to|date:'Y-m-d' }}" class="text-xs text-blue-700 hover:underline">Дэлгэрэнгүй тайлан →</a>
+    </div>
+    <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+            <thead class="bg-gray-50 text-xs text-gray-500">
+                <tr>
+                    <th class="px-3 py-2 text-left">ХТ</th>
+                    <th class="px-3 py-2 text-right">Борлуулалт</th>
+                    <th class="px-3 py-2 text-right">Өөрчлөлт</th>
+                    <th class="px-3 py-2 text-left min-w-[9rem]" title="Төлөвлөгөөний биелэлт; | тэмдэг нь өнөөдрийн байх ёстой түвшин">Төлөвлөгөө</th>
+                    <th class="px-3 py-2 text-left min-w-[9rem]" title="Худалдан авсан / бүртгэлтэй идэвхтэй харилцагч">Харилцагчийн хамралт</th>
+                    <th class="px-3 py-2 text-right" title="Нэг харилцагч дунджаар хэдэн нэр төрлийн бараа авсан">Нэр төрөл / харилцагч</th>
+                    <th class="px-3 py-2 text-right">Захиалга</th>
+                    <th class="px-3 py-2 text-right">Дундаж захиалга</th>
+                    <th class="px-3 py-2 text-right">Ашгийн %</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-100">
+                {% for c in data.channels %}{% if c.is_ht %}
+                <tr class="hover:bg-gray-50">
+                    <td class="px-3 py-2 font-medium text-gray-800">{{ c.name }}</td>
+                    <td class="px-3 py-2 text-right tabular-nums">{{ c.revenue|mnt_short }}</td>
+                    <td class="px-3 py-2 text-right tabular-nums {% if c.revenue_change > 0 %}text-green-700{% elif c.revenue_change < 0 %}text-red-700{% endif %}">{% if c.revenue_change is not None %}{{ c.revenue_change|signed }}%{% else %}-{% endif %}</td>
+                    <td class="px-3 py-2">
+                        {% for pr in data.plans.channels %}{% if pr.id == c.id %}
+                        {% if pr.target %}
+                        <div class="flex items-center gap-2">
+                            <div class="flex-1 h-1.5 rounded-full bg-gray-100 overflow-hidden"><div class="h-full rounded-full bg-[#2a78d6]" style="width: {{ pr.pct|clamp100 }}%"></div></div>
+                            <span class="text-xs tabular-nums w-12 text-right">{{ pr.pct|pct:0 }}</span>
+                        </div>
+                        {% if period.in_progress %}
+                        <div class="text-[11px] {% if pr.pace_pct >= 100 %}text-green-700{% elif pr.pace_pct >= 90 %}text-amber-700{% else %}text-red-700{% endif %}">
+                            {% if pr.pace_pct >= 100 %}✓ Хурдтай{% elif pr.pace_pct >= 90 %}◐ Бага зэрэг хоцорсон{% else %}⚠ Хоцорсон{% endif %} · таамаг {{ pr.forecast_pct|pct:0 }}
+                        </div>
+                        {% endif %}
+                        {% else %}<span class="text-xs text-gray-400">төлөвлөгөөгүй</span>{% endif %}
+                        {% endif %}{% endfor %}
+                    </td>
+                    <td class="px-3 py-2">
+                        <div class="flex items-center gap-2">
+                            <div class="flex-1 h-1.5 rounded-full bg-gray-100 overflow-hidden"><div class="h-full rounded-full bg-[#1baf7a]" style="width: {{ c.coverage|clamp100 }}%"></div></div>
+                            <span class="text-xs tabular-nums w-12 text-right">{{ c.coverage|pct:0 }}</span>
+                        </div>
+                        <div class="text-[11px] text-gray-500">{{ c.customers }} / {{ c.registered }}{% if c.coverage_prev is not None %} · өмнө {{ c.coverage_prev|pct:0 }}{% endif %}</div>
+                    </td>
+                    <td class="px-3 py-2 text-right tabular-nums">{{ c.depth|floatformat:1 }}<div class="text-[11px] text-gray-500">{{ c.skus }} нэр төрөл</div></td>
+                    <td class="px-3 py-2 text-right tabular-nums">{{ c.orders|intcomma }}</td>
+                    <td class="px-3 py-2 text-right tabular-nums">{{ c.aov|mnt_short }}</td>
+                    <td class="px-3 py-2 text-right tabular-nums">{{ c.margin|pct }}</td>
+                </tr>
+                {% endif %}{% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+
+<div class="grid grid-cols-1 xl:grid-cols-2 gap-4 mb-4">
+    <!-- Бүх суваг -->
+    <section class="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
+        <h2 class="font-semibold text-gray-800 mb-3">🛣 Борлуулалтын сувгаар</h2>
+        <ul class="space-y-2">
+            {% for c in data.channels %}
+            <li class="text-sm">
+                <div class="flex justify-between gap-2"><span class="truncate text-gray-700">{{ c.name }}</span><span class="tabular-nums text-gray-900 shrink-0">{{ c.revenue|mnt_short }} <span class="text-gray-400">· {{ c.share|pct:0 }}</span></span></div>
+                <div class="mt-1 h-2 rounded-full bg-gray-100 overflow-hidden"><div class="h-full rounded-r bg-[#2a78d6]" style="width: {{ c.share|clamp100 }}%" title="{{ c.name }}: {{ c.revenue|floatformat:0|intcomma }}₮"></div></div>
+            </li>
+            {% endfor %}
+        </ul>
+    </section>
+
+    <!-- Хамралтын heatmap -->
+    <section class="bg-white rounded-xl border border-gray-100 shadow-sm p-4 min-w-0">
+        <h2 class="font-semibold text-gray-800">🧩 Барааны бүлгийн хамралт ХТ-ээр</h2>
+        <p class="text-xs text-gray-500 mb-3">Тухайн ХТ-ийн худалдан авсан харилцагчдын хэдэн хувь нь энэ бүлгээс авсан бэ. Цайвар нүд = нэмж борлуулах боломж.</p>
+        {% if data.heatmap.rows %}
+        <div class="overflow-x-auto">
+            <table class="text-xs border-separate" style="border-spacing: 2px">
+                <thead>
+                    <tr><th></th>{% for g in data.heatmap.groups %}<th class="px-1 pb-1 font-medium text-gray-500 align-bottom"><div class="w-16 truncate" title="{{ g }}">{{ g }}</div></th>{% endfor %}</tr>
+                </thead>
+                <tbody>
+                    {% for r in data.heatmap.rows %}
+                    <tr>
+                        <th class="pr-2 text-left font-medium text-gray-700 whitespace-nowrap max-w-[10rem] truncate" title="{{ r.name }}">{{ r.name|slice:"3:" }}</th>
+                        {% for cell in r.cells %}
+                        <td class="w-16 h-8 text-center rounded tabular-nums
+                            {% if cell.lvl == -1 %}bg-gray-50 text-gray-300{% elif cell.lvl == 0 %}bg-[#cde2fb] text-gray-800{% elif cell.lvl == 1 %}bg-[#9ec5f4] text-gray-900{% elif cell.lvl == 2 %}bg-[#6da7ec] text-gray-900{% elif cell.lvl == 3 %}bg-[#3987e5] text-white{% elif cell.lvl == 4 %}bg-[#256abf] text-white{% else %}bg-[#184f95] text-white{% endif %}"
+                            title="{{ r.name }} · {{ cell.n }} / {{ r.customers }} харилцагч">{% if cell.v %}{{ cell.v|floatformat:0 }}{% else %}–{% endif %}</td>
+                        {% endfor %}
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <div class="flex items-center gap-1 mt-2 text-[11px] text-gray-500">0%
+            <span class="w-6 h-2 rounded bg-[#cde2fb]"></span><span class="w-6 h-2 rounded bg-[#9ec5f4]"></span><span class="w-6 h-2 rounded bg-[#6da7ec]"></span><span class="w-6 h-2 rounded bg-[#3987e5]"></span><span class="w-6 h-2 rounded bg-[#256abf]"></span><span class="w-6 h-2 rounded bg-[#184f95]"></span> 100%
+        </div>
+        {% else %}<p class="text-sm text-gray-500">ХТ-ийн борлуулалт алга.</p>{% endif %}
+    </section>
+</div>
+
+<!-- Төлөвлөгөөт бараа -->
+<section class="bg-white rounded-xl border border-gray-100 shadow-sm p-4 mb-4">
+    <div class="flex flex-wrap items-baseline justify-between gap-2 mb-3">
+        <h2 class="font-semibold text-gray-800">🎯 Төлөвлөгөөт барааны биелэлт</h2>
+        {% if can_plan %}<a href="{% url 'shop:sales_plan' %}?month={{ period.date_from|date:'Y-m' }}" class="text-xs text-blue-700 hover:underline">Төлөвлөгөө оруулах / засах →</a>{% endif %}
+    </div>
+    {% if data.plans.focus %}
+    <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+        {% for f in data.plans.focus %}
+        <div class="border border-gray-100 rounded-lg p-3">
+            <div class="flex justify-between items-baseline gap-2">
+                <span class="font-medium text-gray-800 truncate">{{ f.channel }}</span>
+                <span class="text-lg font-bold tabular-nums">{{ f.pct|pct:0 }}</span>
+            </div>
+            <div class="text-xs text-gray-500 mb-2">{{ f.done }} / {{ f.count }} бараа бүрэн биелсэн</div>
+            <ul class="space-y-1.5">
+                {% for i in f.items %}
+                <li class="text-xs">
+                    <div class="flex justify-between gap-2"><span class="truncate text-gray-700" title="{{ i.name }}">{{ i.name }}</span><span class="tabular-nums shrink-0 {% if i.pct >= 100 %}text-green-700{% elif i.pct < 50 %}text-red-700{% endif %}">{{ i.sold|floatformat:0|intcomma }} / {{ i.target|floatformat:0|intcomma }}</span></div>
+                    <div class="h-1.5 rounded-full bg-gray-100 overflow-hidden"><div class="h-full rounded-full bg-[#2a78d6]" style="width: {{ i.pct|clamp100 }}%"></div></div>
+                    <div class="text-[11px] text-gray-400">{{ i.customers }} харилцагч ({{ i.reach|pct:0 }} хамралт)</div>
+                </li>
+                {% endfor %}
+            </ul>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <p class="text-sm text-gray-500">Энэ хугацаанд төлөвлөгөөт бараа оруулаагүй байна.{% if can_plan %} <a href="{% url 'shop:sales_plan' %}?month={{ period.date_from|date:'Y-m' }}" class="text-blue-700 hover:underline">Төлөвлөгөө оруулах</a> - ХТ тус бүрийн онцлох бараа ба тоо ширхгийн зорилт.{% endif %}</p>
+    {% endif %}
+</section>
+
+<div class="grid grid-cols-1 xl:grid-cols-2 gap-4 mb-4">
+    <section class="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+        <h2 class="font-semibold text-gray-800 p-4 pb-2">🏆 Шилдэг 10 бараа</h2>
+        <table class="w-full text-sm">
+            <thead class="bg-gray-50 text-xs text-gray-500"><tr><th class="px-3 py-2 text-left">Бараа</th><th class="px-3 py-2 text-right">Борлуулалт</th><th class="px-3 py-2 text-right">Эзлэх</th><th class="px-3 py-2 text-right">Өөрчлөлт</th></tr></thead>
+            <tbody class="divide-y divide-gray-100">
+                {% for r in data.top_items %}
+                <tr><td class="px-3 py-1.5"><div class="truncate max-w-[16rem]" title="{{ r.name }}">{{ r.name }}</div><div class="text-[11px] text-gray-400">{{ r.qty|floatformat:0|intcomma }} ширхэг</div></td>
+                    <td class="px-3 py-1.5 text-right tabular-nums">{{ r.revenue|mnt_short }}</td><td class="px-3 py-1.5 text-right tabular-nums text-gray-500">{{ r.share|pct:1 }}</td>
+                    <td class="px-3 py-1.5 text-right tabular-nums {% if r.change > 0 %}text-green-700{% elif r.change < 0 %}text-red-700{% endif %}">{% if r.change is not None %}{{ r.change|signed:0 }}%{% else %}<span class="text-gray-400">шинэ</span>{% endif %}</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </section>
+    <section class="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+        <h2 class="font-semibold text-gray-800 p-4 pb-2">🤝 Шилдэг 10 харилцагч</h2>
+        <table class="w-full text-sm">
+            <thead class="bg-gray-50 text-xs text-gray-500"><tr><th class="px-3 py-2 text-left">Харилцагч</th><th class="px-3 py-2 text-right">Борлуулалт</th><th class="px-3 py-2 text-right">Эзлэх</th><th class="px-3 py-2 text-right">Өөрчлөлт</th></tr></thead>
+            <tbody class="divide-y divide-gray-100">
+                {% for r in data.top_customers %}
+                <tr><td class="px-3 py-1.5"><div class="truncate max-w-[16rem]" title="{{ r.name }}">{{ r.name }}</div></td>
+                    <td class="px-3 py-1.5 text-right tabular-nums">{{ r.revenue|mnt_short }}</td><td class="px-3 py-1.5 text-right tabular-nums text-gray-500">{{ r.share|pct:1 }}</td>
+                    <td class="px-3 py-1.5 text-right tabular-nums {% if r.change > 0 %}text-green-700{% elif r.change < 0 %}text-red-700{% endif %}">{% if r.change is not None %}{{ r.change|signed:0 }}%{% else %}<span class="text-gray-400">шинэ</span>{% endif %}</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </section>
+</div>
+
+{% if data.refund_reasons %}
+<section class="bg-white rounded-xl border border-gray-100 shadow-sm p-4 mb-4">
+    <h2 class="font-semibold text-gray-800 mb-2">↩️ Буцаалтын шалтгаан</h2>
+    <div class="flex flex-wrap gap-2">
+        {% for r in data.refund_reasons %}
+        <div class="border border-gray-100 rounded-lg px-3 py-2 text-sm"><div class="text-gray-600">{{ r.name }}</div><div class="font-semibold tabular-nums">{{ r.amount|mnt_short }} <span class="text-xs font-normal text-gray-400">· {{ r.docs }} баримт</span></div></div>
+        {% endfor %}
+    </div>
+</section>
+{% endif %}

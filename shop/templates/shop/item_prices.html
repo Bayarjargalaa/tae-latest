@@ -52,6 +52,10 @@
                    class="bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50 transition whitespace-nowrap">
                     📥 Excel рүү гаргах
                 </a>
+                <a href="{% url 'shop:item_price_history' %}{% if selected_channel_pkids|length == 1 %}?channel={{ selected_channel_pkids.0 }}{% endif %}"
+                   class="bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50 transition whitespace-nowrap">
+                    📈 Үнийн түүх харах
+                </a>
                 <span class="text-sm text-gray-500 ml-auto">Нийт: {{ total_items }} бараа</span>
             </div>
 
@@ -91,7 +95,10 @@
                 <tbody>
                     {% for row in rows %}
                     <tr class="border-t">
-                        <td class="px-4 py-2 font-medium text-gray-900 sticky left-0 bg-white whitespace-nowrap">{{ row.item.name }}</td>
+                        <td class="px-4 py-2 font-medium text-gray-900 sticky left-0 bg-white whitespace-nowrap">
+                            <a href="{% url 'shop:item_price_history' %}?item={{ row.item.pkid|stringformat:'d' }}{% if selected_channel_pkids|length == 1 %}&channel={{ selected_channel_pkids.0 }}{% endif %}"
+                               class="hover:text-primary hover:underline" title="Үнийн түүх харах">{{ row.item.name }}</a>
+                        </td>
                         {% for cell in row.cells %}
                         <td class="px-3 py-2 text-right {% if cell.is_below_base %}bg-red-100 text-red-700 font-semibold{% endif %}"
                             {% if cell.is_below_base %}title="Үндсэн үнэ ({{ row.base_price|floatformat:0|intcomma }}₮)-ээс доогуур"{% endif %}>

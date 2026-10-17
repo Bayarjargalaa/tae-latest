@@ -1,0 +1,82 @@
+{% load product_filters humanize %}
+{# Барааны карт - products.html-ийн grid болон бүлгийн мөрөнд хоёуланд нь ашиглана. #}
+{# Эхний харагдах 4 зургийг шууд, бусдыг нь lazy ачаална (бүлгийн харагдацад зөвхөн эхний мөр). #}
+<div class="group relative flex flex-col h-full bg-white rounded-xl border border-gray-100 hover:border-gray-200 hover:shadow-lg transition-shadow duration-200 overflow-hidden">
+    <a href="{% url 'shop:product_detail' product.id %}" class="flex flex-col flex-1 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded-xl">
+        <!-- Зураг: 1:1 харьцаа, lazy-load, hover дээр 2 дахь зураг -->
+        <div class="relative aspect-square bg-white p-3 overflow-hidden">
+            <img src="{{ product|product_image_url }}"
+                 alt="{% if product.extension and product.extension.name_mn %}{{ product.extension.name_mn }}{% else %}{{ product.name }}{% endif %}"
+                 loading="{% if forloop.counter <= 4 and not forloop.parentloop.counter > 1 %}eager{% else %}lazy{% endif %}" decoding="async" width="400" height="400"
+                 class="w-full h-full object-contain transition duration-300 {% if product.extension.image_2 %}group-hover:opacity-0{% else %}group-hover:scale-105{% endif %} {% if product.stock_status == 'out' %}opacity-50 grayscale{% endif %}">
+            {% if product.extension.image_2 %}
+            <img src="{{ product.extension.image_2.url }}" alt="" aria-hidden="true" loading="lazy" decoding="async"
+                 class="absolute inset-0 w-full h-full p-3 object-contain opacity-0 group-hover:opacity-100 transition duration-300">
+            {% endif %}
+
+            {% if product.stock_status == 'out' %}
+            <span class="absolute top-2 left-2 bg-gray-800/85 text-white text-[11px] font-semibold px-2 py-0.5 rounded">Дууссан</span>
+            {% elif product.stock_status == 'low' %}
+            <span class="absolute top-2 left-2 bg-amber-500 text-white text-[11px] font-semibold px-2 py-0.5 rounded">Цөөхөн үлдсэн</span>
+            {% endif %}
+        </div>
+
+        <div class="flex flex-col flex-1 p-3 lg:p-4 pt-0 lg:pt-0">
+            {% if product.brandname %}
+            <div class="text-[11px] lg:text-xs font-semibold uppercase tracking-wide text-gray-500 truncate">{{ product.brandname }}</div>
+            {% endif %}
+
+            <h3 class="mt-0.5 text-sm lg:text-[15px] font-medium text-gray-900 leading-snug line-clamp-2 min-h-[2.5rem] group-hover:text-primary" title="{{ product.name }}">
+                {% if product.extension and product.extension.name_mn %}{{ product.extension.name_mn }}{% else %}{{ product.name }}{% endif %}
+            </h3>
+
+            {% if product.extension.country_of_origin or product.extension.qty_per_box %}
+            <div class="mt-1 text-xs text-gray-500 truncate">
+                {{ product.extension.country_of_origin|default:"" }}{% if product.extension.country_of_origin and product.extension.qty_per_box %} · {% endif %}{% if product.extension.qty_per_box %}{{ product.extension.qty_per_box }} ш/хайрцаг{% endif %}
+            </div>
+            {% endif %}
+
+            <div class="mt-auto pt-3">
+                {% if product.saleprice %}
+                <div class="flex items-baseline gap-1 flex-wrap">
+                    <span class="text-lg lg:text-xl font-bold text-gray-900 tabular-nums">{{ product.saleprice|floatformat:0|intcomma }}₮</span>
+                    {% if product.measurename %}<span class="text-xs text-gray-500">/ {{ product.measurename|lower }}</span>{% endif %}
+                </div>
+                {% if product.box_price %}
+                <div class="text-xs text-gray-500 tabular-nums">Хайрцаг: {{ product.box_price|floatformat:0|intcomma }}₮</div>
+                {% endif %}
+                {% else %}
+                <div class="text-sm font-medium text-gray-500">Үнэ лавлана уу</div>
+                {% endif %}
+
+                <div class="mt-2 flex items-center gap-1.5 text-xs font-medium">
+                    {% if product.stock_status == 'in' %}
+                    <span class="w-2 h-2 rounded-full bg-green-500"></span><span class="text-green-700">Нөөцтэй</span>
+                    {% elif product.stock_status == 'low' %}
+                    <span class="w-2 h-2 rounded-full bg-amber-500"></span><span class="text-amber-700">Цөөхөн үлдсэн</span>
+                    {% else %}
+                    <span class="w-2 h-2 rounded-full bg-gray-400"></span><span class="text-gray-500">Түр дууссан</span>
+                    {% endif %}
+                    {% if user.is_authenticated %}
+                    <span class="ml-auto text-gray-400 tabular-nums" title="Агуулах жижгийн үлдэгдэл">{{ product.stock_qty|floatformat:0|intcomma }} ш</span>
+                    {% endif %}
+                </div>
+                {% if product.cert_status %}
+                {# Шинжилгээний бичгийн төлөв - нэвтэрсэн хэрэглэгчид (services.product_certs) #}
+                <div class="mt-1 text-[11px] font-medium truncate
+                    {% if product.cert_status == 'expired' %}text-red-700{% elif product.cert_status == 'soon' %}text-amber-700{% elif product.cert_status == 'no_date' %}text-orange-700{% elif product.cert_status == 'none' %}text-gray-400{% else %}text-green-700{% endif %}"
+                     title="Шинжилгээний бичиг: {{ product.cert_label }}{% if product.cert_expires %} ({{ product.cert_expires|date:'Y.m.d' }}){% endif %}">
+                    🧪 {% if product.cert_status == 'valid' %}{% if product.cert_expires %}{{ product.cert_expires|date:'Y.m.d' }} хүртэл{% else %}Хугацаагүй{% endif %}{% else %}{{ product.cert_text }}{% endif %}
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </a>
+
+    {% if 'product_edit' in visible_menu_keys %}
+    <a href="{% url 'shop:product_edit' product.id %}"
+       class="block text-center mx-3 mb-3 lg:mx-4 lg:mb-4 bg-gray-100 text-gray-700 py-1.5 rounded-lg hover:bg-gray-200 transition text-sm">
+        ✏️ Засах
+    </a>
+    {% endif %}
+</div>

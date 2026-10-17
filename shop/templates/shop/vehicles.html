@@ -1,0 +1,250 @@
+{% extends 'base.html' %}
+{% load humanize %}
+
+{% block title %}Тээврийн хэрэгсэл - Euro Foods{% endblock %}
+
+{% block extra_css %}
+<style>
+[hidden] { display: none !important; }
+.vh-tab { padding: .6rem 1.1rem; font-weight: 600; border-bottom: 3px solid transparent; color: #6b7280; white-space: nowrap; }
+.vh-tab.on { color: #1d4ed8; border-color: #1d4ed8; }
+.vh-table th { position: sticky; top: 0; background: #f3f4f6; z-index: 1; white-space: nowrap; }
+.vh-table td, .vh-table th { padding: .35rem .45rem; }
+.vh-in { width: 100%; border: 1px solid #d1d5db; border-radius: .375rem; padding: .2rem .35rem; font-size: .8rem; background: #fff; }
+.vh-in:focus { outline: none; border-color: #2563eb; box-shadow: 0 0 0 2px #bfdbfe; }
+.vh-in.sug { background: #fef9c3; border-color: #eab308; }
+.vh-in.req { background: #fee2e2; border-color: #ef4444; }
+.vh-row.dirty td { background: #eff6ff; }
+.vh-row.err td { background: #fef2f2; }
+.vh-save { font-size: .75rem; padding: .2rem .5rem; border-radius: .375rem; border: 1px solid #d1d5db; background: #fff; white-space: nowrap; }
+.vh-row.dirty .vh-save, .vh-save.pending { background: #2563eb; border-color: #2563eb; color: #fff; }
+.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.vh-f { margin-top: .25rem; display: block; width: 100%; border: 1px solid #d1d5db; border-radius: .5rem; padding: .3rem .5rem; color: #111827; background: #fff; font-size: .875rem; }
+.vh-chip { font-size: .8rem; padding: .3rem .7rem; border-radius: 9999px; border: 1px solid #d1d5db; background: #fff; white-space: nowrap; }
+.vh-chip.on { background: #2563eb; border-color: #2563eb; color: #fff; }
+/* Олон сонголттой шүүлт */
+.ms { position: relative; margin-top: .25rem; }
+.ms-btn { width: 100%; text-align: left; border: 1px solid #d1d5db; border-radius: .5rem; padding: .3rem 1.6rem .3rem .5rem; background: #fff; color: #111827; font-size: .875rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; position: relative; }
+.ms-btn::after { content: '▾'; position: absolute; right: .5rem; color: #6b7280; }
+.ms-btn.on { border-color: #2563eb; background: #eff6ff; }
+.ms-panel { position: absolute; z-index: 30; top: calc(100% + 4px); left: 0; min-width: 100%; width: max-content; max-width: 22rem; background: #fff; border: 1px solid #d1d5db; border-radius: .6rem; box-shadow: 0 10px 25px rgba(0,0,0,.12); padding: .4rem; }
+.ms-list { max-height: 16rem; overflow-y: auto; }
+.ms-list label { display: flex; align-items: center; gap: .45rem; padding: .25rem .4rem; border-radius: .35rem; font-size: .85rem; color: #111827; cursor: pointer; }
+.ms-list label:hover { background: #f3f4f6; }
+.ms-actions { display: flex; gap: .5rem; justify-content: space-between; border-top: 1px solid #f3f4f6; margin-top: .3rem; padding-top: .35rem; font-size: .8rem; }
+.ms-actions button { color: #1d4ed8; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="flex min-h-screen bg-gray-50">
+    {% include 'shop/_sidebar.html' with active_page=active_page %}
+
+    <main class="flex-1 p-3 lg:p-6 min-w-0 space-y-4">
+        <div class="flex flex-wrap items-end justify-between gap-3">
+            <div>
+                <div class="text-xs font-medium text-gray-500 mb-1">Хангамж</div>
+                <h1 class="text-2xl lg:text-3xl font-bold tracking-tight">🚗 Тээврийн хэрэгсэл</h1>
+            </div>
+            <div class="flex flex-wrap gap-2">
+                {% if tab == 'fuel' %}
+                <span class="inline-flex rounded-lg border border-amber-400 bg-amber-50 overflow-hidden text-sm font-medium" title="Шүүлтээрээ - машин бүр тусдаа блок (Заалт, Хэмжээ, Дүн, Явсан км, 100км-д)">
+                    <span class="px-3 py-2 text-amber-900">🚗 Машины тайлан</span>
+                    <a href="{% url 'shop:vehicles_export' %}?tab=fuel&layout=vehicle&format=print&{{ query }}" target="_blank" class="px-3 py-2 border-l border-amber-300 hover:bg-amber-100">🖨</a>
+                    <a href="{% url 'shop:vehicles_export' %}?tab=fuel&layout=vehicle&format=xlsx&{{ query }}" class="px-3 py-2 border-l border-amber-300 hover:bg-amber-100">⬇ Excel</a>
+                </span>
+                {% endif %}
+                <a href="{% url 'shop:vehicles_export' %}?tab={{ tab }}&format=print&{{ query }}" target="_blank" class="text-sm font-medium px-3 py-2 rounded-lg border border-gray-200 bg-white hover:bg-gray-50">🖨 Хэвлэх</a>
+                <a href="{% url 'shop:vehicles_export' %}?tab={{ tab }}&format=xlsx&{{ query }}" class="text-sm font-medium px-3 py-2 rounded-lg border border-green-600 text-green-700 bg-white hover:bg-green-50">⬇ Excel</a>
+            </div>
+        </div>
+
+        <div class="flex gap-1 border-b border-gray-200 overflow-x-auto">
+            <a href="?tab=fuel" class="vh-tab {% if tab == 'fuel' %}on{% endif %}">⛽ Шатахуун</a>
+            <a href="?tab=parts" class="vh-tab {% if tab == 'parts' %}on{% endif %}">🔧 Сэлбэг хэрэгсэл</a>
+            <a href="?tab=reports" class="vh-tab {% if tab == 'reports' %}on{% endif %}">📊 Тайлан</a>
+        </div>
+
+        {% if messages %}
+        <div class="space-y-2">{% for message in messages %}<div class="p-3 rounded-lg text-sm {% if message.tags == 'error' %}bg-red-100 text-red-800{% elif message.tags == 'warning' %}bg-yellow-100 text-yellow-800{% else %}bg-green-100 text-green-800{% endif %}">{{ message }}</div>{% endfor %}</div>
+        {% endif %}
+
+        {# Шүүлт - бүх табд хугацаа, табын онцлог шүүлтүүд #}
+        <form method="get" id="vh-filter" class="bg-white rounded-xl shadow-sm border border-gray-100 p-4 space-y-3">
+            <input type="hidden" name="tab" value="{{ tab }}">
+            <div class="flex flex-wrap gap-2 items-center">
+                <span class="text-sm text-gray-500 mr-1">Хугацаа:</span>
+                {% for p in presets %}
+                <button type="submit" name="preset" value="{{ p.from|date:'Y-m-d' }}|{{ p.to|date:'Y-m-d' }}" class="vh-chip {% if p.on %}on{% endif %}">{{ p.label }}</button>
+                {% endfor %}
+                {% if tab == 'fuel' and months %}
+                <select id="vh-month" class="vh-chip !py-1">
+                    <option value="">Сар сонгох…</option>
+                    {% for m in months %}<option value="{{ m|date:'Y-m' }}" {% if m == selected_month %}selected{% endif %}>{{ m|date:'Y' }} оны {{ m|date:'n' }}-р сар</option>{% endfor %}
+                </select>
+                {% endif %}
+                <span class="ml-auto text-sm font-semibold text-gray-700">{{ period_label }}</span>
+            </div>
+            <div class="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-8 gap-3 items-end">
+                <label class="text-xs text-gray-600">Эхлэх огноо<input type="date" name="date_from" value="{{ f.date_from|date:'Y-m-d' }}" class="vh-f"></label>
+                <label class="text-xs text-gray-600">Дуусах огноо<input type="date" name="date_to" value="{{ f.date_to|date:'Y-m-d' }}" class="vh-f"></label>
+
+                {% if tab == 'fuel' %}
+                <label class="text-xs text-gray-600">Карт
+                    <select name="card" multiple data-ms class="vh-f">
+                        {% for c, h in cards %}<option value="{{ c }}" {% if c in f.card %}selected{% endif %}>{{ c|slice:'-4:' }} · {{ h }}</option>{% endfor %}
+                    </select></label>
+                <label class="text-xs text-gray-600">Машин
+                    <select name="plate" multiple data-ms class="vh-f">
+                        {% for v, l in plate_specials %}<option value="{{ v }}" {% if v in f.plate %}selected{% endif %}>— {{ l }} —</option>{% endfor %}
+                        {% for v in vehicle_options %}<option value="{{ v.plate }}" {% if v.plate in f.plate %}selected{% endif %}>{{ v.plate }}{% if v.label %} · {{ v.label }}{% endif %}</option>{% endfor %}
+                    </select></label>
+                <label class="text-xs text-gray-600">Жолооч
+                    <select name="driver" multiple data-ms class="vh-f">
+                        {% for d in fuel_drivers %}<option value="{{ d }}" {% if d in f.driver %}selected{% endif %}>{{ d }}</option>{% endfor %}
+                    </select></label>
+                <label class="text-xs text-gray-600">Шатахуун
+                    <select name="fuel_type" multiple data-ms class="vh-f">
+                        {% for t in fuel_types %}<option value="{{ t }}" {% if t in f.fuel_type %}selected{% endif %}>{{ t }}</option>{% endfor %}
+                    </select></label>
+                <label class="text-xs text-gray-600">ШТС
+                    <select name="station" multiple data-ms class="vh-f">
+                        {% for s in stations %}<option value="{{ s }}" {% if s in f.station %}selected{% endif %}>{{ s }}</option>{% endfor %}
+                    </select></label>
+                <label class="text-xs text-gray-600">Төлөв
+                    <select name="status" multiple data-ms class="vh-f">{% for v, l in status_choices %}{% if v %}<option value="{{ v }}" {% if v in f.status %}selected{% endif %}>{{ l }}</option>{% endif %}{% endfor %}</select></label>
+                <label class="text-xs text-gray-600">Гүйлгээ
+                    <select name="show" class="vh-f"><option value="">Худалдан авалт</option><option value="all" {% if f.show_all %}selected{% endif %}>Бүх гүйлгээ (үлдэгдэлтэй)</option></select></label>
+                <label class="text-xs text-gray-600 col-span-2">Хайлт<input type="search" name="q" value="{{ f.q }}" placeholder="Нэр, машин, ШТС, тайлбар…" class="vh-f"></label>
+
+                {% elif tab == 'parts' %}
+                <label class="text-xs text-gray-600">Машин
+                    <select name="plate" multiple data-ms class="vh-f">
+                        <option value="__ours" {% if '__ours' in f.plate %}selected{% endif %}>— Манай машинууд —</option>
+                        <option value="__none" {% if '__none' in f.plate %}selected{% endif %}>— Машингүй —</option>
+                        {% for v in vehicle_options %}<option value="{{ v.plate }}" {% if v.plate in f.plate %}selected{% endif %}>{{ v.plate }}{% if v.label %} · {{ v.label }}{% endif %}</option>{% endfor %}
+                    </select></label>
+                <label class="text-xs text-gray-600">Төрөл
+                    <select name="category" multiple data-ms class="vh-f">
+                        {% for c in categories %}<option value="{{ c }}" {% if c in f.category %}selected{% endif %}>{{ c }}</option>{% endfor %}
+                    </select></label>
+                <label class="text-xs text-gray-600">Жолооч
+                    <select name="driver" multiple data-ms class="vh-f">
+                        {% for d in part_drivers %}<option value="{{ d }}" {% if d in f.driver %}selected{% endif %}>{{ d }}</option>{% endfor %}
+                    </select></label>
+                <label class="text-xs text-gray-600">Нийлүүлэгч
+                    <select name="supplier" multiple data-ms class="vh-f">
+                        {% for s in suppliers %}<option value="{{ s }}" {% if s in f.supplier %}selected{% endif %}>{{ s }}</option>{% endfor %}
+                    </select></label>
+                <label class="text-xs text-gray-600 col-span-2">Хайлт<input type="search" name="q" value="{{ f.q }}" placeholder="Тайлбар, сэлбэгийн нэр…" class="vh-f"></label>
+
+                {% else %}
+                <label class="text-xs text-gray-600 col-span-2">Тайлан
+                    <select name="report" class="vh-f" onchange="this.form.submit()">
+                        {% for k, l, d in reports %}<option value="{{ k }}" {% if k == f.report %}selected{% endif %}>{{ l }}</option>{% endfor %}
+                    </select></label>
+                {% if f.report == 'vehicle_detail' %}
+                <label class="text-xs text-gray-600">Машин
+                    <select name="plate" class="vh-f" onchange="this.form.submit()"><option value="">Сонгох…</option>
+                        {% for v in vehicle_options %}<option value="{{ v.plate }}" {% if v.plate == f.plate %}selected{% endif %}>{{ v.plate }}{% if v.label %} · {{ v.label }}{% endif %}</option>{% endfor %}
+                    </select></label>
+                {% elif f.report == 'monthly' %}
+                <label class="text-xs text-gray-600">Үзүүлэлт
+                    <select name="metric" class="vh-f" onchange="this.form.submit()">
+                        {% for k, l, fm in metrics %}<option value="{{ k }}" {% if k == f.metric %}selected{% endif %}>{{ l }}</option>{% endfor %}
+                    </select></label>
+                {% endif %}
+                {% endif %}
+
+                <div class="flex gap-2">
+                    <button type="submit" class="text-sm font-semibold px-4 py-1.5 rounded-lg bg-blue-600 text-white hover:bg-blue-700">Шүүх</button>
+                    <a href="?tab={{ tab }}" class="text-sm px-3 py-1.5 rounded-lg border border-gray-300 bg-white hover:bg-gray-50" title="Шүүлт арилгах">✕</a>
+                </div>
+            </div>
+        </form>
+
+        {% if tab == 'fuel' %}{% include 'shop/_vehicles_fuel.html' %}
+        {% elif tab == 'parts' %}{% include 'shop/_vehicles_parts.html' %}
+        {% else %}{% include 'shop/_vehicles_reports.html' %}{% endif %}
+    </main>
+</div>
+
+<script>
+(function () {
+    // Хугацааны товч: preset=эхлэх|дуусах -> date_from/date_to; сар сонгоход тэр сарыг
+    const form = document.getElementById('vh-filter');
+    form.addEventListener('submit', (e) => {
+        const btn = e.submitter;
+        if (btn && btn.name === 'preset') {
+            const [a, b] = btn.value.split('|');
+            form.date_from.value = a; form.date_to.value = b;
+        }
+    });
+    // --- Олон сонголттой шүүлт: <select multiple data-ms> -> чагттай dropdown (хайлт, бүгд/цэвэрлэх) ---
+    const panels = [];
+    form.querySelectorAll('select[data-ms]').forEach((sel) => {
+        sel.hidden = true;
+        const wrap = document.createElement('div'); wrap.className = 'ms';
+        const btn = document.createElement('button'); btn.type = 'button'; btn.className = 'ms-btn';
+        const panel = document.createElement('div'); panel.className = 'ms-panel'; panel.hidden = true;
+        const opts = [...sel.options];
+        if (opts.length > 8) {
+            const search = document.createElement('input');
+            search.type = 'search'; search.placeholder = 'Хайх…'; search.className = 'vh-f !mt-0 mb-1';
+            search.addEventListener('input', () => {
+                const q = search.value.trim().toLowerCase();
+                list.querySelectorAll('label').forEach((l) => { l.hidden = q && !l.textContent.toLowerCase().includes(q); });
+            });
+            panel.append(search);
+        }
+        const list = document.createElement('div'); list.className = 'ms-list';
+        opts.forEach((o) => {
+            const l = document.createElement('label');
+            const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = o.selected;
+            cb.addEventListener('change', () => { o.selected = cb.checked; label(); });
+            l.append(cb, document.createTextNode(o.textContent.trim()));
+            list.append(l);
+        });
+        const actions = document.createElement('div'); actions.className = 'ms-actions';
+        actions.innerHTML = '<button type="button" data-a="all">Бүгдийг сонгох</button><button type="button" data-a="none">Цэвэрлэх</button><button type="button" data-a="ok" class="font-semibold">Шүүх</button>';
+        actions.addEventListener('click', (e) => {
+            const a = e.target.dataset.a;
+            if (a === 'ok') { form.requestSubmit(); return; }
+            if (!a) return;
+            list.querySelectorAll('label').forEach((l, i) => {
+                if (a === 'all' && l.hidden) return;
+                const cb = l.querySelector('input'); cb.checked = a === 'all'; opts[i].selected = cb.checked;
+            });
+            label();
+        });
+        panel.append(list, actions);
+        function label() {
+            const chosen = opts.filter((o) => o.selected).map((o) => o.textContent.trim());
+            btn.textContent = !chosen.length ? 'Бүгд' : chosen.length <= 2 ? chosen.join(', ') : `${chosen.length} сонгосон`;
+            btn.title = chosen.join('\n');
+            btn.classList.toggle('on', chosen.length > 0);
+        }
+        btn.addEventListener('click', () => {
+            const open = panel.hidden;
+            panels.forEach((p) => { p.hidden = true; });
+            panel.hidden = !open;
+        });
+        wrap.append(btn, panel);
+        sel.after(wrap);
+        panels.push(panel);
+        label();
+    });
+    document.addEventListener('click', (e) => { if (!e.target.closest('.ms')) panels.forEach((p) => { p.hidden = true; }); });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') panels.forEach((p) => { p.hidden = true; }); });
+
+    const month = document.getElementById('vh-month');
+    if (month) month.addEventListener('change', () => {
+        if (!month.value) return;
+        const [y, m] = month.value.split('-').map(Number);
+        const last = new Date(y, m, 0).getDate();
+        form.date_from.value = `${month.value}-01`; form.date_to.value = `${month.value}-${String(last).padStart(2, '0')}`;
+        form.submit();
+    });
+})();
+</script>
+{% endblock %}

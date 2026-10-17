@@ -22,13 +22,13 @@ def get_user_employee(user):
 
 
 def get_visible_menu_keys(user, employee=None):
-    """Хэрэглэгчид харагдах (= үзэх эрхтэй) цэсний key-үүд."""
-    from shop.menuconfig import ALWAYS_ALL_MENU_POSITIONS, get_configurable_menu_items
+    """Хэрэглэгчид харагдах (= үзэх эрхтэй) цэсний key-үүд, мөн үйлдлийн эрхүүд (menuconfig.ACTION_PERMISSIONS)."""
+    from shop.menuconfig import ACTION_PERMISSIONS, ALWAYS_ALL_MENU_POSITIONS, get_configurable_menu_items
     from shop.models import MenuPermission
 
     if not user.is_authenticated:
         return set()
-    all_keys = {item['key'] for item in get_configurable_menu_items()}
+    all_keys = {item['key'] for item in get_configurable_menu_items()} | {a['key'] for a in ACTION_PERMISSIONS}
     if user.is_superuser:
         return all_keys
     employee = employee if employee is not None else get_user_employee(user)

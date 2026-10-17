@@ -1,0 +1,18 @@
+{% load exec_filters %}
+{# KPI хайрцаг: label, value (бэлэн текст), sub (тайлбар), delta (тоо), delta_unit ('%', 'пп', ' хүн'), delta_digits (бутархайн орон, '0'), #}
+{# good ('up' | 'down' | 'neutral' - аль чиглэл сайн), hint (title) #}
+<div class="bg-white rounded-xl border border-gray-100 shadow-sm p-3 lg:p-4 flex flex-col gap-1 min-w-0" {% if hint %}title="{{ hint }}"{% endif %}>
+    <div class="text-xs text-gray-500 truncate">{{ label }}</div>
+    <div class="text-xl 2xl:text-2xl font-bold text-gray-900 leading-tight break-words">{{ value }}</div>
+    <div class="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs">
+        {% with good_dir=good|default:'up' %}
+        {% if delta is not None and delta != '' %}
+        <span class="inline-flex items-center gap-0.5 font-semibold rounded px-1.5 py-0.5
+            {% if delta > 0 and good_dir == 'up' or delta < 0 and good_dir == 'down' %}bg-green-50 text-green-800{% elif delta == 0 or good_dir == 'neutral' %}bg-gray-100 text-gray-700{% else %}bg-red-50 text-red-800{% endif %}">
+            {% if delta > 0 %}▲{% elif delta < 0 %}▼{% else %}■{% endif %} {% if delta_digits %}{{ delta|signed:delta_digits }}{% else %}{{ delta|signed }}{% endif %}{{ delta_unit|default:'%' }}
+        </span>
+        {% endif %}
+        {% endwith %}
+        {% if sub %}<span class="text-gray-500 truncate">{{ sub }}</span>{% endif %}
+    </div>
+</div>

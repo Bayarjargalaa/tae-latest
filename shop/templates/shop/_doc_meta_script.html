@@ -1,0 +1,231 @@
+{# _doc_meta_fields.html-ийн үйлдэл + бичгийн мэдээлэл засах цонх ([data-meta-edit] товчоор нээгдэнэ). #}
+{# Хуудсанд нэг удаа include хийнэ; doc_types, csrf шаардлагатай. #}
+{# Цонхонд бичигт холбогдсон бараа бүр "Ерөнхий огноо" эсвэл "Өөр огноо"-той байж болно (ProductAttachmentItem.own_expiry). #}
+<dialog id="doc-meta-dialog" class="rounded-xl p-0 w-[min(40rem,calc(100vw-2rem))] max-h-[calc(100vh-2rem)] backdrop:bg-black/40">
+    <form id="doc-meta-form" method="post" class="p-4 space-y-3">
+        {% csrf_token %}
+        <input type="hidden" name="back_item" value="{{ product.id|default:'' }}">
+        <input type="hidden" name="next" value="">
+        <div class="flex items-start justify-between gap-2">
+            <div>
+                <h3 class="font-bold text-lg">✏️ Бичгийн мэдээлэл</h3>
+                <div data-meta-name class="text-sm text-gray-500 break-all"></div>
+            </div>
+            <button type="button" class="text-gray-500 hover:text-gray-800 text-xl px-2" data-meta-close aria-label="Хаах">✕</button>
+        </div>
+        {% include 'shop/_doc_meta_fields.html' %}
+        <label class="block text-sm">
+            <span class="text-gray-700">Тайлбар</span>
+            <input type="text" name="note" maxlength="200" class="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
+        </label>
+
+        <div data-meta-items class="hidden border-t border-gray-100 pt-3 space-y-2">
+            <input type="hidden" name="items_submitted" value="1" disabled>
+            <div>
+                <h4 class="font-semibold text-gray-800 text-sm">📦 Бараа тус бүрийн дуусах огноо</h4>
+                <p class="text-xs text-gray-500">Анхнаасаа бүгд дээрх <b>ерөнхий огноог</b> авна. Аль нэг бараа өөр огноонд дуусдаг бол "Өөр огноо" сонгоно.</p>
+            </div>
+            <div data-items-list class="space-y-2 max-h-72 overflow-y-auto pr-1"></div>
+        </div>
+
+        <div class="flex justify-end gap-2 pt-2 border-t border-gray-100">
+            <button type="button" class="text-sm px-4 py-2 rounded-lg border border-gray-300 hover:bg-gray-50" data-meta-close>Болих</button>
+            <button type="submit" class="text-sm font-semibold px-4 py-2 rounded-lg bg-green-600 text-white hover:bg-green-700">💾 Хадгалах</button>
+        </div>
+    </form>
+</dialog>
+
+<script>
+(function () {
+    var SOON_DAYS = {{ soon_days|default:30 }};
+
+    function parse(value) {
+        var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value || '');
+        return m ? new Date(+m[1], +m[2] - 1, +m[3]) : null;
+    }
+    function fmt(d) {
+        return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+    }
+    function dotted(value) { return (value || '').replace(/-/g, '.'); }
+    function today() { var d = new Date(); return new Date(d.getFullYear(), d.getMonth(), d.getDate()); }
+    function addMonths(d, months) {
+        // Сарын сүүлийн өдрийг хадгална: 1/31 + 1 сар = 2/28(29)
+        var r = new Date(d.getFullYear(), d.getMonth() + months, 1);
+        var last = new Date(r.getFullYear(), r.getMonth() + 1, 0).getDate();
+        r.setDate(Math.min(d.getDate(), last));
+        return r;
+    }
+    function humanSpan(days) {
+        var y = Math.floor(days / 365), m = Math.floor((days % 365) / 30.4);
+        if (days < 60) return days + ' хоног';
+        return (y ? y + ' жил ' : '') + (m ? m + ' сар' : '') + ' (' + days + ' хоног)';
+    }
+    // Дуусах огнооны тайлбар ба өнгө (ерөнхий болон бараа тус бүрийн огноонд адил)
+    function describe(expiresValue, noExpiry, issuedValue) {
+        var d = parse(expiresValue), iss = parse(issuedValue);
+        if (noExpiry) return {text: '♾ Хугацаагүй', cls: 'text-green-700'};
+        if (!d) return {text: 'Дуусах огноо сонгоогүй - хяналтад "Хугацаа оруулаагүй" гэж харагдана.', cls: 'text-orange-600'};
+        if (iss && d <= iss) return {text: '⚠ Дуусах огноо олгосон огнооноос хойш байх ёстой.', cls: 'text-red-600 font-medium'};
+        var days = Math.round((d - today()) / 86400000);
+        if (days < 0) return {text: '⚠ ' + (-days) + ' хоногийн өмнө дууссан', cls: 'text-red-600 font-medium'};
+        if (days === 0) return {text: '⚠ Өнөөдөр дуусна', cls: 'text-red-600 font-medium'};
+        if (days <= SOON_DAYS) return {text: '⏳ ' + days + ' хоног үлдсэн (удахгүй дуусна)', cls: 'text-amber-700 font-medium'};
+        var text = '✓ ' + humanSpan(days) + ' үлдсэн';
+        if (iss) text += ' · хүчинтэй хугацаа ' + humanSpan(Math.round((d - iss) / 86400000));
+        return {text: text, cls: 'text-green-700'};
+    }
+    // +N сар / ±1 жил товчнууд: [data-add-months] нь base()-ээс, [data-shift-years] нь одоогийн огнооноос тоолно
+    function wireDateButtons(scope, input, base, onChange) {
+        scope.querySelectorAll('[data-add-months]').forEach(function (b) {
+            b.addEventListener('click', function () { input.value = fmt(addMonths(base(), +b.dataset.addMonths)); onChange(); });
+        });
+        scope.querySelectorAll('[data-shift-years]').forEach(function (b) {
+            b.addEventListener('click', function () { input.value = fmt(addMonths(parse(input.value) || today(), 12 * +b.dataset.shiftYears)); onChange(); });
+        });
+    }
+
+    function init(root) {
+        if (!root || root.dataset.ready) return;
+        root.dataset.ready = '1';
+        var type = root.querySelector('[data-doc-type]');
+        var issued = root.querySelector('[data-issued]');
+        var expires = root.querySelector('[data-expires]');
+        var noExp = root.querySelector('[data-no-expiry]');
+        var preview = root.querySelector('[data-expiry-preview]');
+
+        function update() {
+            var opt = type && type.options[type.selectedIndex];
+            var tracks = !opt || opt.dataset.tracks !== '0';
+            root.querySelectorAll('[data-expiry-part]').forEach(function (el) { el.classList.toggle('hidden', !tracks); });
+            expires.disabled = noExp.checked;
+            root.querySelectorAll('[data-add-months],[data-shift-years]').forEach(function (b) { b.disabled = noExp.checked; b.classList.toggle('opacity-40', noExp.checked); });
+            var r = describe(expires.value, noExp.checked, issued.value);
+            preview.textContent = r.text;
+            preview.className = 'text-sm ' + r.cls;
+            root.dispatchEvent(new CustomEvent('docmeta:change'));
+        }
+
+        wireDateButtons(root, expires, function () { return parse(issued.value) || today(); }, update);
+        [type, issued, expires, noExp].forEach(function (el) { if (el) { el.addEventListener('change', update); el.addEventListener('input', update); } });
+        root.docMetaSet = function (v) {
+            if (type && v.type) type.value = v.type;
+            issued.value = v.issued || '';
+            expires.value = v.expires || '';
+            noExp.checked = v.noExpiry === '1';
+            update();
+        };
+        root.docMetaGet = function () { return {issued: issued.value, expires: expires.value, noExpiry: noExp.checked}; };
+        update();
+    }
+
+    document.querySelectorAll('[data-doc-meta]').forEach(init);
+
+    // --- Засах цонх ---
+    var dialog = document.getElementById('doc-meta-dialog');
+    var form = document.getElementById('doc-meta-form');
+    var fields = dialog.querySelector('[data-doc-meta]');
+    var itemsBox = dialog.querySelector('[data-meta-items]');
+    var itemsList = dialog.querySelector('[data-items-list]');
+    var itemsFlag = itemsBox.querySelector('[name=items_submitted]');
+    var refreshers = [];
+
+    function el(tag, cls, text) {
+        var e = document.createElement(tag);
+        if (cls) e.className = cls;
+        if (text) e.textContent = text;
+        return e;
+    }
+    function button(label, attr, value) {
+        var b = el('button', 'px-2 py-1 text-xs rounded-lg border border-gray-300 bg-white hover:bg-gray-100', label);
+        b.type = 'button';
+        b.setAttribute(attr, value);
+        return b;
+    }
+
+    function itemRow(item, isCurrent) {
+        var row = el('div', 'rounded-lg border p-2 ' + (isCurrent ? 'border-green-300 bg-green-50/40' : 'border-gray-200'));
+        var head = el('div', 'flex items-center justify-between gap-2');
+        var name = el('div', 'text-sm min-w-0');
+        name.appendChild(el('span', 'font-medium text-gray-800 break-words', item.name));
+        if (isCurrent) name.appendChild(el('span', 'ml-1 text-xs text-green-700', '(энэ бараа)'));
+        name.appendChild(el('div', 'text-[11px] text-gray-400', item.id));
+        var mode = el('select', 'border border-gray-300 rounded-lg px-2 py-1 text-xs shrink-0');
+        mode.name = 'item_own_' + item.id;
+        [['0', 'Ерөнхий огноо'], ['1', 'Өөр огноо']].forEach(function (o) {
+            var opt = el('option', '', o[1]); opt.value = o[0]; mode.appendChild(opt);
+        });
+        mode.value = item.own ? '1' : '0';
+        head.appendChild(name);
+        head.appendChild(mode);
+
+        var inherit = el('div', 'text-xs mt-1');
+        var own = el('div', 'mt-2 space-y-1');
+        var line = el('div', 'flex flex-wrap items-center gap-1');
+        var date = el('input', 'border border-gray-300 rounded-lg px-2 py-1 text-sm bg-white');
+        date.type = 'date';
+        date.name = 'item_expires_' + item.id;
+        date.value = item.expires || '';
+        line.appendChild(date);
+        [['+1 жил', 'data-add-months', '12'], ['+2 жил', 'data-add-months', '24'], ['−1 жил', 'data-shift-years', '-1'], ['+1 жил ⟳', 'data-shift-years', '1']]
+            .forEach(function (b) { line.appendChild(button(b[0], b[1], b[2])); });
+        line.lastChild.title = 'Сонгосон огноог 1 жилээр хойшлуулах';
+        var noLabel = el('label', 'inline-flex items-center gap-1 text-xs text-gray-700 ml-1 cursor-pointer');
+        var no = el('input', 'w-3.5 h-3.5 rounded border-gray-300');
+        no.type = 'checkbox';
+        no.name = 'item_no_expiry_' + item.id;
+        no.value = '1';
+        no.checked = !!item.noExpiry;
+        noLabel.appendChild(no);
+        noLabel.appendChild(document.createTextNode('Хугацаагүй'));
+        line.appendChild(noLabel);
+        var ownPreview = el('p', 'text-xs');
+        own.appendChild(line);
+        own.appendChild(ownPreview);
+        row.appendChild(head);
+        row.appendChild(inherit);
+        row.appendChild(own);
+
+        function refresh() {
+            var g = fields.docMetaGet();
+            var isOwn = mode.value === '1';
+            own.classList.toggle('hidden', !isOwn);
+            inherit.classList.toggle('hidden', isOwn);
+            date.disabled = no.checked;
+            var gr = describe(g.expires, g.noExpiry, g.issued);
+            inherit.textContent = '→ ' + (g.noExpiry ? 'Хугацаагүй' : (g.expires ? dotted(g.expires) : 'огноогүй')) + ' · ' + gr.text.replace(/^[✓⚠⏳♾] /, '');
+            inherit.className = 'text-xs mt-1 ' + gr.cls;
+            var r = describe(date.value, no.checked, g.issued);
+            ownPreview.textContent = r.text;
+            ownPreview.className = 'text-xs ' + r.cls;
+        }
+        wireDateButtons(line, date, function () { return parse(fields.docMetaGet().issued) || today(); }, refresh);
+        [mode, date, no].forEach(function (e) { e.addEventListener('change', refresh); e.addEventListener('input', refresh); });
+        refreshers.push(refresh);
+        return row;
+    }
+
+    fields.addEventListener('docmeta:change', function () { refreshers.forEach(function (f) { f(); }); });
+
+    document.querySelectorAll('[data-meta-edit]').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            var d = btn.dataset;
+            form.action = d.url;
+            form.elements.next.value = d.next || '';
+            form.elements.note.value = d.note || '';
+            dialog.querySelector('[data-meta-name]').textContent = d.name || '';
+            var items = [];
+            try { items = JSON.parse(d.items || '[]'); } catch (e) { items = []; }
+            // Одоогийн бараа эхэнд
+            items.sort(function (a, b) { return (b.id === d.current) - (a.id === d.current); });
+            itemsList.innerHTML = '';
+            refreshers = [];
+            items.forEach(function (item) { itemsList.appendChild(itemRow(item, item.id === d.current)); });
+            itemsBox.classList.toggle('hidden', items.length === 0);
+            itemsFlag.disabled = items.length === 0;
+            fields.docMetaSet({type: d.type, issued: d.issued, expires: d.expires, noExpiry: d.noExpiry});
+            dialog.showModal();
+        });
+    });
+    dialog.querySelectorAll('[data-meta-close]').forEach(function (b) { b.addEventListener('click', function () { dialog.close(); }); });
+})();
+</script>

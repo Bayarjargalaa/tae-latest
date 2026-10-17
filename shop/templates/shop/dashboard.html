@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% load exec_filters %}
 
 {% block title %}Ажилтны хяналтын самбар - EuroFoods{% endblock %}
 
@@ -10,76 +11,95 @@
     {% include 'shop/_sidebar.html' with active_page='dashboard' %}
 
     <!-- Main Content -->
-    <main class="flex-1 p-3 sm:p-4 lg:p-8">
+    <main class="flex-1 p-3 sm:p-4 lg:p-8 min-w-0">
         <div class="max-w-7xl mx-auto">
             <!-- Header -->
-            <div class="mb-6 lg:mb-8">
+            <div class="mb-4 lg:mb-6">
                 <h1 class="text-2xl lg:text-3xl font-bold text-gray-800">Тавтай морил, {{ user.first_name|default:user.username }}!</h1>
-                <p class="text-gray-600 mt-2">Ажилтны хяналтын самбар</p>
+                <p class="text-gray-600 mt-1">{% if exec %}Удирдлагын нэгтгэл{% else %}Ажилтны хяналтын самбар{% endif %}</p>
             </div>
-            
+
+            {% if exec %}
+            <!-- Хугацаа, харьцуулалт (бүх бүлэгт үйлчилнэ) -->
+            <form method="get" class="bg-white rounded-xl border border-gray-100 shadow-sm p-3 mb-4 flex flex-col lg:flex-row lg:items-center gap-3">
+                <input type="hidden" name="tab" value="{{ tab }}">
+                <div class="flex flex-wrap gap-1" role="radiogroup" aria-label="Хугацаа">
+                    {% for key, label in periods %}
+                    <label class="cursor-pointer">
+                        <input type="radio" name="period" value="{{ key }}" class="peer sr-only" {% if period.period == key %}checked{% endif %}
+                               onchange="if (this.value !== 'custom') this.form.submit(); else document.getElementById('custom-range').classList.remove('hidden')">
+                        <span class="block px-3 py-1.5 rounded-lg text-sm border border-gray-200 text-gray-700 hover:bg-gray-50 peer-checked:bg-primary peer-checked:text-white peer-checked:border-primary peer-focus-visible:ring-2 peer-focus-visible:ring-primary">{{ label }}</span>
+                    </label>
+                    {% endfor %}
+                </div>
+                <div id="custom-range" class="flex items-center gap-2 text-sm {% if period.period != 'custom' %}hidden{% endif %}">
+                    <input type="date" name="date_from" value="{{ period.date_from|date:'Y-m-d' }}" class="border border-gray-300 rounded-lg px-2 py-1.5" aria-label="Эхлэх огноо">
+                    <span class="text-gray-400">–</span>
+                    <input type="date" name="date_to" value="{{ period.date_to|date:'Y-m-d' }}" class="border border-gray-300 rounded-lg px-2 py-1.5" aria-label="Дуусах огноо">
+                    <button class="px-3 py-1.5 rounded-lg bg-primary text-white">OK</button>
+                </div>
+                <label class="flex items-center gap-2 text-sm text-gray-600 lg:ml-auto">
+                    Харьцуулах:
+                    <select name="compare" onchange="this.form.submit()" class="border border-gray-300 rounded-lg px-2 py-1.5">
+                        {% for key, label in compares %}<option value="{{ key }}" {% if period.compare == key %}selected{% endif %}>{{ label }}</option>{% endfor %}
+                    </select>
+                </label>
+            </form>
+            <p class="text-xs text-gray-500 -mt-2 mb-3 px-1">
+                📅 {{ period.date_from|date:'Y.m.d' }} – {{ period.date_to|date:'Y.m.d' }} ({{ period.days }} хоног)
+                {% if period.cmp_from %} · харьцуулах: {{ period.cmp_from|date:'Y.m.d' }} – {{ period.cmp_to|date:'Y.m.d' }}{% endif %}
+            </p>
+
+            <!-- Бүлгүүд -->
+            <nav class="flex gap-1 overflow-x-auto pb-1 mb-4 border-b border-gray-200" aria-label="Бүлэг">
+                {% for s in sections %}
+                <a href="{{ s.url }}" class="shrink-0 px-3 lg:px-4 py-2 text-sm font-medium rounded-t-lg border-b-2 -mb-px transition
+                   {% if tab == s.key %}border-primary text-primary bg-white{% else %}border-transparent text-gray-600 hover:text-gray-900 hover:bg-white{% endif %}"
+                   {% if tab == s.key %}aria-current="page"{% endif %}>
+                    {{ s.icon }} {{ s.label }}{% if s.soon %} <span class="text-[10px] text-gray-400 font-normal">удахгүй</span>{% endif %}
+                </a>
+                {% endfor %}
+            </nav>
+
+            {% if tab == 'sales' %}{% include 'shop/exec/_sales.html' %}
+            {% elif tab == 'inventory' %}{% include 'shop/exec/_inventory.html' %}
+            {% elif tab == 'receivable' or tab == 'payable' %}{% include 'shop/exec/_recpay.html' with kind=tab %}
+            {% elif tab == 'cash' %}{% include 'shop/exec/_cash.html' %}
+            {% elif tab == 'hr' %}{% include 'shop/exec/_hr.html' %}
+            {% else %}
+            <div class="bg-white rounded-xl border border-dashed border-gray-300 p-10 text-center text-gray-500">
+                <div class="text-4xl mb-2">🛠</div>
+                Энэ бүлгийг дараагийн шатанд нэмнэ.
+            </div>
+            {% endif %}
+
+            <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+            {% include 'shop/exec/_charts.html' %}
+            {% else %}
             <!-- Stats Cards -->
             <div class="grid grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-6 mb-8">
                 <div class="bg-white rounded-lg shadow p-6">
-                    <div class="flex items-center justify-between">
-                        <div>
-                            <p class="text-gray-500 text-sm">Нийт бүтээгдэхүүн</p>
-                            <p class="text-3xl font-bold text-primary mt-2">{{ total_products }}</p>
-                        </div>
-                        <div class="text-4xl">📦</div>
-                    </div>
+                    <p class="text-gray-500 text-sm">Нийт бүтээгдэхүүн</p>
+                    <p class="text-3xl font-bold text-primary mt-2">{{ total_products }}</p>
                 </div>
-
                 <div class="bg-white rounded-lg shadow p-6">
-                    <div class="flex items-center justify-between">
-                        <div>
-                            <p class="text-gray-500 text-sm">Идэвхтэй</p>
-                            <p class="text-3xl font-bold text-green-600 mt-2">{{ active_products }}</p>
-                        </div>
-                        <div class="text-4xl">✅</div>
-                    </div>
+                    <p class="text-gray-500 text-sm">Идэвхтэй</p>
+                    <p class="text-3xl font-bold text-green-600 mt-2">{{ active_products }}</p>
                 </div>
-
                 <div class="bg-white rounded-lg shadow p-6">
-                    <div class="flex items-center justify-between">
-                        <div>
-                            <p class="text-gray-500 text-sm">Үлдэгдэлтэй бараа</p>
-                            <p class="text-3xl font-bold text-orange-600 mt-2">{{ in_stock_products }}</p>
-                        </div>
-                        <div class="text-4xl">📊</div>
-                    </div>
+                    <p class="text-gray-500 text-sm">Үлдэгдэлтэй бараа</p>
+                    <p class="text-3xl font-bold text-orange-600 mt-2">{{ in_stock_products }}</p>
                 </div>
-
                 <div class="bg-white rounded-lg shadow p-6">
-                    <div class="flex items-center justify-between">
-                        <div>
-                            <p class="text-gray-500 text-sm">Харилцагч</p>
-                            <p class="text-3xl font-bold text-blue-600 mt-2">{{ total_customers }}</p>
-                        </div>
-                        <div class="text-4xl">👥</div>
-                    </div>
+                    <p class="text-gray-500 text-sm">Харилцагч</p>
+                    <p class="text-3xl font-bold text-blue-600 mt-2">{{ total_customers }}</p>
                 </div>
-                
                 <div class="bg-white rounded-lg shadow p-6">
-                    <div class="flex items-center justify-between">
-                        <div>
-                            <p class="text-gray-500 text-sm">Ажилчид</p>
-                            <p class="text-3xl font-bold text-purple-600 mt-2">{{ total_employees }}</p>
-                        </div>
-                        <div class="text-4xl">👨‍💼</div>
-                    </div>
+                    <p class="text-gray-500 text-sm">Ажилчид</p>
+                    <p class="text-3xl font-bold text-purple-600 mt-2">{{ total_employees }}</p>
                 </div>
             </div>
-            
-            <!-- Recent Activity -->
-            <div class="bg-white rounded-lg shadow">
-                <div class="p-6 border-b">
-                    <h2 class="text-xl font-bold">Сүүлийн үйл ажиллагаа</h2>
-                </div>
-                <div class="p-6">
-                    <p class="text-gray-500">Тун удахгүй...</p>
-                </div>
-            </div>
+            {% endif %}
         </div>
     </main>
 </div>

@@ -1,3 +1,17 @@
+{
+    # 443 гаднаас хүрэхгүй байсан ч HTTP сайт ажилласаар байна (http -> https автоматаар шилжүүлэхгүй)
+    auto_https disable_redirects
+}
+
+# tae.mn - худалдаж авсан RapidSSL сертификат (certs/ хавтас, git-д орохгүй).
+# tae.mn.crt = сайтын сертификат + RapidSSL TLS RSA CA G1 завсрын сертификат (fullchain). Хугацаа: 2027-04-30
+tae.mn, www.tae.mn {
+    tls /etc/caddy/certs/tae.mn.crt /etc/caddy/certs/tae.mn.key
+    # HTTPS хүсэлт бүрийг docker logs tae-proxy-1-д бичнэ (443 гаднаас хүрч байгаа эсэхийг шалгахад)
+    log
+    reverse_proxy web:8000
+}
+
 http://www.gotopa.com, http://gotopa.com {
     reverse_proxy host.docker.internal:8002
 }

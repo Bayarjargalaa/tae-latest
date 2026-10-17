@@ -1,0 +1,49 @@
+<style>
+    /* Импортын захиалга / Замын мэдээ - дундын загвар */
+    .im-table { width: 100%; border-collapse: collapse; font-size: .85rem; }
+    .im-table th { text-align: left; font-size: .72rem; font-weight: 600; color: #4b5563; text-transform: uppercase; letter-spacing: .03em;
+                   background: #fafaf9; padding: .55rem .75rem; border-bottom: 1px solid #e7e5e4; white-space: nowrap; }
+    .im-table td { padding: .55rem .75rem; border-bottom: 1px solid #f1f1ef; vertical-align: top; }
+    .im-table .r { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .im-row { cursor: pointer; }
+    .im-row:hover td { background: #f8fafc; }
+    .pill { display: inline-block; font-size: .72rem; padding: .1rem .55rem; border-radius: 999px; background: #f3f4f6; color: #374151; white-space: nowrap; }
+    .pill.blue { background: #e1f0f4; color: #0b6e8a; }
+    .pill.ok { background: #e3f2e8; color: #2f7d4f; }
+    .pill.warn { background: #fbf0dc; color: #8a5a00; }
+    .pill.bad { background: #f8e4e1; color: #b03a2e; }
+    .mini { display: flex; gap: 3px; margin-top: 6px; max-width: 190px; }
+    .mini i { height: 4px; flex: 1; border-radius: 2px; background: #e6ebee; }
+    .mini i.on { background: #0b6e8a; }
+    .mini.all i.on { background: #2f7d4f; }
+    .late { color: #b03a2e; }
+    .num { font-variant-numeric: tabular-nums; }
+    /* 8 алхамт явц */
+    .steps { display: grid; grid-template-columns: repeat(8, minmax(92px, 1fr)); overflow-x: auto; padding: 1rem 1rem 1.1rem; }
+    .step { position: relative; display: grid; gap: 1px; padding-right: .5rem; }
+    .step::before { content: ""; position: absolute; left: 14px; right: -2px; top: 6px; height: 3px; background: #e6ebee; }
+    .step:last-child::before { display: none; }
+    .step.done::before { background: #2f7d4f; }
+    .step .dot { position: relative; width: 15px; height: 15px; border-radius: 50%; background: #fff; border: 3px solid #e6ebee; margin-bottom: .4rem; }
+    .step.done .dot { background: #2f7d4f; border-color: #2f7d4f; }
+    .step.cur .dot { border-color: #0b6e8a; box-shadow: 0 0 0 4px #e1f0f4; }
+    .step b { font-size: .75rem; font-weight: 600; }
+    .step .sub { font-size: .7rem; color: #6b7280; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .step .d { font-size: .75rem; font-variant-numeric: tabular-nums; color: #9ca3af; }
+    .step.done .d { color: #2f7d4f; }
+    /* Төлөвлөсөн (ирээдүйн огноотой) - бүдэг ногоон */
+    .step.plan .dot { background: #cfe6d7; border-color: #cfe6d7; }
+    .step.plan .d, .step.plan b { color: #7fb08f; }
+    .field { border: 1px solid #e5e7eb; border-radius: .5rem; padding: .4rem .6rem; font-size: .85rem; width: 100%; background: #fff; min-width: 0; }
+    .field:focus { outline: 2px solid rgba(11,110,138,.3); border-color: #0b6e8a; }
+    .field[readonly], fieldset:disabled .field { background: #f9fafb; color: #374151; }
+    /* Бичих тутамд хайдаг сонголт (datalist-ийн оронд) */
+    .combo { position: fixed; z-index: 60; max-height: 280px; overflow-y: auto; background: #fff; border: 1px solid #d1d5db; border-radius: .5rem;
+             box-shadow: 0 8px 24px rgba(0,0,0,.12); font-size: .85rem; padding: .25rem 0; }
+    .combo div { padding: .35rem .65rem; cursor: pointer; display: flex; justify-content: space-between; gap: .75rem; }
+    .combo div.on { background: #e1f0f4; }
+    .combo small { color: #8a5a00; white-space: nowrap; }
+    .combo mark { background: #fde68a; color: inherit; border-radius: 2px; }
+    .combo .empty { color: #9ca3af; cursor: default; }
+    .lbl { display: block; font-size: .7rem; font-weight: 600; color: #6b7280; text-transform: uppercase; letter-spacing: .03em; margin-bottom: .25rem; }
+</style>

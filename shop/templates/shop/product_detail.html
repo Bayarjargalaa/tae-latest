@@ -111,7 +111,7 @@
                         🛒 Сагсанд нэмэх
                     </button>
                     
-                    {% if user.is_staff %}
+                    {% if 'product_edit' in visible_menu_keys %}
                     <a href="{% url 'shop:product_edit' product.id %}" 
                        class="block w-full bg-secondary text-white py-3 rounded-lg hover:bg-blue-700 font-medium text-center transition">
                         ✏️ Засах
@@ -122,6 +122,265 @@
         </div>
     </div>
     
+    {% if user.is_authenticated %}
+    <!-- Шинжилгээний бичиг (хавсралт) - нэвтэрсэн бүх хэрэглэгч харж, татна. Нэг бичиг олон бараатай холбогдож болно -->
+    <div id="attachments" class="mt-6 bg-white rounded-lg shadow-lg p-4 lg:p-6">
+        <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+            <h2 class="text-lg lg:text-xl font-bold">📄 Шинжилгээний бичиг</h2>
+            <div class="flex items-center gap-3 text-sm">
+                {% if attachments %}<span class="text-gray-500">{{ attachments|length }} файл</span>{% endif %}
+                {% if 'product_certificates' in visible_menu_keys %}
+                <a href="{% url 'shop:product_certificates' %}" class="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 font-medium">🧪 Бичгийн хяналт →</a>
+                {% endif %}
+            </div>
+        </div>
+
+        {% if messages %}
+        <div class="space-y-2 mb-3">{% for message in messages %}<div class="p-3 rounded-lg text-sm {% if message.tags == 'error' %}bg-red-100 text-red-800{% elif message.tags == 'warning' %}bg-yellow-100 text-yellow-800{% else %}bg-green-100 text-green-800{% endif %}">{{ message }}</div>{% endfor %}</div>
+        {% endif %}
+
+        {% if attachments %}
+        <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+            {% for a in attachments %}
+            <div class="border border-gray-200 rounded-lg overflow-hidden flex flex-col">
+                <a href="{% url 'shop:product_attachment' a.pk %}" target="_blank" rel="noopener" class="block bg-gray-50 h-36 flex items-center justify-center" title="{{ a.original_name }}">
+                    {% if a.is_image %}<img src="{% url 'shop:product_attachment' a.pk %}" alt="{{ a.original_name }}" loading="lazy" class="max-h-36 w-full object-contain">{% else %}<span class="text-5xl">📄</span>{% endif %}
+                </a>
+                <div class="p-2 text-xs space-y-1 flex-1">
+                    {% if a.doc_type %}<div class="font-semibold text-gray-700">{{ a.doc_type.name }}</div>{% endif %}
+                    {% if a.cert_status %}
+                    <div class="inline-flex flex-wrap items-center gap-1 rounded px-1.5 py-0.5 font-medium
+                        {% if a.cert_status == 'expired' %}bg-red-100 text-red-800{% elif a.cert_status == 'soon' %}bg-amber-100 text-amber-800{% elif a.cert_status == 'no_date' %}bg-orange-100 text-orange-800{% else %}bg-green-100 text-green-800{% endif %}">
+                        {% if a.eff_expires %}⏱ {{ a.eff_expires|date:'Y.m.d' }} · {% endif %}{{ a.cert_text }}{% if a.own_expiry %} <span class="font-normal">(энэ бараанд)</span>{% endif %}
+                    </div>
+                    {% endif %}
+                    <div class="font-medium text-gray-800 break-all">{{ a.original_name|truncatechars:40 }}</div>
+                    {% if a.note %}<div class="text-gray-600">{{ a.note }}</div>{% endif %}
+                    {% if a.other_items %}
+                    <details class="text-gray-600">
+                        <summary class="cursor-pointer text-blue-700">🔗 Бусад {{ a.other_items|length }} бараанд хамаарна</summary>
+                        <ul class="mt-1 space-y-0.5">
+                            {% for it in a.other_items %}<li><a href="{% url 'shop:product_detail' it.id %}#attachments" class="hover:underline">{{ it.name|truncatechars:45 }}</a></li>{% endfor %}
+                        </ul>
+                    </details>
+                    {% endif %}
+                    <div class="text-gray-400">{{ a.created_at|date:'Y.m.d' }}{% if a.created_by %} · {{ a.created_by.get_full_name|default:a.created_by.username }}{% endif %}</div>
+                </div>
+                <div class="flex border-t border-gray-200 text-sm">
+                    <a href="{% url 'shop:product_attachment' a.pk %}" target="_blank" rel="noopener" class="flex-1 text-center py-2 hover:bg-gray-50" title="Харах">👁</a>
+                    <a href="{% url 'shop:product_attachment' a.pk %}?download=1" class="flex-1 text-center py-2 hover:bg-gray-50 border-l border-gray-200" title="Татах">⬇</a>
+                    {% if can_attach %}
+                    <button type="button" class="flex-1 py-2 hover:bg-green-50 text-green-700 border-l border-gray-200" title="Төрөл, хугацаа засах"
+                            data-meta-edit data-url="{% url 'shop:product_attachment_edit' a.pk %}" data-name="{{ a.original_name }}"
+                            data-type="{{ a.doc_type_id|default:'' }}" data-issued="{{ a.issued_on|date:'Y-m-d' }}" data-expires="{{ a.expires_on|date:'Y-m-d' }}"
+                            data-no-expiry="{{ a.no_expiry|yesno:'1,0' }}" data-note="{{ a.note }}" data-items="{{ a.items_json }}" data-current="{{ product.id }}">✏️</button>
+                    <button type="button" class="flex-1 py-2 hover:bg-blue-50 text-blue-700 border-l border-gray-200" title="Өөр бараатай холбох"
+                            data-link-open data-link-url="{% url 'shop:product_attachment_link' a.pk %}" data-delete-url="{% url 'shop:product_attachment_delete' a.pk %}"
+                            data-name="{{ a.original_name }}" data-count="{{ a.other_items|length|add:1 }}"
+                            data-exclude="{% for it in a.other_items %}{{ it.id }}|{% endfor %}">🔗</button>
+                    <form method="post" action="{% url 'shop:product_attachment_delete' a.pk %}"
+                          onsubmit="return confirm('{% if a.other_items %}{{ a.original_name|escapejs }}: энэ бараанаас салгах уу? (бусад {{ a.other_items|length }} бараанд хэвээр үлдэнэ){% else %}{{ a.original_name|escapejs }} файлыг устгах уу?{% endif %}');">
+                        {% csrf_token %}<input type="hidden" name="item_id" value="{{ product.id }}"><input type="hidden" name="back_item" value="{{ product.id }}">
+                        <button type="submit" class="px-3 py-2 text-red-600 hover:bg-red-50 border-l border-gray-200" title="{% if a.other_items %}Энэ бараанаас салгах{% else %}Устгах{% endif %}">✕</button>
+                    </form>
+                    {% endif %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <p class="text-sm text-gray-500">Шинжилгээний бичиг хавсаргаагүй байна.</p>
+        {% endif %}
+
+        {% if can_attach %}
+        {# Утаснаас: "Зураг дарах" нь камерыг шууд нээнэ; accept=jpeg/png тул iPhone HEIC-ийг JPEG болгож илгээнэ #}
+        <form id="att-form" method="post" enctype="multipart/form-data" action="{% url 'shop:product_attachment_upload' product.id %}" class="mt-4 border-t border-gray-100 pt-4 space-y-3">
+            {% csrf_token %}
+            <div class="flex flex-wrap items-center justify-between gap-2">
+                <h3 class="font-semibold text-gray-800">Шинэ бичиг хавсаргах</h3>
+                {% if 'product_certificates' in visible_menu_keys %}
+                <a href="{% url 'shop:product_certificates' %}" class="text-sm text-blue-700 hover:underline">🧪 Бичгийн хяналт руу буцах →</a>
+                {% endif %}
+            </div>
+            <div class="text-sm text-gray-700">1. Төрөл, хугацаа:</div>
+            {% include 'shop/_doc_meta_fields.html' %}
+            <input type="text" name="note" maxlength="200" placeholder="2. Тайлбар (заавал биш): жиш. 2026 оны шинжилгээ, лабораторийн дүгнэлт" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
+            <div class="border border-dashed border-gray-300 rounded-lg p-3">
+                <div class="text-sm text-gray-700 mb-2">3. Энэ бичигт <b>өөр барааны</b> шинжилгээ ч байгаа бол нэр, кодоо бичээд <b>доор гарах жагсаалтаас бараан дээр дарж</b> нэмнэ (заавал биш):</div>
+                <div data-picker data-exclude="{{ product.id }}|"></div>
+            </div>
+            <div class="text-sm text-gray-700">4. Зураг эсвэл файлаа сонгоно:</div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <label class="cursor-pointer flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg py-3">
+                    📷 Зураг дарж оруулах
+                    <input type="file" name="files" accept="image/jpeg,image/png" capture="environment" class="hidden" data-file>
+                </label>
+                <label class="cursor-pointer flex items-center justify-center gap-2 bg-white border-2 border-blue-600 text-blue-700 hover:bg-blue-50 font-semibold rounded-lg py-3">
+                    📎 Файл сонгох (зураг, HEIC, PDF)
+                    <input type="file" name="files" accept="image/jpeg,image/png,image/webp,image/heic,image/heif,.heic,.heif,application/pdf,.pdf" multiple class="hidden" data-file>
+                </label>
+            </div>
+            <div id="att-picked" class="hidden text-sm bg-gray-50 border border-gray-200 rounded-lg px-3 py-2"></div>
+            <div class="text-sm text-gray-700">5. Хадгална:</div>
+            <button type="submit" id="att-save" disabled
+                    class="w-full text-lg font-bold py-3 rounded-lg bg-green-600 hover:bg-green-700 text-white disabled:bg-gray-300 disabled:cursor-not-allowed">💾 Хадгалах</button>
+            <p id="att-status" class="text-sm text-gray-500">Файл сонгосны дараа "Хадгалах" товч идэвхжинэ.</p>
+        </form>
+
+        {% include 'shop/_doc_meta_script.html' %}
+
+        {# Хавсаргасан бичгийг өөр бараатай холбох цонх (🔗 товчоор нээгдэнэ) #}
+        <dialog id="link-dialog" class="rounded-xl p-0 w-[min(36rem,calc(100vw-2rem))] backdrop:bg-black/40">
+            <form id="link-form" method="post" class="p-4 space-y-3">
+                {% csrf_token %}
+                <input type="hidden" name="back_item" value="{{ product.id }}">
+                <div class="flex items-start justify-between gap-2">
+                    <div>
+                        <h3 class="font-bold text-lg">🔗 Өөр бараатай холбох</h3>
+                        <div id="link-name" class="text-sm text-gray-500 break-all"></div>
+                    </div>
+                    <button type="button" class="text-gray-500 hover:text-gray-800 text-xl px-2" data-link-close>✕</button>
+                </div>
+                <p class="text-sm text-gray-600">Барааны нэр, кодоо бичээд <b>доор гарах жагсаалтаас бараан дээр дарж</b> нэмнэ (Enter = эхнийх), дараа нь <b>Холбох</b> дарна. Тэдгээр барааны хуудсанд ч энэ бичиг харагдана.</p>
+                <div id="link-picker"></div>
+                <div class="flex flex-wrap justify-between gap-2 pt-2 border-t border-gray-100">
+                    <button type="submit" form="link-delete-form" class="text-sm px-3 py-2 rounded-lg text-red-700 hover:bg-red-50"
+                            onclick="return confirm('Энэ бичгийг холбогдсон БҮХ бараанаас бүр мөсөн устгах уу?');">🗑 Бүх бараанаас устгах</button>
+                    <div class="flex gap-2">
+                        <button type="button" class="text-sm px-4 py-2 rounded-lg border border-gray-300 hover:bg-gray-50" data-link-close>Болих</button>
+                        <button type="submit" class="text-sm font-semibold px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700">Холбох</button>
+                    </div>
+                </div>
+            </form>
+            <form id="link-delete-form" method="post">{% csrf_token %}<input type="hidden" name="all" value="1"><input type="hidden" name="back_item" value="{{ product.id }}"></form>
+        </dialog>
+
+        <script>
+        (function () {
+            var SEARCH_URL = '{% url "shop:product_search" %}';
+
+            // Бараа хайж сонгох жижиг хэрэгсэл: сонгосон бараа бүр hidden item_ids болж формд орно
+            function makePicker(host, excludeIds) {
+                host.innerHTML = '<input type="search" placeholder="Барааны нэр, код, баркодоор хайх..." class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" data-q>' +
+                    '<div class="mt-1 max-h-56 overflow-y-auto border-2 border-blue-300 rounded-lg divide-y divide-gray-100 hidden" data-results></div>' +
+                    '<div class="flex flex-wrap gap-1.5 mt-2" data-chips></div>';
+                var q = host.querySelector('[data-q]'), results = host.querySelector('[data-results]'), chips = host.querySelector('[data-chips]');
+                var exclude = new Set(excludeIds), chosen = new Set(), timer = null, seq = 0, first = null;
+                function addChip(item) {
+                    if (chosen.has(item.id) || exclude.has(item.id)) return;
+                    chosen.add(item.id);
+                    var chip = document.createElement('span');
+                    chip.className = 'inline-flex items-center gap-1 bg-blue-50 border border-blue-200 text-blue-800 rounded-full pl-3 pr-1 py-1 text-xs';
+                    chip.append(item.name || item.id);
+                    var hidden = document.createElement('input');
+                    hidden.type = 'hidden'; hidden.name = 'item_ids'; hidden.value = item.id;
+                    var x = document.createElement('button');
+                    x.type = 'button'; x.textContent = '✕'; x.className = 'px-1.5 hover:text-red-600'; x.title = 'Хасах';
+                    x.addEventListener('click', function () { chosen.delete(item.id); chip.remove(); });
+                    chip.append(hidden, x);
+                    chips.append(chip);
+                }
+                function render(items) {
+                    results.innerHTML = '';
+                    items = items.filter(function (it) { return !exclude.has(it.id); });
+                    results.innerHTML = items.length
+                        ? '<div class="px-3 py-1.5 text-xs font-semibold text-blue-700 bg-blue-50">👇 Нэмэх бараан дээрээ дарна уу</div>'
+                        : '<div class="px-3 py-2 text-sm text-gray-500">Олдсонгүй</div>';
+                    first = items[0] || null;
+                    items.forEach(function (it) {
+                        var b = document.createElement('button');
+                        b.type = 'button';
+                        b.className = 'block w-full text-left px-3 py-2 text-sm hover:bg-blue-50' + (chosen.has(it.id) ? ' text-gray-400' : '');
+                        b.textContent = it.name + '  ·  ' + it.id;
+                        b.addEventListener('click', function () { addChip(it); q.value = ''; results.classList.add('hidden'); q.focus(); });
+                        results.append(b);
+                    });
+                    results.classList.remove('hidden');
+                }
+                q.addEventListener('input', function () {
+                    clearTimeout(timer);
+                    var value = q.value.trim();
+                    if (value.length < 2) { results.classList.add('hidden'); return; }
+                    timer = setTimeout(function () {
+                        var my = ++seq;
+                        fetch(SEARCH_URL + '?q=' + encodeURIComponent(value), { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+                            .then(function (r) { return r.json(); })
+                            .then(function (data) { if (my === seq) render(data.results || []); });
+                    }, 250);
+                });
+                // Enter = жагсаалтын эхний барааг нэмнэ (форм илгээгдэхгүй)
+                q.addEventListener('keydown', function (e) {
+                    if (e.key !== 'Enter') return;
+                    e.preventDefault();
+                    if (first && !results.classList.contains('hidden')) { addChip(first); q.value = ''; results.classList.add('hidden'); }
+                });
+                return {
+                    count: function () { return chosen.size; },
+                    pending: function () { return q.value.trim(); },  // бичсэн боловч жагсаалтаас сонгоогүй
+                    focus: function () { q.focus(); },
+                };
+            }
+
+            // Хадгалахын өмнө: хайлтад бичсэн боловч сонгоогүй бараа байвал анхааруулна
+            function confirmPending(picker) {
+                var text = picker.pending();
+                if (!text) return true;
+                var ok = confirm('"' + text + '" гэж бичсэн боловч жагсаалтаас бараагаа СОНГООГҮЙ байна.\n\n' +
+                                 'OK - тэр бараагүйгээр үргэлжлүүлэх\nCancel - буцаж, жагсаалтаас бараан дээр дарж нэмэх');
+                if (!ok) picker.focus();
+                return ok;
+            }
+
+            // Шинэ бичиг хавсаргах формын picker
+            var uploadPickerHost = document.querySelector('#att-form [data-picker]');
+            var uploadPicker = makePicker(uploadPickerHost, uploadPickerHost.dataset.exclude.split('|').filter(Boolean));
+            var fileInputs = document.querySelectorAll('#att-form [data-file]');
+            function pickedFiles() {
+                var names = [];
+                fileInputs.forEach(function (i) { Array.prototype.forEach.call(i.files, function (f) { names.push(f.name); }); });
+                return names;
+            }
+            fileInputs.forEach(function (input) {
+                input.addEventListener('change', function () {
+                    var names = pickedFiles(), box = document.getElementById('att-picked');
+                    box.classList.toggle('hidden', !names.length);
+                    box.textContent = '📎 Сонгосон: ' + names.join(', ');
+                    document.getElementById('att-save').disabled = !names.length;
+                    document.getElementById('att-status').textContent = names.length ? 'Одоо "Хадгалах" товч дарна уу.' : 'Файл сонгосны дараа "Хадгалах" товч идэвхжинэ.';
+                });
+            });
+            document.getElementById('att-form').addEventListener('submit', function (e) {
+                if (!pickedFiles().length) { e.preventDefault(); alert('Эхлээд зураг эсвэл файлаа сонгоно уу.'); return; }
+                if (!confirmPending(uploadPicker)) { e.preventDefault(); return; }
+                var extra = uploadPicker.count();
+                document.getElementById('att-save').disabled = true;
+                document.getElementById('att-status').textContent = '⏳ Хадгалж байна... (' + pickedFiles().length + ' файл' + (extra ? ', энэ ба өөр ' + extra + ' бараанд' : '') + ')';
+            });
+
+            // 🔗 Холбох цонх
+            var dialog = document.getElementById('link-dialog');
+            var currentProduct = '{{ product.id|escapejs }}', linkPicker = null;
+            document.getElementById('link-form').addEventListener('submit', function (e) {
+                if (!confirmPending(linkPicker)) { e.preventDefault(); return; }
+                if (!linkPicker.count()) { e.preventDefault(); alert('Холбох бараагаа хайгаад жагсаалтаас дарж сонгоно уу.'); linkPicker.focus(); }
+            });
+            document.querySelectorAll('[data-link-open]').forEach(function (btn) {
+                btn.addEventListener('click', function () {
+                    document.getElementById('link-form').action = btn.dataset.linkUrl;
+                    document.getElementById('link-delete-form').action = btn.dataset.deleteUrl;
+                    document.getElementById('link-name').textContent = btn.dataset.name + ' · одоо ' + btn.dataset.count + ' бараанд холбоотой';
+                    linkPicker = makePicker(document.getElementById('link-picker'), [currentProduct].concat(btn.dataset.exclude.split('|').filter(Boolean)));
+                    dialog.showModal();
+                    dialog.querySelector('[data-q]').focus();
+                });
+            });
+            dialog.querySelectorAll('[data-link-close]').forEach(function (b) { b.addEventListener('click', function () { dialog.close(); }); });
+        })();
+        </script>
+        {% endif %}
+    </div>
+    {% endif %}
+
     <!-- Related Products -->
     {% if related_products %}
     <div class="mt-8 lg:mt-12">

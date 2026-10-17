@@ -1,0 +1,106 @@
+{% extends 'base.html' %}
+
+{% block title %}Импортын захиалга - Euro Foods{% endblock %}
+
+{% block hide_mobile_menu %}hidden{% endblock %}
+
+{% block extra_css %}{% include 'shop/_import_css.html' %}
+<style>
+    .leg { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 3px; margin-top: 4px; font-size: .7rem; max-width: 280px; }
+    .leg-p { color: #9ca3af; white-space: nowrap; }
+    .leg-p.done { color: #374151; font-weight: 600; }
+    .leg-p.plan { color: #7fb08f; }
+    .leg-d { font-weight: 600; color: #0b6e8a; background: #e1f0f4; border-radius: 999px; padding: 0 .35rem; white-space: nowrap; font-variant-numeric: tabular-nums; }
+    .leg-d::before { content: "→ "; }
+    .leg-d::after { content: " →"; }
+    .leg-d.pl { color: #7fb08f; background: #eef6f0; }
+    .leg-d.now { color: #8a5a00; background: #fbf0dc; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="flex min-h-screen bg-gray-50">
+    {% include 'shop/_sidebar.html' with active_page=active_page %}
+
+    <main class="flex-1 p-3 lg:p-8 min-w-0 space-y-5">
+        <div class="flex flex-wrap items-end justify-between gap-3">
+            <div>
+                <div class="text-xs font-medium text-gray-500 mb-1">Гадаад харилцаа</div>
+                <h1 class="text-2xl lg:text-3xl font-bold tracking-tight">🚢 Импортын захиалга</h1>
+                <p class="text-sm text-gray-500 mt-1">Нэг захиалга = нэг чингэлэг. Мөр дээр дарж нийлүүлэгч, бараа, нэхэмжлэх, төлбөр, замын мэдээг бүртгэнэ.</p>
+            </div>
+            <div class="flex flex-wrap items-center gap-2">
+                <div class="flex items-center gap-1 bg-white border border-gray-200 rounded-lg p-1 text-sm">
+                    <a href="?show=active" class="px-3 py-1 rounded-md {% if show == 'active' %}bg-gray-900 text-white{% else %}hover:bg-gray-100{% endif %}">Идэвхтэй</a>
+                    <a href="?show=all" class="px-3 py-1 rounded-md {% if show != 'active' %}bg-gray-900 text-white{% else %}hover:bg-gray-100{% endif %}">Бүгд</a>
+                </div>
+                <a href="{% url 'shop:import_tracking' %}" class="text-sm font-medium px-3 py-2 rounded-lg border border-gray-200 bg-white hover:bg-gray-50">🧭 Замын мэдээ</a>
+                {% if editable %}
+                <form method="post">{% csrf_token %}<input type="hidden" name="action" value="create">
+                    <button type="submit" class="bg-primary text-white text-sm font-semibold px-4 py-2 rounded-lg hover:bg-green-700">+ Шинэ захиалга</button>
+                </form>
+                {% endif %}
+            </div>
+        </div>
+
+        {% if messages %}
+        <div class="space-y-2">{% for message in messages %}<div class="p-3 rounded-lg text-sm {% if message.tags == 'error' %}bg-red-100 text-red-800{% elif message.tags == 'warning' %}bg-yellow-100 text-yellow-800{% else %}bg-green-100 text-green-800{% endif %}">{{ message }}</div>{% endfor %}</div>
+        {% endif %}
+
+        <section class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+            <div class="overflow-x-auto">
+                <table class="im-table">
+                    <thead><tr><th>Захиалга</th><th>Нийлүүлэгчид</th><th class="r">Шилжүүлсэн</th><th class="r" title="Гаалийн татвар + НӨАТ, төгрөгөөр">Татвар</th><th>Төлөв</th><th>Байршил</th><th>Тээвэрлэгч</th><th class="r">Тээврийн зардал</th><th class="r">Ирэх / ирсэн</th></tr></thead>
+                    <tbody>
+                        {% for s in shipments %}
+                        <tr class="im-row" tabindex="0" data-href="{% url 'shop:import_shipment' s.pk %}">
+                            <td class="whitespace-nowrap"><a href="{% url 'shop:import_shipment' s.pk %}" class="font-semibold text-gray-900 hover:underline">{{ s.code }}</a>
+                                <div class="text-xs text-gray-500">{{ s.get_container_size_display }}{% if s.container_no %} · {{ s.container_no }}{% endif %}</div></td>
+                            <td>{% for o in s.supplier_orders.all %}<div class="whitespace-nowrap">{{ o.supplier_name }}</div>{% empty %}<span class="text-gray-400">—</span>{% endfor %}</td>
+                            {# Нийлүүлэгч бүрт шилжүүлсэн дүн - нийлүүлэгчийн мөртэй зэрэгцэнэ #}
+                            <td class="r">{% for o in s.supplier_orders.all %}<div class="{% if o.payment_status == 'full' %}text-green-700{% elif o.payment_status == 'partial' %}text-amber-700{% else %}text-gray-400{% endif %}" title="{{ o.get_payment_status_display }} · барааны дүн {{ o.goods_total|floatformat:'2g' }} {{ o.currency }}">{{ o.paid_total|floatformat:'2g' }} {{ o.currency }}</div>{% empty %}<span class="text-gray-400">—</span>{% endfor %}
+                                {% if s.supplier_orders.all|length > 1 and s.paid_totals %}<div class="border-t border-gray-200 mt-0.5 pt-0.5 font-semibold" title="Нийт шилжүүлсэн">{% for c, a in s.paid_totals %}<div>{{ a|floatformat:'2g' }} {{ c }}</div>{% endfor %}</div>{% endif %}
+                                {% if s.supplier_orders.all %}<div class="mt-1"><span class="pill {{ s.payment_tone }}">{{ s.payment_label }}</span></div>{% endif %}</td>
+                            <td class="r">{% if s.tax.total %}<div class="font-semibold num">{{ s.tax.total|floatformat:'0g' }} ₮</div><div class="text-xs text-gray-500 num whitespace-nowrap">Гааль {{ s.tax.duty|floatformat:'0g' }} · НӨАТ {{ s.tax.vat|floatformat:'0g' }}</div>{% if s.tax_missing %}<div class="text-xs late">{{ s.tax_missing|join:', ' }} ханшгүй</div>{% endif %}{% else %}<span class="text-gray-400">—</span>{% endif %}</td>
+                            <td><span class="pill {% if s.arrived %}ok{% elif s.step_idx >= 0 %}blue{% endif %}">{{ s.status_label }}</span>
+                                <div class="mini {% if s.arrived %}all{% endif %}">{% for step in s.steps %}<i class="{% if step.done %}on{% endif %}"></i>{% endfor %}</div></td>
+                            <td>{{ s.location }}{% if s.location_date %}<div class="text-xs text-gray-500 num">{{ s.location_date|date:'Y-m-d' }}</div>{% endif %}
+                                {% if s.load_actual or s.transit_points.all %}
+                                {# Ачигдсанаас хойшх зам: газар бүрийн хооронд хэдэн хоног #}
+                                <div class="leg">{% for n in s.timeline %}{% if not forloop.first %}<span class="leg-d {% if n.days_now %}now{% elif n.days_plan %}pl{% endif %}" title="{% if n.days_now %}Өнөөдрийг хүртэл{% elif n.days_plan %}Төлөвлөсөн{% else %}Өмнөх газраас{% endif %}">{% if n.days is not None %}{{ n.days }}х{% if n.days_now %}…{% endif %}{% else %}·{% endif %}</span>{% endif %}<span class="leg-p {{ n.state }}">{% if forloop.first and s.load_place %}{{ s.load_place }}{% else %}{{ n.label }}{% endif %}</span>{% endfor %}</div>
+                                {% if s.total_days is not None %}<div class="text-xs text-gray-500">Ачигдсанаас <b class="num">{{ s.total_days }}</b> хоног</div>{% endif %}
+                                {% endif %}</td>
+                            <td class="text-xs text-gray-600">{{ s.carrier_name|default:'—' }}{% if s.transport_mode %}<div class="mt-0.5 whitespace-nowrap">{{ s.transport_icon }} {{ s.transport_mode }}</div>{% endif %}</td>
+                            <td class="r">{% if s.freight_costs.all %}
+                                <div title="Анхны тохиролцоо">{{ s.freight_initial|floatformat:'2g' }} {{ s.freight_currency }}</div>
+                                {% if s.freight_adjust %}<div class="text-xs {% if s.freight_adjust > 0 %}text-red-700{% else %}text-green-700{% endif %}" title="Нэмэгдэл (өөрчлөлтүүдийн нийлбэр)">{% if s.freight_adjust > 0 %}+{% endif %}{{ s.freight_adjust|floatformat:'2g' }} нэмэгдэл</div>
+                                <div class="text-xs font-semibold border-t border-gray-100 mt-0.5 pt-0.5">{{ s.freight_total|floatformat:'2g' }} нийт</div>{% endif %}
+                                {% else %}<span class="text-gray-400">—</span>{% endif %}</td>
+                            <td class="r">{% if s.arrival_actual %}{{ s.arrival_actual|date:'Y-m-d' }}{% else %}{{ s.arrival_planned|date:'Y-m-d'|default:'—' }}{% endif %}
+                                {% if s.delay_days %}<div class="text-xs late">+{{ s.delay_days }} хоног</div>{% endif %}</td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="9" class="text-center text-gray-500 py-10">{% if show == 'active' %}Идэвхтэй захиалга алга.{% else %}Захиалга бүртгээгүй байна.{% endif %}{% if editable %} «+ Шинэ захиалга» дарж эхлүүлнэ.{% endif %}</td></tr>
+                        {% endfor %}
+                    </tbody>
+                    {% if paid_totals or tax_total %}
+                    <tfoot><tr class="bg-gray-50 font-semibold"><td colspan="2" class="r">Нийт</td>
+                        <td class="r">{% for c, a in paid_totals %}<div>{{ a|floatformat:'2g' }} {{ c }}</div>{% endfor %}</td>
+                        <td class="r num">{% if tax_total %}{{ tax_total|floatformat:'0g' }} ₮{% endif %}</td><td colspan="5"></td></tr></tfoot>
+                    {% endif %}
+                </table>
+            </div>
+        </section>
+    </main>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.querySelectorAll('.im-row').forEach(function (row) {
+    var go = function (e) { if (e.target.closest('a')) return; window.location = row.dataset.href; };
+    row.addEventListener('click', go);
+    row.addEventListener('keydown', function (e) { if (e.key === 'Enter') go(e); });
+});
+</script>
+{% endblock %}

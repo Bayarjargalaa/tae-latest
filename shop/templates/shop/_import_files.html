@@ -1,0 +1,19 @@
+{% load l10n %}{# Үе шатын хавсралт: files, stage, prefix (нийлүүлэгчийн захиалгын id; чингэлгийн үе шат бол хоосон). Дээд тал нь max_attachments #}
+<div class="att">
+    {% for f in files %}
+    <div class="att-item">
+        <a href="{% url 'shop:import_attachment' f.pk %}" target="_blank" rel="noopener" title="{{ f.original_name }}">
+            {% if f.is_image %}<img src="{% url 'shop:import_attachment' f.pk %}" alt="{{ f.original_name }}" loading="lazy">{% else %}<span class="att-doc">📄</span>{% endif %}
+            <span class="att-name">{{ f.original_name|truncatechars:22 }}</span>
+        </a>
+        <button type="submit" name="delete_attachment" value="{{ f.id|unlocalize }}" class="x edit-only" onclick="return confirm('{{ f.original_name|escapejs }} файлыг устгах уу?');" title="Устгах">✕</button>
+    </div>
+    {% endfor %}
+    {% if files|length < max_attachments %}
+    <label class="att-add edit-only" title="Зураг, файл хавсаргах (нэг хэсэгт {{ max_attachments }} хүртэл)">
+        <span>📎 Хавсаргах{% if files %} {{ files|length }}/{{ max_attachments }}{% endif %}</span>
+        <input type="file" multiple name="{% if prefix %}so{{ prefix|unlocalize }}_{% endif %}att_{{ stage }}" data-att data-room="{{ max_attachments }}" data-has="{{ files|length }}">
+    </label>
+    {% else %}<span class="text-xs text-gray-400 edit-only" title="Нэг хэсэгт {{ max_attachments }} хүртэл файл">{{ max_attachments }}/{{ max_attachments }}</span>{% endif %}
+    <span class="att-picked" data-att-picked></span>
+</div>

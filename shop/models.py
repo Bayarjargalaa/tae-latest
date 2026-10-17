@@ -1144,3 +1144,525 @@ class UnloadingSettings(models.Model):
 
     def role_fee(self, role):
         return self.worker_fee if role == 'unload' else self.key_fee
+
+
+# ---------------------------------------------------------------------------
+# Импорт - гадаадаас ирэх ачаа: нэг захиалга = нэг чингэлэг, дотор нь олон нийлүүлэгч
+# ---------------------------------------------------------------------------
+
+class ImportShipment(models.Model):
+    """Импортын захиалга (нэг чингэлэг). Төлөв нь огноонуудаас тооцоологдоно (services.imports.shipment_steps)."""
+    SIZE_CHOICES = [
+        ('20', '20ft'), ('20R', '20ft хөргүүртэй'), ('40', '40ft'), ('40HC', '40ft HC'), ('40R', '40ft хөргүүртэй'),
+        ('other', 'Бусад'),
+    ]
+
+    code = models.CharField('Захиалгын код', max_length=30, unique=True)
+    container_size = models.CharField('Чингэлгийн хэмжээ', max_length=10, choices=SIZE_CHOICES, default='40')
+    container_no = models.CharField('Чингэлгийн дугаар', max_length=30, blank=True)
+    seal_no = models.CharField('Лацны дугаар', max_length=30, blank=True)
+    # Тээврийн компани: OpenDataCustomer-оос сонгосон бол carrier_id-тэй, шинээр бичсэн бол зөвхөн нэр
+    carrier_id = models.CharField('Тээврийн компанийн код', max_length=50, blank=True)
+    carrier_name = models.CharField('Тээврийн компани', max_length=255, blank=True)
+    # Далай / Төмөр зам / Ачааны машин / Түүвэр ачаа (services.imports.TRANSPORT_MODES) эсвэл шинээр бичсэн
+    transport_mode = models.CharField('Тээвэрлэх хэлбэр', max_length=100, blank=True)
+    load_planned = models.DateField('Ачих огноо (төлөвлөсөн)', null=True, blank=True)
+    load_actual = models.DateField('Ачигдсан огноо', null=True, blank=True)
+    load_place = models.CharField('Ачигдсан газар', max_length=200, blank=True)
+    arrival_place = models.CharField('Ирэх газар', max_length=200, blank=True, default='Улаанбаатар')
+    arrival_planned = models.DateField('Ирэх огноо (төлөвлөсөн)', null=True, blank=True)
+    arrival_actual = models.DateField('Ирсэн огноо', null=True, blank=True)
+    note = models.CharField('Тайлбар', max_length=500, blank=True)
+    # Гаалийн тооцоо: {валют: 1 нэгж = хэдэн төгрөг} (Монголбанкны ханш), тээврийг гаалийн үнэд оруулах эсэх
+    customs_rates = models.JSONField('Гаалийн ханш', default=dict, blank=True)
+    customs_include_freight = models.BooleanField('Тээврийн зардлыг гаалийн үнэд оруулах', default=True)
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='+')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='+')
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'shop_import_shipment'
+        ordering = ['-created_at']
+        verbose_name = 'Импортын захиалга'
+        verbose_name_plural = 'Импортын захиалгууд'
+
+    def __str__(self):
+        return self.code
+
+
+class ImportSupplierOrder(models.Model):
+    """Чингэлэг доторх нэг нийлүүлэгчийн захиалга: Order number -> Order confirm -> Proforma -> Commercial invoice."""
+    PAY_NONE = 'none'
+    PAY_PARTIAL = 'partial'
+    PAY_FULL = 'full'
+    PAY_CHOICES = [(PAY_NONE, 'Төлөөгүй'), (PAY_PARTIAL, 'Урьдчилгаа төлсөн'), (PAY_FULL, 'Бүрэн төлсөн')]
+    CURRENCY_CHOICES = [(c, c) for c in ('EUR', 'USD', 'GBP', 'CNY', 'RUB', 'KRW', 'JPY', 'MNT')]
+
+    shipment = models.ForeignKey(ImportShipment, on_delete=models.CASCADE, related_name='supplier_orders')
+    # OpenDataCustomer (CustomerType = 'Бэлтгэн нийлүүлэгч')-оос сонгосон бол supplier_id-тэй, шинэ бол зөвхөн нэр
+    supplier_id = models.CharField('Нийлүүлэгчийн код', max_length=50, blank=True)
+    supplier_name = models.CharField('Нийлүүлэгч', max_length=255)
+    currency = models.CharField('Валют', max_length=3, choices=CURRENCY_CHOICES, default='EUR')
+    order_no = models.CharField('Order number', max_length=50, blank=True)
+    order_date = models.DateField('Захиалсан огноо', null=True, blank=True)
+    confirm_no = models.CharField('Order confirm №', max_length=50, blank=True)
+    confirm_date = models.DateField('Баталгаажсан огноо', null=True, blank=True)
+    pi_no = models.CharField('Proforma invoice №', max_length=50, blank=True)
+    pi_date = models.DateField('Proforma огноо', null=True, blank=True)
+    pi_amount = models.DecimalField('Proforma дүн', max_digits=16, decimal_places=2, null=True, blank=True)
+    ci_no = models.CharField('Commercial invoice №', max_length=50, blank=True)
+    ci_date = models.DateField('Commercial invoice огноо', null=True, blank=True)
+    ci_amount = models.DecimalField('Commercial invoice дүн', max_digits=16, decimal_places=2, null=True, blank=True)
+    payment_status = models.CharField('Төлбөрийн төлөв', max_length=10, choices=PAY_CHOICES, default=PAY_NONE)
+    position = models.PositiveSmallIntegerField(default=0)
+
+    class Meta:
+        db_table = 'shop_import_supplier_order'
+        ordering = ['position', 'id']
+        verbose_name = 'Нийлүүлэгчийн захиалга'
+        verbose_name_plural = 'Нийлүүлэгчийн захиалгууд'
+
+    def __str__(self):
+        return f'{self.shipment.code}: {self.supplier_name}'
+
+
+class ImportOrderLine(models.Model):
+    """Захиалсан бараа. Ширхэгийн бараа: нийт = хайрцаг × хайрцаг дахь; кг: хайрцаг дахь = нийт / хайрцаг."""
+    supplier_order = models.ForeignKey(ImportSupplierOrder, on_delete=models.CASCADE, related_name='lines')
+    # OpenDataItem-ээс сонгосон бол item_id-тэй, шинэ бараа бол зөвхөн нэр
+    item_id = models.CharField('Барааны код', max_length=50, blank=True)
+    item_name = models.CharField('Бараа', max_length=255)
+    measure = models.CharField('Хэмжих нэгж', max_length=30, default='Ширхэг')
+    box_qty = models.DecimalField('Хайрцаг', max_digits=12, decimal_places=2, default=0)
+    qty_per_box = models.DecimalField('Хайрцаг дахь', max_digits=12, decimal_places=3, default=0)
+    total_qty = models.DecimalField('Нийт тоо', max_digits=14, decimal_places=3, default=0)
+    unit_price = models.DecimalField('Нэгж үнэ', max_digits=16, decimal_places=4, default=0)
+    # Нийлүүлэгчийн хөнгөлөлт: gross_amount = тоо × үнэ (хөнгөлөлтөөс өмнө), total_amount = төлөх дүн (хөнгөлөлтийн дараа).
+    # Татвар, шилжүүлэх дүн, нийлбэрүүд total_amount-аас бодогдоно.
+    gross_amount = models.DecimalField('Нийт дүн (хөнгөлөлтөөс өмнө)', max_digits=16, decimal_places=2, default=0)
+    discount_rate = models.DecimalField('Хөнгөлөлт %', max_digits=7, decimal_places=4, default=0)
+    total_amount = models.DecimalField('Төлөх дүн', max_digits=16, decimal_places=2, default=0)
+    # Анхдагч: малын гаралтай бараа 15%, бусад 10% (services.imports.default_duty_rate); гараар засна
+    duty_rate = models.DecimalField('Гаалийн татвар %', max_digits=5, decimal_places=2, default=10)
+    vat_rate = models.DecimalField('НӨАТ %', max_digits=5, decimal_places=2, default=10)
+    position = models.PositiveSmallIntegerField(default=0)
+
+    class Meta:
+        db_table = 'shop_import_order_line'
+        ordering = ['position', 'id']
+        verbose_name = 'Импортын бараа'
+        verbose_name_plural = 'Импортын бараа'
+
+    def __str__(self):
+        return self.item_name
+
+
+def import_receipt_path(instance, filename):
+    """Шилжүүлгийн баримт - таахааргүй нэртэй; зөвхөн эрх шалгадаг view-ээр (import_receipt) үзүүлнэ."""
+    import uuid
+    ext = os.path.splitext(filename)[1].lower()[:10]
+    return f'import_receipts/{instance.supplier_order.shipment_id}/{uuid.uuid4().hex}{ext}'
+
+
+class ImportPayment(models.Model):
+    """Нийлүүлэгчид хийсэн шилжүүлэг ба баримтын зураг."""
+    supplier_order = models.ForeignKey(ImportSupplierOrder, on_delete=models.CASCADE, related_name='payments')
+    paid_date = models.DateField('Төлсөн огноо')
+    amount = models.DecimalField('Дүн', max_digits=16, decimal_places=2, default=0)
+    receipt = models.FileField('Баримт', upload_to=import_receipt_path, blank=True)
+    note = models.CharField('Тайлбар', max_length=300, blank=True)
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='+')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'shop_import_payment'
+        ordering = ['paid_date', 'id']
+        verbose_name = 'Импортын төлбөр'
+        verbose_name_plural = 'Импортын төлбөрүүд'
+
+
+def import_attachment_path(instance, filename):
+    """Үе шатын хавсралт - таахааргүй нэртэй; зөвхөн эрх шалгадаг view-ээр (import_attachment) үзүүлнэ."""
+    import uuid
+    ext = os.path.splitext(filename)[1].lower()[:10]
+    return f'import_files/{instance.shipment_id}/{uuid.uuid4().hex}{ext}'
+
+
+class ImportAttachment(models.Model):
+    """Үе шатын зураг/файл. Нийлүүлэгчийн бичиг баримтын үе шат бол supplier_order-тэй, чингэлгийн үе шат бол үгүй."""
+    STAGE_ORDER = 'order'
+    STAGE_CONFIRM = 'confirm'
+    STAGE_PI = 'pi'
+    STAGE_CI = 'ci'
+    STAGE_LOADED = 'loaded'
+    STAGE_TRANSIT = 'transit'
+    STAGE_ARRIVED = 'arrived'
+    STAGE_CHOICES = [
+        (STAGE_ORDER, 'Order number'), (STAGE_CONFIRM, 'Order confirm'), (STAGE_PI, 'Proforma invoice'),
+        (STAGE_CI, 'Commercial invoice'), (STAGE_LOADED, 'Ачигдсан'), (STAGE_TRANSIT, 'Замд'), (STAGE_ARRIVED, 'Ирсэн'),
+    ]
+    SUPPLIER_STAGES = (STAGE_ORDER, STAGE_CONFIRM, STAGE_PI, STAGE_CI)
+    SHIPMENT_STAGES = (STAGE_LOADED, STAGE_TRANSIT, STAGE_ARRIVED)
+    IMAGE_EXTS = ('.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp')
+
+    shipment = models.ForeignKey(ImportShipment, on_delete=models.CASCADE, related_name='attachments')
+    supplier_order = models.ForeignKey(ImportSupplierOrder, on_delete=models.CASCADE, null=True, blank=True,
+                                       related_name='attachments')
+    stage = models.CharField('Үе шат', max_length=10, choices=STAGE_CHOICES)
+    file = models.FileField('Файл', upload_to=import_attachment_path)
+    original_name = models.CharField('Файлын нэр', max_length=255, blank=True)
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='+')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'shop_import_attachment'
+        ordering = ['created_at', 'id']
+        verbose_name = 'Импортын хавсралт'
+        verbose_name_plural = 'Импортын хавсралтууд'
+
+    def __str__(self):
+        return self.original_name or self.file.name
+
+    @property
+    def is_image(self):
+        return os.path.splitext(self.file.name)[1].lower() in self.IMAGE_EXTS
+
+
+class ImportTransitPoint(models.Model):
+    """Ачигдсанаас хойш дамжсан газар (огноотой)."""
+    shipment = models.ForeignKey(ImportShipment, on_delete=models.CASCADE, related_name='transit_points')
+    place = models.CharField('Газар', max_length=200)
+    date = models.DateField('Огноо')
+    note = models.CharField('Тайлбар', max_length=300, blank=True)
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='+')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'shop_import_transit_point'
+        ordering = ['date', 'id']
+        verbose_name = 'Дамжсан газар'
+        verbose_name_plural = 'Дамжсан газрууд'
+
+
+class ImportFreightCost(models.Model):
+    """Тээврийн зардал: анхны тохирсон үнэ (initial) ба тайлбартай өөрчлөлтүүд (+/-)."""
+    KIND_INITIAL = 'initial'
+    KIND_ADJUST = 'adjust'
+    KIND_CHOICES = [(KIND_INITIAL, 'Анхны тохиролцоо'), (KIND_ADJUST, 'Өөрчлөлт')]
+
+    shipment = models.ForeignKey(ImportShipment, on_delete=models.CASCADE, related_name='freight_costs')
+    kind = models.CharField('Төрөл', max_length=10, choices=KIND_CHOICES, default=KIND_ADJUST)
+    date = models.DateField('Огноо')
+    amount = models.DecimalField('Дүн', max_digits=16, decimal_places=2)
+    currency = models.CharField('Валют', max_length=3, default='USD')
+    note = models.CharField('Тайлбар', max_length=300, blank=True)
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='+')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'shop_import_freight_cost'
+        ordering = ['date', 'id']
+        verbose_name = 'Тээврийн зардал'
+        verbose_name_plural = 'Тээврийн зардал'
+
+
+# ---------------------------------------------------------------------------
+# Түгээлтийн машины бүртгэл - харуул машин гарах/ирэхэд бөглөнө (цаасан дэвтрийн оронд)
+# ---------------------------------------------------------------------------
+
+class DeliveryTrip(models.Model):
+    """Түгээлтийн машин нэг удаа гарч ирсэн бүртгэл. Жолооч/туслахыг сонголтоос эсвэл шинээр бичсэн нэрээр
+    хадгална (код нь сонголтоос авсан үед л бөглөгдөнө), машиныг улсын дугаараар (OpenDataAsset-аас эсвэл шинээр)."""
+    date = models.DateField('Огноо', db_index=True)
+    driver_code = models.CharField('Жолоочийн код', max_length=50, blank=True)
+    driver_name = models.CharField('Жолооч', max_length=100)
+    helper_code = models.CharField('Туслахын код', max_length=50, blank=True)
+    helper_name = models.CharField('Туслах', max_length=100, blank=True)  # хоосон = туслахгүй
+    vehicle_plate = models.CharField('Машины дугаар', max_length=30)
+    depart_time = models.TimeField('Гарсан цаг', null=True, blank=True)
+    customer_count = models.PositiveSmallIntegerField('Харилцагчийн тоо', null=True, blank=True)
+    return_time = models.TimeField('Ирсэн цаг', null=True, blank=True)
+    returned_count = models.PositiveSmallIntegerField('Буцаж ирсэн айлын тоо', null=True, blank=True)
+    remainder_note = models.CharField('Үлдэгдлийн шалтгаан', max_length=300, blank=True)
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='+')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'shop_delivery_trip'
+        ordering = ['date', 'depart_time', 'id']
+        verbose_name = 'Түгээлтийн машин'
+        verbose_name_plural = 'Түгээлтийн машины бүртгэл'
+
+    def __str__(self):
+        return f'{self.date} {self.vehicle_plate} {self.driver_name}'
+
+
+# ---------------------------------------------------------------------------
+# Бүтээгдэхүүний хавсралт - шинжилгээний бичиг г.м. (утаснаас зураг дарж оруулж болно)
+# ---------------------------------------------------------------------------
+
+def product_attachment_path(instance, filename):
+    """Таахааргүй нэртэй; зөвхөн нэвтэрсэн хэрэглэгчид view-ээр (product_attachment) үзүүлнэ."""
+    import uuid
+    ext = os.path.splitext(filename)[1].lower()[:10]
+    return f'product_files/{uuid.uuid4().hex}{ext}'
+
+
+class ProductDocType(models.Model):
+    """Бүтээгдэхүүний бичгийн төрөл (шинжилгээний бичиг, эрүүл ахуйн гэрчилгээ г.м.) - хэрэглэгч нэмж болно.
+    tracks_expiry=True төрлийн бичгийн дуусах хугацааг хянана (services.product_certs)."""
+    name = models.CharField('Нэр', max_length=100, unique=True)
+    tracks_expiry = models.BooleanField('Хугацаа хянах', default=True)
+    is_active = models.BooleanField('Идэвхтэй', default=True)
+    sort_order = models.PositiveSmallIntegerField('Эрэмбэ', default=0)
+
+    class Meta:
+        db_table = 'shop_product_doc_type'
+        ordering = ['sort_order', 'name']
+        verbose_name = 'Бичгийн төрөл'
+        verbose_name_plural = 'Бичгийн төрлүүд'
+
+    def __str__(self):
+        return self.name
+
+
+class ProductAttachment(models.Model):
+    """Бүтээгдэхүүний шинжилгээний бичиг, гэрчилгээ г.м. Нэг зураг/файлд олон барааны бичиг байж болох тул
+    олон бараатай холбогдоно (ProductAttachmentItem). Нэвтэрсэн бүх хэрэглэгч харж, татна;
+    хавсаргах/холбох/устгах нь 'product_attachment_upload' эрхтэй албан тушаалд.
+    Дуусах хугацаа нь бичиг дээр хадгалагдах тул холбогдсон бүх бараанд нэг дор үйлчилнэ."""
+    IMAGE_EXTS = ('.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp')
+    HEIC_EXTS = ('.heic', '.heif')  # хадгалахдаа JPEG болгоно (services.product_files.normalize_upload)
+    ALLOWED_EXTS = IMAGE_EXTS + HEIC_EXTS + ('.pdf',)
+
+    file = models.FileField('Файл', upload_to=product_attachment_path)
+    original_name = models.CharField('Файлын нэр', max_length=255, blank=True)
+    note = models.CharField('Тайлбар', max_length=200, blank=True)
+    doc_type = models.ForeignKey(ProductDocType, on_delete=models.PROTECT, null=True, blank=True,
+                                 related_name='attachments', verbose_name='Төрөл')
+    issued_on = models.DateField('Олгосон огноо', null=True, blank=True)
+    expires_on = models.DateField('Дуусах огноо', null=True, blank=True, db_index=True)
+    no_expiry = models.BooleanField('Хугацаагүй', default=False)
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='+')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'shop_product_attachment'
+        ordering = ['-created_at', '-id']
+        verbose_name = 'Бүтээгдэхүүний хавсралт'
+        verbose_name_plural = 'Бүтээгдэхүүний хавсралтууд'
+
+    def __str__(self):
+        return self.original_name or self.file.name
+
+    @property
+    def is_image(self):
+        return os.path.splitext(self.file.name)[1].lower() in self.IMAGE_EXTS
+
+
+class ProductAttachmentItem(models.Model):
+    """Хавсралт ↔ бараа (OpenDataItem.id) холбоос. Сүүлийн холбоос салгагдвал хавсралт файлтайгаа устна.
+    own_expiry=True бол энэ бараанд бичгийн ерөнхий огноо биш, энд хадгалсан огноо үйлчилнэ
+    (нэг бичигт олон бараа өөр өөр хугацаатай байх үед)."""
+    attachment = models.ForeignKey(ProductAttachment, on_delete=models.CASCADE, related_name='items')
+    item_id = models.TextField('Бүтээгдэхүүний ID', db_index=True)
+    own_expiry = models.BooleanField('Тусдаа хугацаатай', default=False)
+    expires_on = models.DateField('Дуусах огноо (энэ бараанд)', null=True, blank=True)
+    no_expiry = models.BooleanField('Хугацаагүй (энэ бараанд)', default=False)
+
+    @property
+    def effective_expires(self):
+        return self.expires_on if self.own_expiry else self.attachment.expires_on
+
+    @property
+    def effective_no_expiry(self):
+        return self.no_expiry if self.own_expiry else self.attachment.no_expiry
+
+    class Meta:
+        db_table = 'shop_product_attachment_item'
+        unique_together = [('attachment', 'item_id')]
+        verbose_name = 'Хавсралтын бараа'
+        verbose_name_plural = 'Хавсралтын бараанууд'
+
+    def __str__(self):
+        return f'{self.attachment_id} - {self.item_id}'
+
+
+class SalesPlan(models.Model):
+    """Борлуулалтын сарын төлөвлөгөө - суваг (OpenDataDistributionChannel.Id, ХТ г.м.) бүрийн дүн (₮, НӨАТ-тэй
+    PayAmount-тай харьцуулна). Удирдлагын нэгтгэлийн (/dashboard/) биелэлтэд ашиглана."""
+    month = models.DateField('Сар (1-ний өдөр)', db_index=True)
+    channel_id = models.CharField('Сувгийн код', max_length=20)
+    amount = models.DecimalField('Төлөвлөгөө (₮)', max_digits=16, decimal_places=2, default=0)
+    updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='+')
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'shop_sales_plan'
+        unique_together = [('month', 'channel_id')]
+        verbose_name = 'Борлуулалтын төлөвлөгөө'
+        verbose_name_plural = 'Борлуулалтын төлөвлөгөө'
+
+    def __str__(self):
+        return f'{self.month:%Y-%m} {self.channel_id}: {self.amount}'
+
+
+class SalesPlanItem(models.Model):
+    """Төлөвлөгөөт бараа - сар бүр онцолж борлуулах бараа ба суваг тус бүрийн тоо ширхгийн зорилт."""
+    month = models.DateField('Сар (1-ний өдөр)', db_index=True)
+    item_id = models.TextField('Барааны код')
+    channel_id = models.CharField('Сувгийн код', max_length=20)
+    target_qty = models.DecimalField('Зорилт (ширхэг)', max_digits=14, decimal_places=2, default=0)
+    updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='+')
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'shop_sales_plan_item'
+        unique_together = [('month', 'item_id', 'channel_id')]
+        verbose_name = 'Төлөвлөгөөт бараа'
+        verbose_name_plural = 'Төлөвлөгөөт бараа'
+
+    def __str__(self):
+        return f'{self.month:%Y-%m} {self.item_id} {self.channel_id}: {self.target_qty}'
+
+
+# ---------------------------------------------------------------------------
+# Тээврийн хэрэгсэл - шатахууны картын гүйлгээ (Petrovis "report" Excel) ба сарын үлдэгдэл ("Balance Report")
+# ---------------------------------------------------------------------------
+
+class FuelTransaction(models.Model):
+    """Шатахууны картын нэг гүйлгээ. raw_* талбар нь Excel-ээс ирсэн утга (давхардал шалгах түлхүүрт ашиглагдана),
+    fuel_type/unit_price/quantity нь Excel-ээс эсвэл гараас нөхсөн утга. Машин, жолооч, км-ийг гараас бөглөнө."""
+    PURCHASE = 'Худалдан авалт'
+    CASH_CARD = 'Бэлэн'  # кассаас бэлнээр төлсөн шатахуун (картын үлдэгдэлд орохгүй)
+    SOURCE_CHOICES = [('import', 'Petrovis импорт'), ('legacy', 'Хуучин бүртгэл'), ('manual', 'Гараас')]
+
+    dedupe_key = models.CharField('Давхардлын түлхүүр', max_length=64, unique=True)
+    source = models.CharField('Эх сурвалж', max_length=10, choices=SOURCE_CHOICES, default='import')
+    card_no = models.CharField('Карт', max_length=30, db_index=True)
+    holder = models.CharField('Эзэмшигч', max_length=150, blank=True)
+    merchant = models.CharField('Мерчант', max_length=150, blank=True)
+    address = models.CharField('Хаяг', max_length=255, blank=True)
+    txn_at = models.DateTimeField('Огноо', db_index=True)
+    txn_type = models.CharField('Гүйлгээний төрөл', max_length=60)
+    description = models.CharField('Тайлбар', max_length=255, blank=True)
+    amount = models.DecimalField('Үнийн дүн', max_digits=14, decimal_places=2)
+    counter_account = models.CharField('Харьцсан данс', max_length=30, blank=True)
+    raw_fuel_type = models.CharField('Төрөл (Excel)', max_length=100, blank=True)
+    raw_unit_price = models.DecimalField('Нэгж үнэ (Excel)', max_digits=12, decimal_places=2, null=True, blank=True)
+    raw_quantity = models.DecimalField('Хэмжээ (Excel)', max_digits=12, decimal_places=2, null=True, blank=True)
+
+    fuel_type = models.CharField('Шатахууны төрөл', max_length=100, blank=True)
+    unit_price = models.DecimalField('Нэгж үнэ', max_digits=12, decimal_places=2, null=True, blank=True)
+    quantity = models.DecimalField('Хэмжээ (л)', max_digits=12, decimal_places=2, null=True, blank=True)
+    vehicle_plate = models.CharField('Машины дугаар', max_length=30, blank=True, db_index=True)
+    driver_code = models.CharField('Жолоочийн код', max_length=50, blank=True)
+    driver_name = models.CharField('Жолооч', max_length=100, blank=True)
+    odometer_km = models.PositiveIntegerField('Км заалт', null=True, blank=True)
+    note = models.CharField('Тайлбар (гараас)', max_length=255, blank=True)
+
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='+')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='+')
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'shop_fuel_transaction'
+        ordering = ['txn_at', 'id']
+        verbose_name = 'Шатахууны гүйлгээ'
+        verbose_name_plural = 'Шатахууны гүйлгээ'
+
+    def __str__(self):
+        return f'{self.txn_at:%Y-%m-%d %H:%M} {self.card_no} {self.txn_type} {self.amount}'
+
+    @property
+    def is_purchase(self):
+        return self.txn_type == self.PURCHASE
+
+    @property
+    def is_cash(self):
+        return self.card_no == self.CASH_CARD
+
+
+class FuelCardBalance(models.Model):
+    """Шатахууны картын сарын үлдэгдэл (Balance Report): эхний үлдэгдэл + гүйлгээ = эцсийн үлдэгдэл байх ёстой."""
+    month = models.DateField('Сар (1-ний өдөр)', db_index=True)
+    card_no = models.CharField('Карт', max_length=30)
+    holder = models.CharField('Эзэмшигч', max_length=150, blank=True)
+    opening = models.DecimalField('Эхний үлдэгдэл', max_digits=14, decimal_places=2, default=0)
+    income = models.DecimalField('Орлого', max_digits=14, decimal_places=2, default=0)
+    transfer_out = models.DecimalField('Шилжүүлгийн зарлага', max_digits=14, decimal_places=2, default=0)
+    purchase = models.DecimalField('Худалдан авалт', max_digits=14, decimal_places=2, default=0)
+    deduction = models.DecimalField('Хасалт', max_digits=14, decimal_places=2, default=0)
+    closing = models.DecimalField('Эцсийн үлдэгдэл', max_digits=14, decimal_places=2, default=0)
+    updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='+')
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'shop_fuel_card_balance'
+        unique_together = [('month', 'card_no')]
+        ordering = ['month', 'card_no']
+        verbose_name = 'Шатахууны картын үлдэгдэл'
+        verbose_name_plural = 'Шатахууны картын үлдэгдэл'
+
+    def __str__(self):
+        return f'{self.month:%Y-%m} {self.card_no}: {self.opening} -> {self.closing}'
+
+
+class Vehicle(models.Model):
+    """Манай тээврийн хэрэгслийн мэдээлэл (машины тайлангийн толгойд). Жагсаалт нь OpenDataAsset-ийн
+    "Тээврийн хэрэгсэл"-тэй нэгдэж харагдана; энд нэмсэн идэвхтэй машин ч км заалт шаардана."""
+    plate = models.CharField('Улсын дугаар', max_length=30, unique=True)
+    make = models.CharField('Марк', max_length=60, blank=True)
+    model = models.CharField('Модел', max_length=60, blank=True)
+    vin = models.CharField('Арлын дугаар', max_length=40, blank=True)
+    year = models.PositiveSmallIntegerField('Үйлдвэрлэсэн он', null=True, blank=True)
+    imported_year = models.PositiveSmallIntegerField('Монголд орж ирсэн он', null=True, blank=True)
+    country = models.CharField('Үйлдвэрлэсэн улс', max_length=40, blank=True)
+    engine_cc = models.PositiveIntegerField('Хөдөлгүүрийн багтаамж', null=True, blank=True)
+    capacity_kg = models.PositiveIntegerField('Даац (кг)', null=True, blank=True)
+    purpose = models.CharField('Зориулалт', max_length=60, blank=True)
+    body_type = models.CharField('Төрөл', max_length=60, blank=True)
+    is_active = models.BooleanField('Ашиглагдаж байгаа', default=True)
+    note = models.CharField('Тайлбар', max_length=255, blank=True)
+
+    class Meta:
+        db_table = 'shop_vehicle'
+        ordering = ['plate']
+        verbose_name = 'Тээврийн хэрэгсэл'
+        verbose_name_plural = 'Тээврийн хэрэгсэл'
+
+    def __str__(self):
+        return f'{self.plate} {self.make} {self.model}'.strip()
+
+
+class VehiclePartRecord(models.Model):
+    """Сэлбэг хэрэгсэл, засвар үйлчилгээний нэг мөр (нэг баримтын олон мөрийг тусад нь хадгална)."""
+    date = models.DateField('Огноо', db_index=True)
+    vehicle_plate = models.CharField('Машины дугаар', max_length=30, blank=True, db_index=True)
+    category = models.CharField('Төрөл', max_length=60)
+    description = models.CharField('Тайлбар', max_length=255)
+    quantity = models.DecimalField('Тоо', max_digits=12, decimal_places=2, default=1)
+    unit_price = models.DecimalField('Нэгж үнэ', max_digits=14, decimal_places=2, default=0)
+    amount = models.DecimalField('Дүн', max_digits=14, decimal_places=2, default=0)
+    driver_code = models.CharField('Жолоочийн код', max_length=50, blank=True)
+    driver_name = models.CharField('Жолооч', max_length=100, blank=True)
+    odometer_km = models.PositiveIntegerField('Км заалт', null=True, blank=True)
+    supplier = models.CharField('Нийлүүлэгч / засварын газар', max_length=150, blank=True)
+    note = models.CharField('Нэмэлт тайлбар', max_length=255, blank=True)
+    dedupe_key = models.CharField('Импортын түлхүүр', max_length=64, unique=True, null=True, blank=True)
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='+')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='+')
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'shop_vehicle_part_record'
+        ordering = ['date', 'id']
+        verbose_name = 'Сэлбэг, засвар'
+        verbose_name_plural = 'Сэлбэг, засварын бүртгэл'
+
+    def __str__(self):
+        return f'{self.date} {self.vehicle_plate} {self.description} {self.amount}'

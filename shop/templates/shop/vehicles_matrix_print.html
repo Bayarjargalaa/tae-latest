@@ -1,0 +1,132 @@
+{% load humanize %}<!doctype html>
+<html lang="mn">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Машины тайлан</title>
+<style>
+@page { size: A4 landscape; margin: 6mm; }
+* { box-sizing: border-box; }
+body { font-family: Arial, 'Segoe UI', sans-serif; font-size: 8.5px; color: #000; margin: 0; padding: 12px; background: #fff; }
+.head { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #000; padding-bottom: 5px; margin-bottom: 8px; }
+.org { font-size: 11px; font-weight: 700; }
+h1 { font-size: 15px; margin: 2px 0 0; }
+.meta { text-align: right; }
+.meta div { margin: 1px 0; }
+/* Хэсгүүд нэг хуудсанд дараална; багана бүр тогтмол өргөнтэй (мм) тул доод хүснэгт дээд хүснэгттэйгээ нэг шугамд */
+.section { margin-bottom: 10px; }
+table { border-collapse: collapse; table-layout: fixed; }
+col.c-date { width: 14mm; } col.c-card { width: 18.5mm; } col.c-driver { width: 18mm; }
+col.c-km { width: 11mm; } col.c-qty { width: 9mm; } col.c-amount { width: 11mm; } col.c-distance { width: 7mm; } col.c-per100 { width: 8.5mm; }
+td { overflow: hidden; white-space: nowrap; }
+th, td { padding: 1px 2px !important; }
+td.prev { white-space: normal !important; line-height: 1.25; }
+th.plate { font-size: 11px !important; white-space: nowrap; overflow: hidden; }
+thead { display: table-header-group; }
+tr { page-break-inside: avoid; }
+th, td { border: 1px solid #555; padding: 2px 3px; }
+th { background: #e5e7eb; font-weight: 700; text-align: center; }
+th.plate { background: #fef3c7; font-size: 12px; border-left: 2px solid #000; border-right: 2px solid #000; }
+td.prev { font-size: 9px; color: #333; text-align: center; background: #fafafa; }
+td.num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+td.b-l, th.b-l { border-left: 2px solid #000; }
+td.empty { background: #fff; }
+.neg { color: #b91c1c; }
+tfoot td { font-weight: 700; background: #f3f4f6; }
+.totals-wrap { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; margin-top: 6px; page-break-inside: avoid; }
+table.by-type { width: auto; table-layout: auto; }
+table.by-type td, table.by-type th { white-space: nowrap; padding: 2px 6px !important; }
+.grand { font-size: 13px; font-weight: 700; text-align: right; }
+.sign { display: flex; gap: 60px; margin-top: 24px; }
+.sign div { flex: 1; }
+.sign span { display: inline-block; border-bottom: 1px solid #000; width: 160px; margin-left: 6px; }
+.toolbar { margin-bottom: 10px; }
+.toolbar button { font-size: 13px; padding: 6px 14px; cursor: pointer; }
+@media print { .toolbar { display: none; } body { padding: 0; } }
+</style>
+</head>
+<body>
+<div class="toolbar"><button onclick="window.print()">🖨 Хэвлэх</button> <button onclick="window.close()">Хаах</button></div>
+<div class="head">
+    <div><div class="org">ТӨГС АМИН ЭРДЭНЭ ХХК</div><h1>Машины тайлан (шатахуун)</h1></div>
+    <div class="meta">
+        {% for k, v in meta %}<div>{{ k }}: <b>{{ v }}</b></div>{% endfor %}
+        <div>Хэвлэсэн: {{ printed_at|date:'Y.m.d H:i' }} · {{ printed_by }}</div>
+    </div>
+</div>
+
+{% for sec in m.sections %}
+<div class="section">
+    <table style="width: calc(50.5mm + {{ sec.heads|length }} * 46.5mm)">
+        <colgroup><col class="c-date"><col class="c-card"><col class="c-driver">{% for h in sec.heads %}{% for k, label in cols %}<col class="c-{{ k }}">{% endfor %}{% endfor %}</colgroup>
+        <thead>
+            <tr>
+                <th rowspan="3">Огноо</th><th rowspan="3">Карт</th><th rowspan="3">Жолооч</th>
+                {% for h in sec.heads %}<th colspan="5" class="plate">{{ h.plate }}{% if h.label %} <span style="font-weight:400;font-size:10px">{{ h.label }}</span>{% endif %}</th>{% endfor %}
+            </tr>
+            <tr>
+                {% for h in sec.heads %}<td colspan="5" class="prev b-l">огноо <b>{{ h.prev_date|date:'Y.m.d'|default:'—' }}</b> &nbsp;·&nbsp; Өмнөх заалт <b>{{ h.prev_km|default_if_none:'—'|intcomma }}</b></td>{% endfor %}
+            </tr>
+            <tr>
+                {% for h in sec.heads %}{% for k, label in cols %}<th {% if forloop.first %}class="b-l"{% endif %}>{{ label }}</th>{% endfor %}{% endfor %}
+            </tr>
+        </thead>
+        <tbody>
+        {% for line in sec.lines %}
+            <tr>
+                <td>{{ line.date|date:'Y.m.d' }}</td><td>{{ line.card }}</td><td>{{ line.driver }}</td>
+                {% for c in line.cells %}
+                    {% if c %}
+                    <td class="num b-l">{{ c.km|default_if_none:''|intcomma }}</td>
+                    <td class="num">{{ c.qty|floatformat:2 }}</td>
+                    <td class="num">{{ c.amount|floatformat:0|intcomma }}</td>
+                    <td class="num {% if c.distance is not None and c.distance < 0 %}neg{% endif %}">{{ c.distance|default_if_none:''|intcomma }}</td>
+                    <td class="num">{{ c.per100|floatformat:2 }}</td>
+                    {% else %}
+                    <td class="empty b-l"></td><td class="empty"></td><td class="empty"></td><td class="empty"></td><td class="empty"></td>
+                    {% endif %}
+                {% endfor %}
+            </tr>
+        {% endfor %}
+        </tbody>
+        <tfoot>
+            <tr>
+                <td colspan="3">Нийт</td>
+                {% for t in sec.totals %}
+                <td class="b-l"></td>
+                <td class="num">{{ t.qty|floatformat:2|intcomma }}</td>
+                <td class="num">{{ t.amount|floatformat:0|intcomma }}</td>
+                <td class="num">{{ t.distance|intcomma }}</td>
+                <td class="num">{{ t.per100|floatformat:2 }}</td>
+                {% endfor %}
+            </tr>
+        </tfoot>
+    </table>
+</div>
+{% empty %}
+<p>Шүүлтэд тохирох, машин сонгосон шатахууны гүйлгээ алга.</p>
+{% endfor %}
+
+{% if m.sections %}
+<div class="totals-wrap">
+    <table class="by-type">
+        <thead><tr><th>Шатахууны төрөл</th><th>Удаа</th><th>Литр</th><th>Дүн ₮</th><th>Дундаж үнэ</th><th>Машин</th></tr></thead>
+        <tbody>
+        {% for d in m.by_type %}
+            <tr><td>{{ d.type }}</td><td class="num">{{ d.count }}</td><td class="num">{{ d.qty|floatformat:2|intcomma }}</td>
+                <td class="num">{{ d.amount|floatformat:0|intcomma }}</td><td class="num">{{ d.avg|floatformat:2|intcomma }}</td><td>{{ d.plates }}</td></tr>
+        {% endfor %}
+        </tbody>
+        <tfoot><tr><td>Нийт</td><td class="num">{{ m.count }}</td><td class="num">{{ m.total_qty|floatformat:2|intcomma }}</td>
+            <td class="num">{{ m.grand_total|floatformat:0|intcomma }}</td><td></td><td>{{ m.plates }} машин</td></tr></tfoot>
+    </table>
+    <div class="grand">Нийт дүн: {{ m.grand_total|floatformat:0|intcomma }}₮ &nbsp;·&nbsp; {{ m.plates }} машин, {{ m.count }} удаа</div>
+</div>
+{% endif %}
+<div class="sign">
+    <div>Боловсруулсан:<span></span></div>
+    <div>Хянасан:<span></span></div>
+</div>
+<script>window.addEventListener('load', () => setTimeout(() => window.print(), 300));</script>
+</body>
+</html>

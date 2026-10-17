@@ -1,0 +1,17 @@
+{# Тайлангийн нэг хүснэгт (services.vehicles.render_table-ээр форматласан) #}
+{% if table.title %}<h3 class="vr-h3 font-semibold text-gray-800 mt-4 mb-2">{{ table.title }}</h3>{% endif %}
+<div class="vr-scroll overflow-x-auto">
+    <table class="vr-table w-full text-sm">
+        <thead><tr>{% for c in table.columns %}<th class="{% if c.fmt == 'money' or c.fmt == 'int' or c.fmt == 'dec' %}num{% endif %}">{{ c.label }}</th>{% endfor %}</tr></thead>
+        <tbody>
+        {% for row in table.cells %}
+            <tr>{% for cell in row %}<td class="{% if cell.num %}num{% endif %}{% if cell.neg %} neg{% endif %}">{{ cell.v }}</td>{% endfor %}</tr>
+        {% empty %}
+            <tr><td colspan="{{ table.columns|length }}" class="empty">Мэдээлэл алга.</td></tr>
+        {% endfor %}
+        </tbody>
+        {% if table.total_cells and table.cells %}
+        <tfoot><tr>{% for cell in table.total_cells %}<td class="{% if cell.num %}num{% endif %}">{{ cell.v }}</td>{% endfor %}</tr></tfoot>
+        {% endif %}
+    </table>
+</div>

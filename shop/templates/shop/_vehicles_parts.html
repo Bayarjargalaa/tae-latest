@@ -1,0 +1,190 @@
+{% load humanize l10n %}
+{# Сэлбэг хэрэгсэл, засвар үйлчилгээ: шинэ бүртгэл (олон мөр), засах, Excel импорт, жагсаалт #}
+<div class="flex flex-wrap items-center gap-2">
+    <button type="button" id="pt-new" class="text-sm font-semibold px-4 py-2 rounded-lg bg-green-600 text-white hover:bg-green-700">＋ Шинэ бүртгэл</button>
+    <button type="button" id="pt-import-open" class="text-sm font-medium px-3 py-2 rounded-lg border border-green-600 text-green-700 bg-white hover:bg-green-50">⬆ Excel импорт</button>
+</div>
+<form id="pt-import" method="post" enctype="multipart/form-data" action="{% url 'shop:vehicles_parts_import' %}" class="bg-white rounded-xl border border-gray-100 p-4 space-y-2" hidden>
+    {% csrf_token %}
+    <div class="text-sm text-gray-600">Хуучин "Машины бүртгэл" загвар: <b>Огноо, Тайлбар, Машины дугаар, Хамаарах төрөл, Жолооч, Тоо, Үнэ, Дүн</b> (нэмэлтээр Нийлүүлэгч, Км заалт) баганатай хуудас. Машины дугаарыг 4 оронтой тоогоор (1485) бичсэн бол манай машины бүтэн дугаар болгоно. Өмнө орсон мөр давхардахгүй.</div>
+    <div class="flex flex-wrap gap-3 items-center">
+        <input type="file" name="files" multiple accept=".xlsx,.xlsm" required class="text-sm">
+        <button type="submit" class="text-sm font-semibold px-4 py-2 rounded-lg bg-green-600 text-white hover:bg-green-700">Импортлох</button>
+    </div>
+</form>
+
+<div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+    <div class="bg-white rounded-xl border border-gray-100 p-3"><div class="text-xs text-gray-500">Нийт зардал</div><div class="text-xl font-bold">{{ total|floatformat:0|intcomma }}₮</div></div>
+    <div class="bg-white rounded-xl border border-gray-100 p-3"><div class="text-xs text-gray-500">Мөр</div><div class="text-xl font-bold">{{ rows|length }}</div></div>
+    <div class="bg-white rounded-xl border border-gray-100 p-3"><div class="text-xs text-gray-500">Хамгийн их зардалтай машин</div><div class="text-xl font-bold">{% if by_plate %}{{ by_plate.0.name }} <span class="text-sm font-normal text-gray-500">{{ by_plate.0.amount|floatformat:0|intcomma }}₮</span>{% else %}—{% endif %}</div></div>
+    <div class="bg-white rounded-xl border border-gray-100 p-3"><div class="text-xs text-gray-500">Ирээдүйн огноотой</div><div class="text-xl font-bold {% if future %}text-red-600{% else %}text-green-700{% endif %}">{{ future }}</div></div>
+</div>
+{% if by_category %}
+<div class="flex flex-wrap gap-2 text-sm">
+    {% for c in by_category %}<a href="?tab=parts&date_from={{ f.date_from|date:'Y-m-d' }}&date_to={{ f.date_to|date:'Y-m-d' }}{% for p in f.plate %}&plate={{ p|urlencode }}{% endfor %}&category={{ c.name|urlencode }}" class="bg-white border {% if c.name in f.category %}border-blue-500{% else %}border-gray-200{% endif %} rounded-full px-3 py-1 hover:border-blue-400">{{ c.name }}: <b>{{ c.amount|floatformat:0|intcomma }}₮</b> · {{ c.count }}</a>{% endfor %}
+</div>
+{% endif %}
+
+<div class="bg-white rounded-xl shadow-sm border border-gray-100">
+    <div class="overflow-auto" style="max-height: 75vh;">
+        <table class="vh-table w-full text-sm">
+            <thead><tr class="text-left text-gray-600">
+                <th>№</th><th>Огноо</th><th>Машин</th><th>Төрөл</th><th>Тайлбар</th><th class="num">Тоо</th><th class="num">Нэгж үнэ</th><th class="num">Дүн</th>
+                <th>Нийлүүлэгч</th><th>Жолооч</th><th class="num">Км</th><th></th>
+            </tr></thead>
+            <tbody>
+            {% for p in rows %}
+                <tr class="border-t border-gray-100 hover:bg-gray-50 {% if p.date > today %}bg-red-50{% endif %}">
+                    <td class="text-gray-400">{{ forloop.counter }}</td>
+                    <td class="whitespace-nowrap">{{ p.date|date:'Y.m.d' }}{% if p.date > today %} <span class="text-xs text-red-600" title="Ирээдүйн огноо">⚠</span>{% endif %}</td>
+                    <td class="whitespace-nowrap font-medium">{{ p.vehicle_plate|default:'—' }}</td>
+                    <td class="whitespace-nowrap text-gray-600">{{ p.category }}</td>
+                    <td>{{ p.description }}{% if p.note %}<div class="text-xs text-gray-500">{{ p.note }}</div>{% endif %}</td>
+                    <td class="num">{{ p.quantity|floatformat:"-2" }}</td>
+                    <td class="num">{{ p.unit_price|floatformat:0|intcomma }}</td>
+                    <td class="num font-semibold">{{ p.amount|floatformat:0|intcomma }}</td>
+                    <td class="text-gray-600">{{ p.supplier }}</td>
+                    <td class="text-gray-600">{{ p.driver_name }}</td>
+                    <td class="num text-gray-600">{{ p.odometer_km|default_if_none:''|intcomma }}</td>
+                    <td><button type="button" class="vh-save" data-edit="{{ p.pk|unlocalize }}">✏</button></td>
+                </tr>
+            {% empty %}
+                <tr><td colspan="12" class="text-center text-gray-500 py-8">Шүүлтэд тохирох бүртгэл алга.</td></tr>
+            {% endfor %}
+            </tbody>
+            {% if rows %}
+            <tfoot><tr class="border-t-2 border-gray-300 font-semibold"><td colspan="7">Нийт</td><td class="num">{{ total|floatformat:0|intcomma }}</td><td colspan="4"></td></tr></tfoot>
+            {% endif %}
+        </table>
+    </div>
+</div>
+
+{# Бүртгэлийн маягт: баримтын толгой + олон мөр #}
+<div id="pt-modal" class="fixed inset-0 z-50 bg-black/40 flex items-start justify-center p-2 sm:p-6 overflow-y-auto" hidden>
+    <form id="pt-form" method="post" action="{% url 'shop:vehicles_parts_save' %}" class="bg-white rounded-2xl w-full max-w-5xl p-4 sm:p-6 space-y-4 shadow-xl">
+        {% csrf_token %}
+        <input type="hidden" name="id" id="pt-id">
+        <input type="hidden" name="action" id="pt-action" value="save">
+        <input type="hidden" name="back" value="{{ request.get_full_path }}">
+        <div class="flex items-center justify-between">
+            <h2 id="pt-title" class="text-xl font-bold">Сэлбэг, засвар бүртгэх</h2>
+            <button type="button" data-close class="text-gray-500 hover:text-gray-800 text-xl">✕</button>
+        </div>
+        <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+            <label class="text-xs text-gray-600">Огноо *<input type="date" name="date" id="pt-date" required class="vh-f"></label>
+            <label class="text-xs text-gray-600">Машин<input name="vehicle_plate" id="pt-plate" list="pt-dl-plate" class="vh-f uppercase" placeholder="Сонгох / бичих"></label>
+            <label class="text-xs text-gray-600">Жолооч<input name="driver_name" id="pt-driver" list="pt-dl-driver" class="vh-f"></label>
+            <label class="text-xs text-gray-600">Км заалт<input name="odometer_km" id="pt-km" inputmode="numeric" class="vh-f"></label>
+            <label class="text-xs text-gray-600 col-span-2">Нийлүүлэгч / засварын газар<input name="supplier" id="pt-supplier" list="pt-dl-supplier" class="vh-f"></label>
+        </div>
+        <div>
+            <table class="w-full text-sm">
+                <thead><tr class="text-left text-xs text-gray-500">
+                    <th class="pb-1">Тайлбар (юу авсан / хийлгэсэн) *</th><th class="pb-1 w-48">Төрөл</th><th class="pb-1 w-20">Тоо</th><th class="pb-1 w-28">Нэгж үнэ</th><th class="pb-1 w-28 text-right">Дүн</th><th class="w-8"></th>
+                </tr></thead>
+                <tbody id="pt-lines"></tbody>
+                <tfoot><tr>
+                    <td colspan="4"><button type="button" id="pt-add" class="text-sm text-blue-700 hover:underline mt-2">＋ Мөр нэмэх</button></td>
+                    <td class="text-right font-bold pt-2" id="pt-total">0</td><td></td>
+                </tr></tfoot>
+            </table>
+        </div>
+        <label class="block text-xs text-gray-600">Нэмэлт тайлбар<input name="note" id="pt-note" class="vh-f" maxlength="255"></label>
+        <div class="flex flex-wrap gap-2 justify-end border-t border-gray-100 pt-3">
+            <button type="button" id="pt-delete" class="mr-auto text-sm px-4 py-2 rounded-lg border border-red-300 text-red-700 hover:bg-red-50" hidden>🗑 Устгах</button>
+            <button type="button" data-close class="text-sm px-4 py-2 rounded-lg border border-gray-300 hover:bg-gray-50">Болих</button>
+            <button type="submit" class="text-sm font-semibold px-5 py-2 rounded-lg bg-green-600 text-white hover:bg-green-700">💾 Хадгалах</button>
+        </div>
+    </form>
+</div>
+<template id="pt-line">
+    <tr>
+        <td class="pr-2 py-1"><input name="description" class="vh-f !mt-0" maxlength="255"></td>
+        <td class="pr-2 py-1"><select name="category" class="vh-f !mt-0">{% for c in categories %}<option value="{{ c }}">{{ c }}</option>{% endfor %}</select></td>
+        <td class="pr-2 py-1"><input name="quantity" class="vh-f !mt-0 text-right" inputmode="decimal" value="1"></td>
+        <td class="pr-2 py-1"><input name="unit_price" class="vh-f !mt-0 text-right" inputmode="decimal"></td>
+        <td class="py-1 text-right num" data-amount>0</td>
+        <td class="py-1 text-center"><button type="button" data-remove class="text-gray-400 hover:text-red-600" title="Мөр хасах">✕</button></td>
+    </tr>
+</template>
+<datalist id="pt-dl-plate">{% for v in vehicle_options %}<option value="{{ v.plate }}">{% if v.ours %}{{ v.label|default:'Манай машин' }}{% else %}бусад{% endif %}</option>{% endfor %}</datalist>
+<datalist id="pt-dl-driver">{% for d in driver_options %}<option value="{{ d.name }}">{% endfor %}</datalist>
+<datalist id="pt-dl-supplier">{% for s in suppliers %}<option value="{{ s }}">{% endfor %}</datalist>
+{{ parts_js|json_script:"parts-data" }}
+
+<script>
+(function () {
+    const RECORDS = JSON.parse(document.getElementById('parts-data').textContent);
+    const $ = (id) => document.getElementById(id);
+    const modal = $('pt-modal'), lines = $('pt-lines');
+    const num = (v) => parseFloat(String(v || '').replace(/[\s,]/g, '')) || 0;
+    const fmt = (v) => Number(v).toLocaleString('en-US', { maximumFractionDigits: 2 });
+
+    $('pt-import-open').addEventListener('click', () => { $('pt-import').hidden = !$('pt-import').hidden; });
+
+    function recalc() {
+        let total = 0;
+        lines.querySelectorAll('tr').forEach((tr) => {
+            const a = num(tr.querySelector('[name=quantity]').value) * num(tr.querySelector('[name=unit_price]').value);
+            tr.querySelector('[data-amount]').textContent = fmt(a);
+            total += a;
+        });
+        $('pt-total').textContent = fmt(total) + '₮';
+    }
+    function addLine(data, focus) {
+        const tr = $('pt-line').content.firstElementChild.cloneNode(true);
+        if (data) {
+            tr.querySelector('[name=description]').value = data.description || '';
+            const sel = tr.querySelector('[name=category]');
+            if (data.category && ![...sel.options].some((o) => o.value === data.category)) sel.add(new Option(data.category, data.category));
+            if (data.category) sel.value = data.category;
+            tr.querySelector('[name=quantity]').value = data.quantity ?? 1;
+            tr.querySelector('[name=unit_price]').value = data.unit_price ?? '';
+        } else {
+            const prev = lines.querySelector('tr:last-child [name=category]');
+            if (prev) tr.querySelector('[name=category]').value = prev.value;  // өмнөх мөрийн төрлийг давтана
+        }
+        tr.querySelectorAll('input').forEach((el) => el.addEventListener('input', recalc));
+        tr.querySelector('[data-remove]').addEventListener('click', () => { if (lines.children.length > 1) { tr.remove(); recalc(); } });
+        tr.querySelector('[name=unit_price]').addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && tr === lines.lastElementChild) { e.preventDefault(); addLine(null, true); }
+        });
+        lines.append(tr);
+        recalc();
+        if (focus) tr.querySelector('[name=description]').focus();
+    }
+    function open(rec) {
+        $('pt-id').value = rec ? rec.id : '';
+        $('pt-action').value = 'save';
+        $('pt-date').value = rec ? rec.date : '{{ today|date:"Y-m-d" }}';
+        $('pt-plate').value = rec ? rec.plate : '';
+        $('pt-driver').value = rec ? rec.driver : '';
+        $('pt-km').value = rec && rec.km !== null ? rec.km : '';
+        $('pt-supplier').value = rec ? rec.supplier : '';
+        $('pt-note').value = rec ? rec.note : '';
+        lines.innerHTML = '';
+        addLine(rec || null, false);
+        if (!rec) { addLine(null, false); addLine(null, false); }
+        $('pt-add').hidden = !!rec;
+        $('pt-title').textContent = rec ? `Засах · ${rec.date} ${rec.plate || ''}` : 'Сэлбэг, засвар бүртгэх';
+        $('pt-delete').hidden = !rec;
+        modal.hidden = false;
+        (rec ? $('pt-date') : $('pt-plate')).focus();
+    }
+    const close = () => { modal.hidden = true; };
+    $('pt-new').addEventListener('click', () => open(null));
+    $('pt-add').addEventListener('click', () => addLine(null, true));
+    document.querySelectorAll('[data-edit]').forEach((b) => b.addEventListener('click', () => open(RECORDS[b.dataset.edit])));
+    modal.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', close));
+    modal.addEventListener('click', (e) => { if (e.target === modal) close(); });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') close(); });
+    $('pt-delete').addEventListener('click', () => {
+        if (!confirm('Энэ бүртгэлийг устгах уу?')) return;
+        $('pt-action').value = 'delete'; $('pt-form').submit();
+    });
+    $('pt-form').addEventListener('submit', (e) => {
+        const filled = [...lines.querySelectorAll('tr')].filter((tr) => tr.querySelector('[name=description]').value.trim());
+        if (!filled.length) { e.preventDefault(); alert('Дор хаяж нэг мөрөнд тайлбар бичнэ үү.'); }
+    });
+})();
+</script>

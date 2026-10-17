@@ -1,0 +1,191 @@
+{% extends 'base.html' %}
+{% load humanize %}
+
+{% block title %}Борлуулалтын төлөвлөгөө - Euro Foods{% endblock %}
+
+{% block hide_mobile_menu %}hidden{% endblock %}
+
+{% block content %}
+<div class="flex min-h-screen bg-gray-50">
+    {% include 'shop/_sidebar.html' with active_page='sales_plan' %}
+
+    <main class="flex-1 p-2 lg:p-8 min-w-0">
+        <div class="max-w-6xl mx-auto">
+            <div class="flex flex-col sm:flex-row sm:items-end justify-between gap-3 mb-4">
+                <div>
+                    <h1 class="text-2xl lg:text-3xl font-bold text-gray-900">🎯 Борлуулалтын төлөвлөгөө</h1>
+                    <p class="text-sm text-gray-600 mt-1">Суваг бүрийн сарын дүн ба ХТ тус бүрийн төлөвлөгөөт бараа. Хяналтын самбарын биелэлтэд ашиглагдана.</p>
+                </div>
+                <div class="flex items-center gap-2">
+                    <a href="?month={{ prev_month|date:'Y-m' }}" class="px-3 py-2 rounded-lg border border-gray-300 bg-white hover:bg-gray-50" aria-label="Өмнөх сар">◀</a>
+                    <form method="get"><input type="month" name="month" value="{{ month|date:'Y-m' }}" onchange="this.form.submit()" class="border border-gray-300 rounded-lg px-3 py-2"></form>
+                    <a href="?month={{ next_month|date:'Y-m' }}" class="px-3 py-2 rounded-lg border border-gray-300 bg-white hover:bg-gray-50" aria-label="Дараах сар">▶</a>
+                </div>
+            </div>
+
+            {% if messages %}
+            <div class="space-y-2 mb-4">{% for message in messages %}<div class="p-3 rounded-lg text-sm {% if message.tags == 'warning' %}bg-yellow-100 text-yellow-800{% elif message.tags == 'error' %}bg-red-100 text-red-800{% else %}bg-green-100 text-green-800{% endif %}">{{ message }}</div>{% endfor %}</div>
+            {% endif %}
+
+            <form method="post" class="mb-4">
+                {% csrf_token %}<input type="hidden" name="month" value="{{ month|date:'Y-m' }}"><input type="hidden" name="action" value="copy_prev">
+                <button class="text-sm px-3 py-2 rounded-lg border border-gray-300 bg-white hover:bg-gray-50" onclick="return confirm('{{ prev_month|date:'Y-m' }} сарын төлөвлөгөөг энэ сард хуулах уу? (Байгаа утгыг өөрчлөхгүй)');">📋 {{ prev_month|date:'Y-m' }} сараас хуулах</button>
+            </form>
+
+            <form method="post" id="plan-form">
+                {% csrf_token %}<input type="hidden" name="month" value="{{ month|date:'Y-m' }}">
+
+                <!-- Сувгийн дүн -->
+                <section class="bg-white rounded-xl border border-gray-100 shadow-sm p-4 mb-4">
+                    <div class="flex justify-between items-baseline mb-3">
+                        <h2 class="font-semibold text-gray-800">💰 Сувгийн борлуулалтын төлөвлөгөө (₮, НӨАТ-тэй)</h2>
+                        <span class="text-sm text-gray-500">Нийт: <strong id="plan-total" class="text-gray-900">{{ plan_total|floatformat:0|intcomma }}</strong>₮</span>
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2">
+                        {% for c in channels %}
+                        <label class="flex items-center gap-3 text-sm">
+                            <span class="flex-1 truncate {% if c.is_ht %}font-medium text-gray-900{% else %}text-gray-600{% endif %}">{{ c.name }}</span>
+                            <input type="text" inputmode="numeric" name="plan_{{ c.id }}" value="{% if c.amount %}{{ c.amount|floatformat:0|intcomma }}{% endif %}" placeholder="0"
+                                   data-money class="w-44 text-right tabular-nums border border-gray-300 rounded-lg px-3 py-1.5">
+                        </label>
+                        {% endfor %}
+                    </div>
+                </section>
+
+                <!-- Төлөвлөгөөт бараа -->
+                <section class="bg-white rounded-xl border border-gray-100 shadow-sm p-4 mb-4">
+                    <h2 class="font-semibold text-gray-800">📦 Төлөвлөгөөт бараа (ширхэг)</h2>
+                    <p class="text-xs text-gray-500 mb-3">Онцолж борлуулах бараа нэмээд ХТ тус бүрийн тоо ширхгийн зорилтыг оруулна. Хоосон = зорилтгүй.</p>
+                    <div class="relative mb-3 max-w-xl">
+                        <input type="search" id="item-search" placeholder="Бараа нэмэх: нэр, код, баркодоор хайх..." autocomplete="off" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
+                        <div id="item-results" class="absolute z-10 mt-1 w-full max-h-64 overflow-y-auto bg-white border border-gray-200 rounded-lg shadow-lg hidden"></div>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-sm" id="items-table">
+                            <thead class="bg-gray-50 text-xs text-gray-500">
+                                <tr>
+                                    <th class="px-2 py-2 text-left min-w-[14rem]">Бараа</th>
+                                    {% for cid, name in ht_channels %}<th class="px-2 py-2 text-right" title="{{ name }}">{{ name|slice:"3:"|truncatechars:16 }}</th>{% endfor %}
+                                    <th class="px-2 py-2 text-right">Нийт</th><th></th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-gray-100" id="items-body">
+                                {% for item in items %}
+                                <tr data-item="{{ item.id }}">
+                                    <td class="px-2 py-1.5"><input type="hidden" name="items" value="{{ item.id }}"><div class="truncate max-w-xs" title="{{ item.name }}">{{ item.name }}</div><div class="text-[11px] text-gray-400">{{ item.id }}</div></td>
+                                    {% for qty in item.cells %}
+                                    <td class="px-2 py-1.5 text-right"><input type="text" inputmode="numeric" data-qty value="{% if qty %}{{ qty|floatformat:0 }}{% endif %}" class="w-20 text-right tabular-nums border border-gray-300 rounded px-2 py-1"></td>
+                                    {% endfor %}
+                                    <td class="px-2 py-1.5 text-right tabular-nums font-semibold" data-row-total></td>
+                                    <td class="px-2 py-1.5 text-right"><button type="button" data-remove class="text-red-600 hover:bg-red-50 rounded px-2 py-1" title="Хасах">✕</button></td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                        <p id="items-empty" class="text-sm text-gray-500 py-3 {% if items %}hidden{% endif %}">Төлөвлөгөөт бараа нэмээгүй байна.</p>
+                    </div>
+                </section>
+
+                <div class="sticky bottom-0 bg-gray-50/90 backdrop-blur py-3 flex justify-end">
+                    <button class="bg-green-600 hover:bg-green-700 text-white font-semibold px-6 py-2.5 rounded-lg">💾 {{ month|date:'Y-m' }} сарын төлөвлөгөө хадгалах</button>
+                </div>
+            </form>
+        </div>
+    </main>
+</div>
+
+{{ ht_channels|json_script:'ht-channels' }}
+<script>
+(function () {
+    var channels = JSON.parse(document.getElementById('ht-channels').textContent);
+    var body = document.getElementById('items-body');
+    var empty = document.getElementById('items-empty');
+    var fmt = new Intl.NumberFormat('en-US');
+    function num(v) { return parseFloat((v || '').replace(/[^\d.]/g, '')) || 0; }
+
+    // Мөнгөн дүнг мянгатын таслалтай харуулах, нийт дүнг шинэчлэх
+    function updateTotal() {
+        var t = 0;
+        document.querySelectorAll('[data-money]').forEach(function (i) { t += num(i.value); });
+        document.getElementById('plan-total').textContent = fmt.format(t);
+    }
+    document.querySelectorAll('[data-money]').forEach(function (i) {
+        i.addEventListener('input', updateTotal);
+        i.addEventListener('blur', function () { var v = num(i.value); i.value = v ? fmt.format(v) : ''; });
+    });
+
+    // Барааны мөр: тоо оруулах талбарт item/суваг-ийн нэрийг онооно
+    function wireRow(tr) {
+        var id = tr.dataset.item;
+        tr.querySelectorAll('[data-qty]').forEach(function (input, i) {
+            input.name = 'qty_' + id + '_' + channels[i][0];
+            input.addEventListener('input', function () { rowTotal(tr); });
+        });
+        tr.querySelector('[data-remove]').addEventListener('click', function () { tr.remove(); toggleEmpty(); });
+        rowTotal(tr);
+    }
+    function rowTotal(tr) {
+        var t = 0;
+        tr.querySelectorAll('[data-qty]').forEach(function (i) { t += num(i.value); });
+        tr.querySelector('[data-row-total]').textContent = t ? fmt.format(t) : '';
+    }
+    function toggleEmpty() { empty.classList.toggle('hidden', body.children.length > 0); }
+    Array.prototype.forEach.call(body.children, wireRow);
+
+    function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text) e.textContent = text; return e; }
+    function addItem(item) {
+        if (body.querySelector('[data-item="' + CSS.escape(item.id) + '"]')) return;
+        var tr = el('tr'); tr.dataset.item = item.id;
+        var td = el('td', 'px-2 py-1.5');
+        var hidden = el('input'); hidden.type = 'hidden'; hidden.name = 'items'; hidden.value = item.id;
+        td.appendChild(hidden);
+        var name = el('div', 'truncate max-w-xs', item.name); name.title = item.name;
+        td.appendChild(name); td.appendChild(el('div', 'text-[11px] text-gray-400', item.id));
+        tr.appendChild(td);
+        channels.forEach(function () {
+            var c = el('td', 'px-2 py-1.5 text-right');
+            var i = el('input', 'w-20 text-right tabular-nums border border-gray-300 rounded px-2 py-1');
+            i.type = 'text'; i.inputMode = 'numeric'; i.setAttribute('data-qty', '');
+            c.appendChild(i); tr.appendChild(c);
+        });
+        var total = el('td', 'px-2 py-1.5 text-right tabular-nums font-semibold'); total.setAttribute('data-row-total', ''); tr.appendChild(total);
+        var rm = el('td', 'px-2 py-1.5 text-right');
+        var b = el('button', 'text-red-600 hover:bg-red-50 rounded px-2 py-1', '✕'); b.type = 'button'; b.title = 'Хасах'; b.setAttribute('data-remove', '');
+        rm.appendChild(b); tr.appendChild(rm);
+        body.appendChild(tr);
+        wireRow(tr);
+        toggleEmpty();
+        tr.querySelector('[data-qty]').focus();
+    }
+
+    // Бараа хайх
+    var search = document.getElementById('item-search');
+    var results = document.getElementById('item-results');
+    var timer;
+    search.addEventListener('input', function () {
+        clearTimeout(timer);
+        var q = search.value.trim();
+        if (q.length < 2) { results.classList.add('hidden'); return; }
+        timer = setTimeout(function () {
+            fetch('?q=' + encodeURIComponent(q)).then(function (r) { return r.json(); }).then(function (d) {
+                results.innerHTML = '';
+                d.results.forEach(function (item) {
+                    var b = el('button', 'block w-full text-left px-3 py-2 text-sm hover:bg-blue-50');
+                    b.type = 'button';
+                    b.appendChild(el('span', '', item.name));
+                    b.appendChild(el('span', 'ml-2 text-xs text-gray-400', item.id));
+                    b.addEventListener('click', function () { addItem(item); search.value = ''; results.classList.add('hidden'); });
+                    results.appendChild(b);
+                });
+                if (!d.results.length) results.appendChild(el('div', 'px-3 py-2 text-sm text-gray-500', 'Олдсонгүй'));
+                results.classList.remove('hidden');
+            });
+        }, 250);
+    });
+    search.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') { e.preventDefault(); var first = results.querySelector('button'); if (first) first.click(); }
+    });
+    document.addEventListener('click', function (e) { if (!results.contains(e.target) && e.target !== search) results.classList.add('hidden'); });
+})();
+</script>
+{% endblock %}

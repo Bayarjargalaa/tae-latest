@@ -46,7 +46,7 @@
 <section id="products" class="py-8 lg:py-16 bg-gray-50">
     <div class="container mx-auto px-4">
         <div class="flex justify-between items-center mb-4 lg:mb-8">
-            <h2 class="text-xl lg:text-3xl font-bold text-gray-900">Шинэ Бүтээгдэхүүн</h2>
+            <h2 class="text-xl lg:text-3xl font-bold text-gray-900">Эрэлттэй бараа</h2>
             <a href="{% if user.is_authenticated %}/products/{% else %}/products/?jijig_min=true{% endif %}" class="text-primary hover:text-green-700 font-medium text-sm lg:text-base">
                 Бүгдийг үзэх →
             </a>
@@ -116,7 +116,7 @@
                         {% endif %}
                     </button>
                     
-                    {% if user.is_staff %}
+                    {% if 'product_edit' in visible_menu_keys %}
                     <a href="{% url 'shop:product_edit' product.id %}" 
                        class="block text-center w-full mt-2 bg-gray-100 text-gray-700 py-2 rounded-lg hover:bg-gray-200 transition text-xs lg:text-sm">
                         ✏️ Засах

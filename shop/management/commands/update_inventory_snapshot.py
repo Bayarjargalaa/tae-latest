@@ -12,7 +12,7 @@ from django.db.models import Max
 from django.db.models.functions import Cast
 from django.db import models, transaction
 from datamigration.models import OpenDataInventory
-from shop.models_inventory import InventorySnapshot
+from shop.models_inventory import InventorySnapshot, SNAPSHOT_WAREHOUSES
 from decimal import Decimal
 from datetime import datetime
 
@@ -39,16 +39,12 @@ class Command(BaseCommand):
             deleted_count = InventorySnapshot.objects.all().delete()[0]
             self.stdout.write(self.style.WARNING(f'  Deleted {deleted_count} records\n'))
 
-        # 3 гол агуулах
-        target_warehouses = {
-            'Агуулах Толгойт': 'tolgoit',
-            'Агуулах жижиг': 'jijig',
-            'Агуулах алтжин': 'altjin'
-        }
+        # 3 гол агуулах: WarehouseId код -> баганын угтвар (нэр өөрчлөгдөж болох тул кодоор)
+        target_warehouses = {code: key for code, (key, _label) in SNAPSHOT_WAREHOUSES.items()}
 
         # Get all unique items from all warehouses
         all_items = OpenDataInventory.objects.filter(
-            warehousename__in=target_warehouses.keys()
+            warehouseid__in=target_warehouses.keys()
         ).values_list('itemname', flat=True).distinct()
 
         total_items = len(all_items)
@@ -74,10 +70,10 @@ class Command(BaseCommand):
             total_cost = Decimal('0')
             cost_count = 0
 
-            for warehouse_full, warehouse_key in target_warehouses.items():
+            for warehouse_code, warehouse_key in target_warehouses.items():
                 # Find latest date
                 latest_info = OpenDataInventory.objects.filter(
-                    warehousename=warehouse_full,
+                    warehouseid=warehouse_code,
                     itemname=item_name
                 ).aggregate(
                     latest_date=Max(Cast('documentdate', models.DateField()))
@@ -90,7 +86,7 @@ class Command(BaseCommand):
                     latest_record = OpenDataInventory.objects.annotate(
                         doc_date_cast=Cast('documentdate', models.DateField())
                     ).filter(
-                        warehousename=warehouse_full,
+                        warehouseid=warehouse_code,
                         itemname=item_name,
                         doc_date_cast=latest_date
                     ).first()

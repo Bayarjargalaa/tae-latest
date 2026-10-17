@@ -1,0 +1,176 @@
+{% extends 'base.html' %}
+{% load humanize %}
+
+{% block title %}Шинжилгээний бичиг - Euro Foods{% endblock %}
+
+{% block hide_mobile_menu %}hidden{% endblock %}
+
+{% block content %}
+<div class="flex min-h-screen bg-gray-50">
+    {% include 'shop/_sidebar.html' with active_page='product_certificates' %}
+
+    <main class="flex-1 p-2 lg:p-8 lg:ml-0 min-w-0">
+        <div class="mb-4 lg:mb-6 flex flex-col sm:flex-row sm:items-end justify-between gap-3">
+            <div>
+                <h1 class="text-2xl lg:text-3xl font-bold text-gray-900">🧪 Шинжилгээний бичгийн хяналт</h1>
+                <p class="text-gray-600 mt-2 text-sm">
+                    Барааны бичгийн дуусах хугацааны төлөв · {{ today|date:"Y-m-d" }}-ний байдлаар.
+                    {{ soon_days }}-аас цөөн хоног үлдсэн бол "Удахгүй дуусна".
+                </p>
+            </div>
+            <a href="{{ export_url }}" class="self-start sm:self-auto px-4 py-2 rounded-lg border border-gray-300 bg-white hover:bg-gray-50 text-sm font-medium">⬇ Excel</a>
+        </div>
+
+        {% if messages %}
+        <div class="space-y-2 mb-4">{% for message in messages %}<div class="p-3 rounded-lg text-sm {% if message.tags == 'error' %}bg-red-100 text-red-800{% elif message.tags == 'warning' %}bg-yellow-100 text-yellow-800{% else %}bg-green-100 text-green-800{% endif %}">{{ message }}</div>{% endfor %}</div>
+        {% endif %}
+
+        <!-- Төлөв бүрийн тоо - дарж шүүнэ -->
+        <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 lg:gap-3 mb-4">
+            <a href="{{ all_url }}" class="rounded-lg border-2 p-3 bg-white hover:shadow transition {% if not filters.status %}border-primary{% else %}border-transparent{% endif %}">
+                <div class="text-xs text-gray-500">Бүгд</div>
+                <div class="text-2xl font-bold text-gray-900 tabular-nums">{{ total|intcomma }}</div>
+            </a>
+            {% for t in tiles %}
+            <a href="{{ t.url }}" class="rounded-lg border-2 p-3 bg-white hover:shadow transition {% if filters.status == t.code %}border-{{ t.color }}-500{% else %}border-transparent{% endif %}">
+                <div class="text-xs text-gray-500">{{ t.icon }} {{ t.label }}</div>
+                <div class="text-2xl font-bold tabular-nums {% if t.count and t.code in 'expired soon' %}text-{{ t.color }}-600{% else %}text-gray-900{% endif %}">{{ t.count|intcomma }}</div>
+            </a>
+            {% endfor %}
+        </div>
+
+        <!-- Шүүлт -->
+        <form method="get" class="bg-white rounded-lg shadow p-3 lg:p-4 mb-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-3 items-end">
+            {% if filters.status %}<input type="hidden" name="status" value="{{ filters.status }}">{% endif %}
+            <label class="block text-sm lg:col-span-3">
+                <span class="text-gray-700">Бичгийн төрөл</span>
+                <select name="type" onchange="this.form.submit()" class="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2">
+                    {% for t in tracked_types %}<option value="{{ t.pk }}" {% if filters.type == t.pk|stringformat:'s' %}selected{% endif %}>{{ t.name }}</option>{% endfor %}
+                    <option value="all" {% if filters.type == 'all' %}selected{% endif %}>Хугацаатай бүх төрөл</option>
+                </select>
+            </label>
+            <label class="block text-sm lg:col-span-4">
+                <span class="text-gray-700">Хайх</span>
+                <input type="search" name="q" value="{{ filters.q }}" placeholder="Нэр, код, баркод, брэнд" class="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2">
+            </label>
+            <label class="block text-sm lg:col-span-2">
+                <span class="text-gray-700">Бүлэг</span>
+                <select name="group" onchange="this.form.submit()" class="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2">
+                    <option value="">Бүгд</option>
+                    {% for g in groups %}<option value="{{ g }}" {% if filters.group == g %}selected{% endif %}>{{ g }}</option>{% endfor %}
+                </select>
+            </label>
+            <label class="block text-sm lg:col-span-3">
+                <span class="text-gray-700">Эрэмбэ</span>
+                <select name="sort" onchange="this.form.submit()" class="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2">
+                    <option value="priority" {% if filters.sort == 'priority' %}selected{% endif %}>Анхаарах шаардлагатай нь эхэнд</option>
+                    <option value="expires" {% if filters.sort == 'expires' %}selected{% endif %}>Дуусах огноо (эрт → орой)</option>
+                    <option value="-expires" {% if filters.sort == '-expires' %}selected{% endif %}>Дуусах огноо (орой → эрт)</option>
+                    <option value="name" {% if filters.sort == 'name' %}selected{% endif %}>Барааны нэр</option>
+                </select>
+            </label>
+            <div class="lg:col-span-12 flex flex-wrap items-center justify-between gap-3 pt-2 border-t">
+                <label class="inline-flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                    <input type="hidden" name="stock_only" value="false">
+                    <input type="checkbox" name="stock_only" value="true" {% if filters.stock_only %}checked{% endif %} onchange="this.form.submit()" class="w-4 h-4 rounded border-gray-300">
+                    📦 Зөвхөн үлдэгдэлтэй бараа
+                </label>
+                <div class="flex gap-2">
+                    <button type="submit" class="bg-primary text-white px-5 py-2 rounded-lg hover:bg-green-700 text-sm">🔍 Хайх</button>
+                    <a href="{% url 'shop:product_certificates' %}" class="px-5 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 text-sm">Цэвэрлэх</a>
+                </div>
+            </div>
+        </form>
+
+        <!-- Жагсаалт -->
+        <div class="bg-white rounded-lg shadow overflow-hidden">
+            <div class="px-4 py-3 border-b text-sm text-gray-600">
+                <strong>{{ rows|length|intcomma }}</strong> бараа{% if filters.status %} · {% for t in tiles %}{% if t.code == filters.status %}{{ t.icon }} {{ t.label }}{% endif %}{% endfor %}{% endif %}
+            </div>
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead class="bg-gray-50 border-b text-xs uppercase text-gray-500">
+                        <tr>
+                            <th class="px-3 py-2 text-left">Бараа</th>
+                            <th class="px-3 py-2 text-left hidden md:table-cell">Бүлэг</th>
+                            <th class="px-3 py-2 text-right hidden sm:table-cell">Үлдэгдэл</th>
+                            <th class="px-3 py-2 text-left">Төлөв</th>
+                            <th class="px-3 py-2 text-left">Дуусах</th>
+                            <th class="px-3 py-2 text-left hidden lg:table-cell">Бичиг</th>
+                            <th class="px-3 py-2 text-right"><span class="sr-only">Үйлдэл</span></th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-100">
+                        {% for r in rows %}
+                        <tr class="hover:bg-gray-50">
+                            <td class="px-3 py-2">
+                                <a href="{% url 'shop:product_detail' r.id %}#attachments" class="text-gray-900 hover:text-primary hover:underline">{{ r.name }}</a>
+                                <div class="text-xs text-gray-400">{{ r.id }}{% if r.brandname %} · {{ r.brandname }}{% endif %}</div>
+                            </td>
+                            <td class="px-3 py-2 text-gray-600 hidden md:table-cell">{{ r.itemgroupid|default:"-" }}</td>
+                            <td class="px-3 py-2 text-right tabular-nums hidden sm:table-cell">{{ r.stock_qty|floatformat:0|intcomma }}</td>
+                            <td class="px-3 py-2 whitespace-nowrap">
+                                <span class="inline-block rounded-full px-2 py-0.5 text-xs font-semibold
+                                    {% if r.cert_status == 'expired' %}bg-red-100 text-red-800{% elif r.cert_status == 'soon' %}bg-amber-100 text-amber-800{% elif r.cert_status == 'no_date' %}bg-orange-100 text-orange-800{% elif r.cert_status == 'none' %}bg-gray-100 text-gray-700{% else %}bg-green-100 text-green-800{% endif %}">
+                                    {{ r.cert_label }}
+                                </span>
+                                {% if r.cert_status != 'none' %}<div class="text-xs mt-0.5 {% if r.cert_status == 'expired' %}text-red-700{% elif r.cert_status == 'soon' %}text-amber-700 font-semibold{% else %}text-gray-500{% endif %}">{{ r.cert_text }}</div>{% endif %}
+                            </td>
+                            <td class="px-3 py-2 whitespace-nowrap tabular-nums">{% if r.cert_unlimited %}♾{% else %}{{ r.cert_expires|date:"Y.m.d"|default:"-" }}{% endif %}{% if r.cert_own %}<div class="text-[11px] text-blue-700" title="Бичгийн ерөнхий огноо биш, энэ бараанд тусад нь өгсөн огноо">тусдаа огноо</div>{% endif %}</td>
+                            <td class="px-3 py-2 hidden lg:table-cell">
+                                {% if r.cert_doc %}<a href="{% url 'shop:product_attachment' r.cert_doc.pk %}" target="_blank" rel="noopener" class="text-blue-700 hover:underline break-all">📄 {{ r.cert_doc.original_name|truncatechars:30 }}</a>{% else %}<span class="text-gray-400">-</span>{% endif %}
+                            </td>
+                            <td class="px-3 py-2 text-right whitespace-nowrap">
+                                {% if can_manage %}
+                                {% if r.cert_doc %}
+                                <button type="button" class="px-2 py-1 rounded hover:bg-green-50 text-green-700" title="Төрөл, хугацаа засах"
+                                        data-meta-edit data-url="{% url 'shop:product_attachment_edit' r.cert_doc.pk %}" data-next="{{ request.get_full_path }}"
+                                        data-name="{{ r.name }} · {{ r.cert_doc.original_name }}" data-type="{{ r.cert_doc.doc_type_id|default:'' }}"
+                                        data-issued="{{ r.cert_doc.issued_on|date:'Y-m-d' }}" data-expires="{{ r.cert_doc.expires_on|date:'Y-m-d' }}"
+                                        data-no-expiry="{{ r.cert_doc.no_expiry|yesno:'1,0' }}" data-note="{{ r.cert_doc.note }}" data-items="{{ r.cert_items_json }}" data-current="{{ r.id }}">✏️</button>
+                                {% endif %}
+                                <a href="{% url 'shop:product_detail' r.id %}#att-form" class="px-2 py-1 rounded hover:bg-blue-50 text-blue-700" title="Шинэ бичиг хавсаргах">📎</a>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="7" class="px-6 py-10 text-center text-gray-500">🔍 Сонгосон шүүлтээр бараа олдсонгүй.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        {% if can_manage %}
+        <!-- Бичгийн төрөл -->
+        <div id="doc-types" class="bg-white rounded-lg shadow p-4 lg:p-6 mt-6">
+            <h2 class="text-lg font-bold mb-1">🗂 Бичгийн төрлүүд</h2>
+            <p class="text-sm text-gray-500 mb-3">"Хугацаа хянах" төрлийн бичиг энэ хуудсанд тооцогдоно. Идэвхгүй төрөл шинэ бичиг хавсаргахад сонгогдохгүй (хуучин бичиг хэвээр).</p>
+            <div class="divide-y divide-gray-100 border border-gray-100 rounded-lg mb-4">
+                {% for t in doc_types %}
+                <div class="flex flex-wrap items-center gap-2 px-3 py-2 text-sm {% if not t.is_active %}opacity-60{% endif %}">
+                    <span class="flex-1 font-medium">{{ t.name }}</span>
+                    <form method="post" action="{% url 'shop:product_doc_types' %}">{% csrf_token %}
+                        <input type="hidden" name="id" value="{{ t.pk }}"><input type="hidden" name="action" value="toggle_tracks">
+                        <button class="px-2 py-1 rounded-full text-xs border {% if t.tracks_expiry %}border-green-300 bg-green-50 text-green-800{% else %}border-gray-300 text-gray-600{% endif %}">⏱ {% if t.tracks_expiry %}Хугацаа хянана{% else %}Хугацаа хянахгүй{% endif %}</button>
+                    </form>
+                    <form method="post" action="{% url 'shop:product_doc_types' %}">{% csrf_token %}
+                        <input type="hidden" name="id" value="{{ t.pk }}"><input type="hidden" name="action" value="toggle_active">
+                        <button class="px-2 py-1 rounded-full text-xs border {% if t.is_active %}border-blue-300 bg-blue-50 text-blue-800{% else %}border-gray-300 text-gray-600{% endif %}">{% if t.is_active %}Идэвхтэй{% else %}Идэвхгүй{% endif %}</button>
+                    </form>
+                </div>
+                {% endfor %}
+            </div>
+            <form method="post" action="{% url 'shop:product_doc_types' %}" class="flex flex-col sm:flex-row gap-2 sm:items-center">
+                {% csrf_token %}<input type="hidden" name="action" value="add">
+                <input type="text" name="name" maxlength="100" required placeholder="Шинэ төрөл: жиш. Хүнсний аюулгүй байдлын сертификат" class="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm">
+                <label class="inline-flex items-center gap-2 text-sm text-gray-700"><input type="checkbox" name="tracks_expiry" value="1" checked class="w-4 h-4 rounded border-gray-300"> Хугацаа хянах</label>
+                <button class="bg-primary text-white px-4 py-2 rounded-lg hover:bg-green-700 text-sm">+ Нэмэх</button>
+            </form>
+        </div>
+
+        {% include 'shop/_doc_meta_script.html' %}
+        {% endif %}
+    </main>
+</div>
+{% endblock %}

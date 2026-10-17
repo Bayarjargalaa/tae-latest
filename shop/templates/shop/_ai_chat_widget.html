@@ -77,11 +77,17 @@ document.addEventListener('DOMContentLoaded', function () {
             },
             body: JSON.stringify({ message: message }),
         })
-            .then(function (res) { return res.json(); })
+            .then(function (res) {
+                // Сервер JSON биш (403/500 HTML, нэвтрэх хуудас г.м.) буцаавал жинхэнэ шалтгааныг нь харуулна
+                return res.json().catch(function () {
+                    return { error: 'Серверийн алдаа (' + res.status + '). Дахин оролдоно уу.' };
+                });
+            })
             .then(function (data) {
                 addMessage(data.reply || data.error || 'Уучлаарай, хариу ирсэнгүй.', 'bot');
             })
-            .catch(function () {
+            .catch(function (err) {
+                console.error('AI chat:', err);
                 addMessage('Сүлжээний алдаа гарлаа. Дахин оролдоно уу.', 'bot');
             })
             .finally(function () {

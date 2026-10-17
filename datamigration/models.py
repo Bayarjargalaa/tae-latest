@@ -14,6 +14,7 @@ class OpenDataItem(models.Model):
     baseprice = models.FloatField(db_column='BasePrice', blank=True, null=True)
     saleprice = models.FloatField(db_column='SalePrice', blank=True, null=True)
     standardunitcost = models.FloatField(db_column='StandardUnitCost', blank=True, null=True)
+    itemgroupid = models.TextField(db_column='ItemGroupId', blank=True, null=True)  # Барааны бүлэг (нэр нь өөрөө Id)
     itemcategoryname = models.TextField(db_column='ItemCategoryName', blank=True, null=True)
     measurename = models.TextField(db_column='MeasureName', blank=True, null=True)
     manufacturername = models.TextField(db_column='ManufacturerName', blank=True, null=True)
@@ -198,6 +199,7 @@ class OpenDataInventory(models.Model):
     documentpkid = models.BigIntegerField(db_column='DocumentPkId', primary_key=True)
     documentdate = models.TextField(db_column='DocumentDate', blank=True, null=True)  # TEXT field
     documenttype = models.TextField(db_column='DocumentType', blank=True, null=True)
+    warehouseid = models.TextField(db_column='WarehouseId', blank=True, null=True)
     warehousename = models.TextField(db_column='WarehouseName', blank=True, null=True)
     itemname = models.TextField(db_column='ItemName', blank=True, null=True)
     brandname = models.TextField(db_column='BrandName', blank=True, null=True)

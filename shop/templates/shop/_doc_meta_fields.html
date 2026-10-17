@@ -1,0 +1,42 @@
+{# Бичгийн төрөл + олгосон/дуусах огноо. Үйлдлийг _doc_meta_script.html хариуцна (хуудсанд нэг удаа include). #}
+{# Дуусах огноог: хурдан товч (+6 сар/+1 жил...), ±1 жил, эсвэл гараар (YYYY-MM-DD) - жил дамнасан ч хурдан сонгогдоно. #}
+<div data-doc-meta class="space-y-3">
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <label class="block text-sm">
+            <span class="text-gray-700">Бичгийн төрөл</span>
+            <select name="doc_type" data-doc-type class="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
+                {% for t in doc_types %}{% if t.is_active %}
+                <option value="{{ t.pk }}" data-tracks="{{ t.tracks_expiry|yesno:'1,0' }}">{{ t.name }}</option>
+                {% endif %}{% endfor %}
+            </select>
+        </label>
+        <label class="block text-sm" data-expiry-part>
+            <span class="text-gray-700">Олгосон огноо <span class="text-gray-400">(заавал биш)</span></span>
+            <input type="date" name="issued_on" data-issued class="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
+        </label>
+    </div>
+
+    <div data-expiry-part class="rounded-lg border border-gray-200 bg-gray-50 p-3 space-y-2">
+        <div class="flex flex-wrap items-end gap-2">
+            <label class="block text-sm flex-1 min-w-[11rem]">
+                <span class="text-gray-700 font-medium">Дуусах огноо</span>
+                <input type="date" name="expires_on" data-expires class="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white">
+            </label>
+            <div class="flex gap-1" role="group" aria-label="Дуусах оныг шилжүүлэх">
+                <button type="button" data-shift-years="-1" class="px-2 py-2 text-sm rounded-lg border border-gray-300 bg-white hover:bg-gray-100" title="1 жилээр урагшлуулах">−1 жил</button>
+                <button type="button" data-shift-years="1" class="px-2 py-2 text-sm rounded-lg border border-gray-300 bg-white hover:bg-gray-100" title="1 жилээр хойшлуулах">+1 жил</button>
+            </div>
+        </div>
+        <div class="flex flex-wrap items-center gap-1.5 text-sm">
+            <span class="text-gray-500 text-xs">Олгосон огнооноос (эсвэл өнөөдрөөс):</span>
+            <button type="button" data-add-months="6" class="px-2.5 py-1 rounded-full border border-blue-300 text-blue-700 bg-white hover:bg-blue-50">+6 сар</button>
+            <button type="button" data-add-months="12" class="px-2.5 py-1 rounded-full border border-blue-300 text-blue-700 bg-white hover:bg-blue-50">+1 жил</button>
+            <button type="button" data-add-months="24" class="px-2.5 py-1 rounded-full border border-blue-300 text-blue-700 bg-white hover:bg-blue-50">+2 жил</button>
+            <button type="button" data-add-months="36" class="px-2.5 py-1 rounded-full border border-blue-300 text-blue-700 bg-white hover:bg-blue-50">+3 жил</button>
+            <label class="inline-flex items-center gap-1.5 ml-auto text-gray-700 cursor-pointer">
+                <input type="checkbox" name="no_expiry" value="1" data-no-expiry class="w-4 h-4 rounded border-gray-300"> Хугацаагүй
+            </label>
+        </div>
+        <p data-expiry-preview class="text-sm text-gray-500" aria-live="polite">Дуусах огноо сонгоогүй байна.</p>
+    </div>
+</div>

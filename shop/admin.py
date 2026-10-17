@@ -1,7 +1,7 @@
 from django.contrib import admin
 from .models import (
     ProductExtension, UserProfile, MenuPermission, MenuGroupAssignment, Meal, MealIngredient,
-    MealNumberAssignment, MealCycleSettings, MealAttendance, MealAttendanceName,
+    MealNumberAssignment, MealCycleSettings, MealAttendance, MealAttendanceName, ProductDocType,
 )
 
 
@@ -111,3 +111,19 @@ class ProductExtensionAdmin(admin.ModelAdmin):
     has_image.boolean = True
     has_image.short_description = 'Зураgtай'
 
+
+@admin.register(ProductDocType)
+class ProductDocTypeAdmin(admin.ModelAdmin):
+    list_display = ['name', 'tracks_expiry', 'is_active', 'sort_order']
+    list_editable = ['tracks_expiry', 'is_active', 'sort_order']
+    search_fields = ['name']
+
+
+from .models import Vehicle  # noqa: E402
+
+
+@admin.register(Vehicle)
+class VehicleAdmin(admin.ModelAdmin):
+    list_display = ('plate', 'make', 'model', 'vin', 'year', 'capacity_kg', 'is_active')
+    list_filter = ('is_active', 'make')
+    search_fields = ('plate', 'make', 'model', 'vin')

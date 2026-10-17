@@ -1,0 +1,354 @@
+{% load humanize l10n %}
+{# Шатахуун: импорт, нэгтгэл, картын үлдэгдэл, гүйлгээ (гараас бөглөх) #}
+<div class="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
+    <div class="flex flex-wrap items-center justify-between gap-2">
+        <div class="text-sm text-gray-600">Petrovis-ийн гүйлгээний жагсаалт (<b>report</b>), сарын үлдэгдлийн тайлан (<b>Balance Report</b>)</div>
+        <div class="flex flex-wrap gap-2">
+            <button type="button" id="cash-new" class="text-sm font-semibold px-3 py-1.5 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700">💵 Бэлэн шатахуун нэмэх</button>
+            <button type="button" id="vh-import-open" class="text-sm font-medium px-3 py-1.5 rounded-lg border border-green-600 text-green-700 bg-white hover:bg-green-50">⬆ Excel импорт</button>
+        </div>
+    </div>
+    <form id="vh-import" method="post" enctype="multipart/form-data" action="{% url 'shop:vehicles_fuel_import' %}" class="border-t border-gray-100 pt-3 mt-3 space-y-2" hidden>
+        {% csrf_token %}
+        <div class="text-sm text-gray-600">Хоёр файлыг хамт эсвэл тусад нь сонгоно - төрлийг баганаар нь танина. Өмнө орсон гүйлгээ давхардахгүй, огнооны дарааллаар нэмэгдэнэ. Үлдэгдлийн файл заавал биш - оруулсан сард тулгана.</div>
+        <div class="flex flex-wrap gap-3 items-end">
+            <input type="file" name="files" multiple accept=".xlsx,.xlsm" required class="text-sm">
+            <label class="text-sm text-gray-600">Үлдэгдлийн сар<input type="month" name="balance_month" class="vh-f"></label>
+            <button type="submit" class="text-sm font-semibold px-4 py-2 rounded-lg bg-green-600 text-white hover:bg-green-700">Импортлох</button>
+        </div>
+        <div class="text-xs text-gray-500">Сарыг хоосон орхивол гүйлгээтэй тулгаж таарах сарыг автоматаар олно.</div>
+    </form>
+</div>
+
+<div class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
+    <div class="bg-white rounded-xl border border-gray-100 p-3"><div class="text-xs text-gray-500">Худалдан авалт ({{ summary.count }})</div><div class="text-xl font-bold">{{ summary.purchase_amount|floatformat:0|intcomma }}₮</div></div>
+    <div class="bg-white rounded-xl border border-gray-100 p-3"><div class="text-xs text-gray-500">Нийт литр</div><div class="text-xl font-bold">{{ summary.liters|floatformat:2|intcomma }} л</div></div>
+    <a href="?tab=fuel&date_from={{ f.date_from|date:'Y-m-d' }}&date_to={{ f.date_to|date:'Y-m-d' }}&status=need_fuel" class="bg-white rounded-xl border border-gray-100 p-3 hover:border-blue-300"><div class="text-xs text-gray-500">Төрөл/үнэ дутуу</div><div class="text-xl font-bold {% if summary.needs_fuel %}text-amber-600{% else %}text-green-700{% endif %}">{{ summary.needs_fuel }}</div></a>
+    <a href="?tab=fuel&date_from={{ f.date_from|date:'Y-m-d' }}&date_to={{ f.date_to|date:'Y-m-d' }}&status=need_plate" class="bg-white rounded-xl border border-gray-100 p-3 hover:border-blue-300"><div class="text-xs text-gray-500">Машин сонгоогүй</div><div class="text-xl font-bold {% if summary.needs_plate %}text-amber-600{% else %}text-green-700{% endif %}">{{ summary.needs_plate }}</div></a>
+    <a href="?tab=fuel&date_from={{ f.date_from|date:'Y-m-d' }}&date_to={{ f.date_to|date:'Y-m-d' }}&status=need_km" class="bg-white rounded-xl border border-gray-100 p-3 hover:border-blue-300"><div class="text-xs text-gray-500">Км заалт дутуу</div><div class="text-xl font-bold {% if summary.needs_km %}text-red-600{% else %}text-green-700{% endif %}">{{ summary.needs_km }}</div></a>
+    <div class="bg-white rounded-xl border border-gray-100 p-3"><div class="text-xs text-gray-500">Үлдэгдлийн тулгалт</div>
+        <div class="text-xl font-bold {% if recon.mismatch %}text-red-600{% elif recon.has_balance %}text-green-700{% else %}text-gray-500{% endif %}">
+            {% if recon.mismatch %}{{ recon.mismatch }} карт зөрүүтэй{% elif recon.has_balance %}✓ Таарсан{% elif recon.has_opening %}Тооцоолсон{% else %}Үлдэгдэлгүй{% endif %}
+        </div>
+    </div>
+</div>
+{% if by_type %}
+<div class="flex flex-wrap gap-2 text-sm">
+    {% for d in by_type %}<span class="bg-white border border-gray-200 rounded-full px-3 py-1">{{ d.type }}: <b>{{ d.liters|floatformat:2|intcomma }} л</b> · {{ d.amount|floatformat:0|intcomma }}₮ · {{ d.count }} удаа</span>{% endfor %}
+</div>
+{% endif %}
+
+{# Картын үлдэгдэл #}
+<details class="bg-white rounded-xl shadow-sm border border-gray-100" {% if recon.mismatch %}open{% endif %}>
+    <summary class="cursor-pointer px-4 py-3 font-semibold">📒 Картын үлдэгдэл · {{ period_label }}
+        <span class="text-sm font-normal text-gray-500">(хамгийн эхний үлдэгдлийн тайлангаас гүйлгээгээр тооцно{% if recon.month %}; энэ сарын тайлан оруулсан бол тулгана{% else %}; тулгалт зөвхөн нэг бүтэн сар сонгоход{% endif %})</span></summary>
+    <div class="overflow-x-auto">
+        <table class="vh-table w-full text-sm">
+            <thead><tr class="text-left text-gray-600">
+                <th>Карт</th><th>Эзэмшигч</th><th class="num">Эхний үлдэгдэл</th><th class="num">Орлого</th><th class="num">Шилж. зарлага</th>
+                <th class="num">Худалдан авалт</th><th class="num">Хасалт</th><th class="num">Эцсийн үлдэгдэл</th><th class="num">Тайлангийн эцсийн</th><th class="num">Зөрүү</th><th></th>
+            </tr></thead>
+            <tbody>
+            {% for r in recon.rows %}
+                <tr class="border-t border-gray-100 {% if r.ok is False %}bg-red-50{% endif %}">
+                    <td class="font-mono text-xs"><a href="?tab=fuel&date_from={{ f.date_from|date:'Y-m-d' }}&date_to={{ f.date_to|date:'Y-m-d' }}&card={{ r.card }}&show=all" class="text-blue-700 hover:underline">{{ r.card }}</a></td>
+                    <td>{{ r.holder }}</td>
+                    <td class="num">{% if r.opening is not None %}{{ r.opening|floatformat:2|intcomma }}{% if r.opening_diff %}<div class="text-xs text-red-600" title="Энэ сарын тайлангийн эхний үлдэгдэл өмнөх сарын эцсийн үлдэгдлээс зөрүүтэй">өмнөх сартай {{ r.opening_diff|floatformat:2|intcomma }}</div>{% endif %}{% else %}—{% endif %}</td>
+                    <td class="num">{{ r.income|floatformat:2|intcomma }}{% if r.balance and r.balance.income != r.income %}<div class="text-xs text-red-600">тайлан {{ r.balance.income|floatformat:2|intcomma }}</div>{% endif %}</td>
+                    <td class="num">{{ r.transfer_out|floatformat:2|intcomma }}{% if r.balance and r.balance.transfer_out != r.transfer_out %}<div class="text-xs text-red-600">тайлан {{ r.balance.transfer_out|floatformat:2|intcomma }}</div>{% endif %}</td>
+                    <td class="num">{{ r.purchase|floatformat:2|intcomma }}{% if r.balance and r.balance.purchase != r.purchase %}<div class="text-xs text-red-600">тайлан {{ r.balance.purchase|floatformat:2|intcomma }}</div>{% endif %}</td>
+                    <td class="num">{{ r.deduction|floatformat:2|intcomma }}{% if r.balance and r.balance.deduction != r.deduction %}<div class="text-xs text-red-600">тайлан {{ r.balance.deduction|floatformat:2|intcomma }}</div>{% endif %}</td>
+                    <td class="num font-semibold">{% if r.closing is not None %}{{ r.closing|floatformat:2|intcomma }}{% else %}—{% endif %}</td>
+                    <td class="num">{% if r.balance %}{{ r.balance.closing|floatformat:2|intcomma }}{% else %}<span class="text-gray-400">—</span>{% endif %}</td>
+                    <td class="num font-semibold {% if r.ok is False %}text-red-600{% endif %}">{% if r.diff is not None %}{{ r.diff|floatformat:2|intcomma }}{% endif %}</td>
+                    <td class="whitespace-nowrap text-xs">{% if r.ok %}<span class="text-green-700">✓ таарсан</span>{% elif r.ok is False %}<span class="text-red-600">✗ зөрүүтэй</span>{% else %}<span class="text-gray-400">{{ r.status|lower }}</span>{% endif %}</td>
+                </tr>
+            {% empty %}
+                <tr><td colspan="11" class="text-center text-gray-500 py-6">Энэ хугацаанд өгөгдөл алга. Excel импортлоно уу.</td></tr>
+            {% endfor %}
+            </tbody>
+            {% if recon.rows %}
+            <tfoot><tr class="border-t-2 border-gray-300 font-semibold">
+                <td colspan="2">Нийт</td>
+                <td class="num">{{ recon.totals.opening|floatformat:2|intcomma }}</td>
+                <td class="num">{{ recon.totals.income|floatformat:2|intcomma }}</td>
+                <td class="num">{{ recon.totals.transfer_out|floatformat:2|intcomma }}</td>
+                <td class="num">{{ recon.totals.purchase|floatformat:2|intcomma }}</td>
+                <td class="num">{{ recon.totals.deduction|floatformat:2|intcomma }}</td>
+                <td class="num">{{ recon.totals.closing|floatformat:2|intcomma }}</td>
+                <td class="num">{% if recon.has_balance %}{{ recon.totals.report_closing|floatformat:2|intcomma }}{% endif %}</td>
+                <td class="num">{% if recon.has_balance %}{{ recon.totals.diff|floatformat:2|intcomma }}{% endif %}</td><td></td>
+            </tr></tfoot>
+            {% endif %}
+        </table>
+    </div>
+</details>
+
+{# Гүйлгээ #}
+<div class="bg-white rounded-xl shadow-sm border border-gray-100">
+    <div class="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
+        <div class="font-semibold">⛽ Гүйлгээ <span class="text-sm font-normal text-gray-500">{{ rows|length }} мөр</span></div>
+        <div class="flex flex-wrap items-center gap-3 text-xs text-gray-600">
+            <span><span class="inline-block w-3 h-3 rounded bg-yellow-100 border border-yellow-500 align-middle"></span> санал (хадгалаагүй)</span>
+            <span><span class="inline-block w-3 h-3 rounded bg-red-100 border border-red-500 align-middle"></span> заавал бөглөх</span>
+            <button type="button" id="vh-save-all" class="text-sm font-semibold px-3 py-1.5 rounded-lg bg-blue-600 text-white hover:bg-blue-700" hidden>💾 Бүгдийг хадгалах (<span></span>)</button>
+        </div>
+    </div>
+    <div class="overflow-auto" style="max-height: 75vh;">
+        <table class="vh-table w-full text-xs">
+            <thead><tr class="text-left text-gray-600">
+                <th>№</th><th>Огноо</th><th>Карт / Эзэмшигч</th><th>Мерчант</th>
+                {% if f.show_all %}<th>Гүйлгээ</th>{% endif %}
+                <th class="num">Үнийн дүн</th>
+                <th style="min-width:8rem">Шатахууны төрөл</th><th style="min-width:5rem">Нэгж үнэ</th><th style="min-width:5rem">Хэмжээ (л)</th>
+                <th style="min-width:7.5rem">Машины дугаар</th><th style="min-width:9rem">Жолоочийн нэр</th><th style="min-width:6rem">Км заалт</th>
+                <th class="num" title="Өмнөх км заалтаас хойш">Явсан км</th><th class="num" title="Өмнө хийсэн шатахуун ÷ явсан км × 100">100км-д (л)</th>
+                <th style="min-width:7rem">Тайлбар</th>
+                {% if f.show_all %}<th class="num">Үлдэгдэл</th>{% endif %}
+                <th></th>
+            </tr></thead>
+            <tbody>
+            {% for r in rows %}{% with t=r.t %}
+                {% if t.is_purchase %}
+                <tr class="vh-row border-t border-gray-100 {% if t.is_cash %}bg-emerald-50/50{% endif %}" data-id="{{ t.pk|unlocalize }}">
+                    <td class="text-gray-400">{{ forloop.counter }}</td>
+                    <td class="whitespace-nowrap">{{ t.txn_at|date:'Y.m.d H:i' }}</td>
+                    <td>{% if t.is_cash %}<span class="inline-block text-[11px] font-semibold px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800">💵 Бэлэн</span><div class="text-gray-500">кассаас</div>{% else %}<div class="font-mono">{{ t.card_no }}</div><div class="text-gray-500">{{ t.holder }}</div>{% endif %}</td>
+                    <td class="text-gray-600">{{ t.merchant }}</td>
+                    {% if f.show_all %}<td>{{ t.txn_type }}</td>{% endif %}
+                    <td class="num font-semibold">{{ t.amount|floatformat:2|intcomma }}</td>
+                    <td><input class="vh-in {% if r.fuel_suggested and not t.fuel_type %}sug{% elif r.needs_fuel and not r.fuel_type %}req{% endif %}" data-f="fuel_type" list="dl-fuel" value="{{ r.fuel_type }}"></td>
+                    <td><input class="vh-in num {% if r.fuel_suggested and t.unit_price is None %}sug{% elif r.needs_fuel and r.unit_price is None %}req{% endif %}" data-f="unit_price" inputmode="decimal" value="{{ r.unit_price|default_if_none:''|stringformat:'s' }}"></td>
+                    <td><input class="vh-in num {% if r.fuel_suggested and t.quantity is None %}sug{% endif %}" data-f="quantity" inputmode="decimal" value="{{ r.quantity|default_if_none:''|stringformat:'s' }}"></td>
+                    <td><input class="vh-in uppercase" data-f="vehicle_plate" list="dl-plate" value="{{ t.vehicle_plate }}" {% if r.personal %}placeholder="хувийн"{% endif %}>
+                        <label class="flex items-center gap-1 mt-0.5 text-[11px] text-gray-500"><input type="checkbox" data-f="personal" {% if r.personal %}checked{% endif %}> хувийн машин</label></td>
+                    <td><input class="vh-in {% if r.driver_suggested %}sug{% endif %}" data-f="driver_name" list="dl-driver" value="{{ r.driver.name }}"></td>
+                    <td><input class="vh-in num {% if r.needs_km %}req{% endif %}" data-f="odometer_km" inputmode="numeric" value="{{ t.odometer_km|default_if_none:''|unlocalize }}"></td>
+                    <td class="num" data-c="distance"></td>
+                    <td class="num font-semibold" data-c="per100"></td>
+                    <td><input class="vh-in" data-f="note" value="{{ r.note }}"></td>
+                    {% if f.show_all %}<td class="num">{{ r.balance_after|floatformat:2|intcomma }}</td>{% endif %}
+                    <td class="whitespace-nowrap"><button type="button" class="vh-save {% if r.fuel_suggested or r.driver_suggested %}pending{% endif %}">💾</button>{% if t.is_cash %} <button type="button" class="vh-save" data-cash-edit="{{ t.pk|unlocalize }}" title="Бэлэн шатахууныг засах (огноо, дүн, ШТС)">✏</button>{% endif %}<div class="text-red-600 text-xs" data-c="err"></div></td>
+                </tr>
+                {% else %}
+                <tr class="border-t border-gray-100 text-gray-600 {% if t.amount > 0 %}bg-green-50/40{% endif %}">
+                    <td class="text-gray-400">{{ forloop.counter }}</td>
+                    <td class="whitespace-nowrap">{{ t.txn_at|date:'Y.m.d H:i' }}</td>
+                    <td><div class="font-mono">{{ t.card_no }}</div><div class="text-gray-500">{{ t.holder }}</div></td>
+                    <td>{{ t.merchant }}</td>
+                    <td>{{ t.txn_type }}</td>
+                    <td class="num font-semibold {% if t.amount > 0 %}text-green-700{% endif %}">{{ t.amount|floatformat:2|intcomma }}</td>
+                    <td colspan="9">{{ t.description }}{% if t.counter_account %} <span class="text-gray-400">· данс {{ t.counter_account }}</span>{% endif %}</td>
+                    <td class="num">{{ r.balance_after|floatformat:2|intcomma }}</td>
+                    <td></td>
+                </tr>
+                {% endif %}
+            {% endwith %}{% empty %}
+                <tr><td colspan="17" class="text-center text-gray-500 py-8">Шүүлтэд тохирох гүйлгээ алга.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<datalist id="dl-fuel">{% for t in fuel_types %}<option value="{{ t }}">{% endfor %}</datalist>
+<datalist id="dl-plate">{% for v in vehicle_options %}<option value="{{ v.plate }}">{% if v.ours %}{{ v.label|default:'Манай машин' }}{% else %}бусад{% endif %}</option>{% endfor %}</datalist>
+<datalist id="dl-driver">{% for d in driver_options %}<option value="{{ d.name }}">{% endfor %}</datalist>
+{{ fuel_js|json_script:"fuel-data" }}
+
+{# Бэлэн (кассаас төлсөн) шатахуун - нэмэх / засах #}
+<div id="cash-modal" class="fixed inset-0 z-50 bg-black/40 flex items-start justify-center p-2 sm:p-6 overflow-y-auto" hidden>
+    <form id="cash-form" method="post" action="{% url 'shop:vehicles_fuel_cash_save' %}" class="bg-white rounded-2xl w-full max-w-3xl p-4 sm:p-6 space-y-4 shadow-xl">
+        {% csrf_token %}
+        <input type="hidden" name="id" id="cash-id">
+        <input type="hidden" name="action" id="cash-action" value="save">
+        <input type="hidden" name="back" value="{{ request.get_full_path }}">
+        <div class="flex items-center justify-between">
+            <h2 id="cash-title" class="text-xl font-bold">💵 Бэлэн шатахуун (кассаас төлсөн)</h2>
+            <button type="button" data-cash-close class="text-gray-500 hover:text-gray-800 text-xl">✕</button>
+        </div>
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <label class="text-xs text-gray-600">Огноо *<input type="date" name="date" id="cash-date" required class="vh-f"></label>
+            <label class="text-xs text-gray-600">Цаг<input type="time" name="time" id="cash-time" class="vh-f"></label>
+            <label class="text-xs text-gray-600">Төлсөн дүн (₮) *<input name="amount" id="cash-amount" inputmode="decimal" required class="vh-f text-right"></label>
+            <label class="text-xs text-gray-600">ШТС / газар<input name="station" id="cash-station" list="dl-station" class="vh-f"></label>
+            <label class="text-xs text-gray-600">Шатахууны төрөл<input name="fuel_type" id="cash-fuel" list="dl-fuel" class="vh-f"></label>
+            <label class="text-xs text-gray-600">Нэгж үнэ<input name="unit_price" id="cash-price" inputmode="decimal" class="vh-f text-right"></label>
+            <label class="text-xs text-gray-600">Хэмжээ (л)<input name="quantity" id="cash-qty" inputmode="decimal" class="vh-f text-right" placeholder="дүн ÷ үнэ"></label>
+            <label class="text-xs text-gray-600">Км заалт<input name="odometer_km" id="cash-km" inputmode="numeric" class="vh-f text-right"></label>
+            <label class="text-xs text-gray-600">Машин<input name="vehicle_plate" id="cash-plate" list="dl-plate" class="vh-f uppercase">
+                <span class="flex items-center gap-1 mt-1"><input type="checkbox" name="personal" id="cash-personal"> хувийн машин</span></label>
+            <label class="text-xs text-gray-600">Жолооч<input name="driver_name" id="cash-driver" list="dl-driver" class="vh-f"></label>
+            <label class="text-xs text-gray-600 col-span-2">Тайлбар<input name="note" id="cash-note" maxlength="240" class="vh-f" placeholder="Баримтын дугаар, шалтгаан…"></label>
+        </div>
+        <div class="flex flex-wrap gap-2 justify-end border-t border-gray-100 pt-3">
+            <button type="button" id="cash-delete" class="mr-auto text-sm px-4 py-2 rounded-lg border border-red-300 text-red-700 hover:bg-red-50" hidden>🗑 Устгах</button>
+            <button type="button" data-cash-close class="text-sm px-4 py-2 rounded-lg border border-gray-300 hover:bg-gray-50">Болих</button>
+            <button type="submit" class="text-sm font-semibold px-5 py-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700">💾 Хадгалах</button>
+        </div>
+    </form>
+</div>
+<datalist id="dl-station">{% for st in stations %}<option value="{{ st }}">{% endfor %}</datalist>
+
+<script>
+(function () {
+    const DATA = JSON.parse(document.getElementById('fuel-data').textContent);
+    const OURS = new Set(DATA.ours);
+    const csrf = document.querySelector('#vh-import [name=csrfmiddlewaretoken]').value;
+    const fmt = (v, d) => v === null || v === undefined ? '' : Number(v).toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d });
+
+    document.getElementById('vh-import-open').addEventListener('click', () => {
+        const f = document.getElementById('vh-import'); f.hidden = !f.hidden;
+    });
+
+    // --- Бэлэн шатахуун: маягт ---
+    const cm = (id) => document.getElementById(id);
+    const cashModal = cm('cash-modal');
+    let cashQtyManual = false;
+    function cashRecalc() {
+        const amount = parseFloat(cm('cash-amount').value.replace(/[\s,]/g, '')), price = parseFloat(cm('cash-price').value);
+        if (!cashQtyManual && amount && price) cm('cash-qty').value = (amount / price).toFixed(2);
+    }
+    function openCash(row) {
+        const today = new Date();
+        const pad = (n) => String(n).padStart(2, '0');
+        cm('cash-id').value = row ? row.id : '';
+        cm('cash-action').value = 'save';
+        cm('cash-date').value = row ? row.date : `${today.getFullYear()}-${pad(today.getMonth() + 1)}-${pad(today.getDate())}`;
+        cm('cash-time').value = row ? row.time : `${pad(today.getHours())}:${pad(today.getMinutes())}`;
+        cm('cash-amount').value = row ? row.amount : '';
+        cm('cash-station').value = row ? row.station : '';
+        cm('cash-fuel').value = row ? row.fuel_type : '';
+        cm('cash-price').value = row && row.unit_price ? row.unit_price : '';
+        cm('cash-qty').value = row && row.quantity !== null ? row.quantity : '';
+        cm('cash-km').value = row && row.km !== null ? row.km : '';
+        cm('cash-plate').value = row ? row.plate : '';
+        cm('cash-personal').checked = row ? row.personal : false;
+        cm('cash-driver').value = row ? row.driver : '';
+        cm('cash-note').value = row ? row.note : '';
+        cashQtyManual = !!(row && row.quantity_saved);
+        cm('cash-title').textContent = row ? `💵 Бэлэн шатахуун засах · ${row.date}` : '💵 Бэлэн шатахуун (кассаас төлсөн)';
+        cm('cash-delete').hidden = !row;
+        cashModal.hidden = false;
+        cm(row ? 'cash-amount' : 'cash-amount').focus();
+    }
+    cm('cash-new').addEventListener('click', () => openCash(null));
+    document.querySelectorAll('[data-cash-edit]').forEach((b) => b.addEventListener('click', () => openCash(DATA.rows[b.dataset.cashEdit])));
+    cashModal.querySelectorAll('[data-cash-close]').forEach((b) => b.addEventListener('click', () => { cashModal.hidden = true; }));
+    cashModal.addEventListener('click', (e) => { if (e.target === cashModal) cashModal.hidden = true; });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') cashModal.hidden = true; });
+    cm('cash-amount').addEventListener('input', cashRecalc);
+    cm('cash-price').addEventListener('input', () => { cashQtyManual = false; cashRecalc(); });
+    cm('cash-qty').addEventListener('input', () => { cashQtyManual = !!cm('cash-qty').value.trim(); });
+    cm('cash-fuel').addEventListener('change', () => {
+        const p = priceFor(cm('cash-fuel').value.trim(), cm('cash-date').value);
+        if (p) { cm('cash-price').value = p; cashQtyManual = false; cashRecalc(); }
+    });
+    cm('cash-plate').addEventListener('input', () => { if (cm('cash-plate').value.trim()) cm('cash-personal').checked = false; });
+    cm('cash-personal').addEventListener('change', () => { if (cm('cash-personal').checked) cm('cash-plate').value = ''; });
+    cm('cash-form').addEventListener('submit', (e) => {
+        if (!cashQtyManual) cm('cash-qty').value = '';  // серверт дүн ÷ үнээр тооцуулна
+        const plate = cm('cash-plate').value.trim().toUpperCase().replace(/\s|-/g, '');
+        if (OURS.has(plate) && !cm('cash-km').value.trim()) { e.preventDefault(); alert('Манай машин тул км заалтыг оруулна уу.'); cm('cash-km').focus(); }
+    });
+    cm('cash-delete').addEventListener('click', () => {
+        if (!confirm('Энэ бэлэн шатахууны бүртгэлийг устгах уу?')) return;
+        cm('cash-action').value = 'delete'; cm('cash-form').submit();
+    });
+
+    // Тухайн өдрийн (эсвэл өмнөх хамгийн сүүлийн) үнэ
+    function priceFor(type, day) {
+        const hist = DATA.type_prices[type];
+        if (!hist) return null;
+        let price = null;
+        for (const [d, p] of hist) { if (d <= day) price = p; }
+        return price === null ? hist[0][1] : price;
+    }
+
+    function metricCells(tr, m) {
+        if (!m) m = {};
+        tr.querySelector('[data-c=distance]').innerHTML = m.distance === null || m.distance === undefined ? ''
+            : `<span class="${m.distance < 0 ? 'text-red-600' : ''}">${fmt(m.distance, 0)}</span>`;
+        tr.querySelector('[data-c=per100]').textContent = m.per100 ? fmt(m.per100, 2) : '';
+        tr.querySelector('[data-f=odometer_km]').placeholder = m.prev_km !== null && m.prev_km !== undefined ? `өмнө ${m.prev_km}` : '';
+    }
+
+    const saveAllBtn = document.getElementById('vh-save-all');
+    function refreshSaveAll() {
+        const n = document.querySelectorAll('tr.vh-row.dirty, tr.vh-row .vh-save.pending').length;
+        saveAllBtn.hidden = !n;
+        saveAllBtn.querySelector('span').textContent = n;
+    }
+
+    document.querySelectorAll('tr.vh-row').forEach((tr) => {
+        const row = DATA.rows[tr.dataset.id];
+        const inp = (f) => tr.querySelector(`[data-f=${f}]`);
+        metricCells(tr, row);
+        let qtyManual = row.quantity_saved;
+
+        function recalcQty() {
+            const price = parseFloat(inp('unit_price').value);
+            if (qtyManual || !price || !row.amount) return;
+            inp('quantity').value = (row.amount / price).toFixed(2);
+        }
+        function markKm() {
+            const plate = inp('vehicle_plate').value.trim().toUpperCase().replace(/\s|-/g, '');
+            inp('odometer_km').classList.toggle('req', OURS.has(plate) && !inp('odometer_km').value.trim());
+            if (plate) inp('personal').checked = false;
+        }
+        function dirty(el) { tr.classList.add('dirty'); if (el) el.classList.remove('sug', 'req'); refreshSaveAll(); }
+        tr.querySelectorAll('.vh-in').forEach((el) => el.addEventListener('input', () => dirty(el)));
+        inp('personal').addEventListener('change', () => { if (inp('personal').checked) inp('vehicle_plate').value = ''; markKm(); dirty(); });
+        inp('fuel_type').addEventListener('change', () => {
+            const p = priceFor(inp('fuel_type').value.trim(), row.date);
+            if (p) { inp('unit_price').value = p; inp('unit_price').classList.remove('sug', 'req'); qtyManual = false; recalcQty(); }
+        });
+        inp('unit_price').addEventListener('input', () => { qtyManual = false; recalcQty(); });
+        inp('quantity').addEventListener('input', () => { qtyManual = !!inp('quantity').value.trim(); });
+        inp('vehicle_plate').addEventListener('input', markKm);
+        inp('odometer_km').addEventListener('input', markKm);
+
+        tr.save = async function () {
+            const body = { id: row.id };
+            tr.querySelectorAll('.vh-in[data-f]').forEach((el) => { body[el.dataset.f] = el.value.trim(); });
+            body.personal = inp('personal').checked;
+            if (!qtyManual) body.quantity = '';  // серверт дүн / үнээр тооцуулна
+            const err = tr.querySelector('[data-c=err]');
+            err.textContent = '';
+            const res = await fetch('{% url "shop:vehicles_fuel_save" %}', {
+                method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf }, body: JSON.stringify(body),
+            });
+            const out = await res.json().catch(() => ({ ok: false, error: 'Сервертэй холбогдсонгүй' }));
+            if (!out.ok) { tr.classList.add('err'); err.textContent = out.error; return false; }
+            tr.classList.remove('dirty', 'err');
+            tr.querySelector('.vh-save').classList.remove('pending');
+            tr.querySelectorAll('.vh-in.sug').forEach((el) => el.classList.remove('sug'));
+            inp('vehicle_plate').value = out.row.plate;
+            if (out.row.quantity !== null) inp('quantity').value = out.row.quantity.toFixed(2);
+            inp('fuel_type').classList.toggle('req', !!row.amount && !out.row.fuel_type);
+            inp('unit_price').classList.toggle('req', !!row.amount && !out.row.unit_price);
+            Object.entries(out.metrics).forEach(([id, m]) => {
+                const other = document.querySelector(`tr.vh-row[data-id="${id}"]`);
+                if (other) metricCells(other, m);
+            });
+            refreshSaveAll();
+            return true;
+        };
+        tr.querySelector('.vh-save').addEventListener('click', () => tr.save());
+        tr.querySelectorAll('.vh-in').forEach((el) => el.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); tr.save(); } }));
+    });
+    refreshSaveAll();
+
+    // Огнооны дарааллаар хадгална (км-ийн тооцоо зөв гарна)
+    saveAllBtn.addEventListener('click', async () => {
+        saveAllBtn.disabled = true;
+        for (const tr of document.querySelectorAll('tr.vh-row')) {
+            if (tr.classList.contains('dirty') || tr.querySelector('.vh-save.pending')) await tr.save();
+        }
+        saveAllBtn.disabled = false;
+    });
+    window.addEventListener('beforeunload', (e) => {
+        if (document.querySelector('tr.vh-row.dirty')) { e.preventDefault(); e.returnValue = ''; }
+    });
+})();
+</script>

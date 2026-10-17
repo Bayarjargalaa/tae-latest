@@ -9,7 +9,7 @@ from django.contrib.admin.views.decorators import staff_member_required
 from django.http import JsonResponse
 from django.urls import reverse
 from django.db import IntegrityError
-from django.db.models import Sum, Count, Avg, Q, FloatField, DateField, Min, Max, F, ExpressionWrapper
+from django.db.models import Sum, Count, Avg, Q, FloatField, DateField, Min, Max, F, ExpressionWrapper, Case, When, Value, IntegerField
 from django.db.models.functions import Cast, TruncDate, ExtractYear, ExtractMonth, ExtractDay
 from django.utils import timezone
 from datetime import timedelta, datetime
@@ -54,6 +54,24 @@ def _attach_base_channel_prices(products):
     return products
 
 
+HOME_TOP_DAYS = 90
+HOME_TOP_COUNT = 12
+
+
+def _top_selling_item_ids(days, limit):
+    """Сүүлийн `days` хоногт хамгийн их борлуулалтын дүнтэй (PayAmount) идэвхтэй барааны Id-ууд."""
+    from django.db import connection
+    with connection.cursor() as cursor:
+        cursor.execute(
+            '''
+            SELECT s."ItemId" FROM "OpenDataSale" s
+            JOIN "OpenDataItem" i ON i."Id" = s."ItemId"
+            WHERE s."DocumentDate" >= %s AND i."ActiveStatus" = 'Y' AND left(i."Id", 1) IN ('8', '9')
+            GROUP BY s."ItemId" ORDER BY SUM(s."PayAmount") DESC LIMIT %s
+            ''', [timezone.localdate() - timedelta(days=days), limit])
+        return [row[0] for row in cursor.fetchall()]
+
+
 def home(request):
     """Нүүр хуудас - Featured бүтээгдэхүүнүүд"""
     # Ажилтан нэвтэрсэн бол шууд хувийн мэдээлэл рүү нь, тэр цэсний эрхгүй бол үзэх эрхтэй эхний хуудас руу нь
@@ -65,8 +83,14 @@ def home(request):
         if target:
             return redirect(target)
     
-    # Идэвхтэй бүтээгдэхүүнүүд (эхний 12)
-    products = OpenDataItem.objects.filter(activestatus='Y').order_by('-pkid')[:12]
+    # Эрэлттэй бараа: сүүлийн 90 хоногийн борлуулалтын дүнгээр эхний 12 (онлайн жагсаалтын адил 8, 9-өөр эхэлсэн идэвхтэй бараа)
+    from shop.services.report_cache import cached
+    top_ids = cached('home_top_items', ['OpenDataSale', 'OpenDataItem'], {'day': str(timezone.localdate())},
+                     lambda: _top_selling_item_ids(HOME_TOP_DAYS, HOME_TOP_COUNT))
+    by_id = {p.id: p for p in OpenDataItem.objects.filter(id__in=top_ids)}
+    products = [by_id[i] for i in top_ids if i in by_id]
+    if not products:
+        products = list(OpenDataItem.objects.filter(activestatus='Y').order_by('-pkid')[:HOME_TOP_COUNT])
     products = _attach_base_channel_prices(products)
 
     # ProductExtension холбох
@@ -88,6 +112,10 @@ def home(request):
     return render(request, 'shop/home.html', context)
 
 
+# Онлайн жагсаалтад "Нөөцтэй" гэж үзэх Агуулах жижгийн доод үлдэгдэл
+PRODUCT_LIST_MIN_STOCK = 10
+
+
 def product_list(request):
     """Бүтээгдэхүүний жагсаалт (pagination, filter)"""
     products = OpenDataItem.objects.filter(activestatus='Y')
@@ -105,12 +133,20 @@ def product_list(request):
     else:
         jijig_min_qty = request.GET.get('jijig_min', 'true')  # Нэвтрээгүй бол 10+ л харуулах
     
+    # Онлайн борлуулалт "Агуулах жижиг"-ээс явдаг тул нөөцийн төлөвийг
+    # activestatus биш, InventorySnapshot.jijig_qty-аас тодорхойлно
+    # (activestatus='Y' нь зөвхөн идэвхтэй бараа гэсэн утгатай, үлдэгдэл биш).
+    from django.db.models import OuterRef, Subquery, DecimalField
+    from django.db.models.functions import Coalesce
+    from shop.models_inventory import InventorySnapshot
+    stock_sq = InventorySnapshot.objects.filter(itemname=OuterRef('name')).values('jijig_qty')[:1]
+    products = products.annotate(
+        stock_qty=Coalesce(Subquery(stock_sq), Value(Decimal('0')), output_field=DecimalField()),
+    )
+
     if jijig_min_qty == 'true':
-        from shop.models_inventory import InventorySnapshot
-        # InventorySnapshot-с jijig_qty >= 10 байгаа барааны нэрүүдийг авах
-        eligible_items = InventorySnapshot.objects.filter(jijig_qty__gte=10).values_list('itemname', flat=True)
-        products = products.filter(name__in=eligible_items)
-    
+        products = products.filter(stock_qty__gte=PRODUCT_LIST_MIN_STOCK)
+
     # Category шүүлт
     category = request.GET.get('category')
     if category:
@@ -125,40 +161,135 @@ def product_list(request):
     brand = request.GET.get('brand')
     if brand:
         products = products.filter(brandname=brand)
-    
-    # Pagination
-    paginator = Paginator(products, 20)
-    page_number = request.GET.get('page')
-    page_obj = paginator.get_page(page_number)
-    page_obj.object_list = _attach_base_channel_prices(page_obj.object_list)
+
+    # Барааны бүлэг (OpenDataItem.ItemGroupId). Онлайн бараанд ItemCategoryName/BrandName
+    # хоосон байдаг тул бүлгээр ангилна. Тоог бүлгийн шүүлтээс өмнө (бусад шүүлттэй нь) тоолно.
+    item_groups = [
+        (row['itemgroupid'] or 'Бусад', row['n'])
+        for row in products.order_by().values('itemgroupid').annotate(n=Count('pkid'))
+    ]
+    merged_groups = {}
+    for name, n in item_groups:
+        merged_groups[name] = merged_groups.get(name, 0) + n
+    item_groups = sorted(merged_groups.items(), key=lambda kv: (kv[0] == 'Бусад', kv[0]))
+
+    # Шинжилгээний бичгийн төлөв (зөвхөн нэвтэрсэн хэрэглэгчид) - services.product_certs
+    current_cert = ''
+    if request.user.is_authenticated:
+        from shop.services import product_certs as pc
+        products = pc.annotate_status(products, pc.default_type_ids())
+        current_cert = request.GET.get('cert', '')
+        current_cert = current_cert if current_cert in pc.STATUS_LABELS else ''
+        if current_cert:
+            products = products.filter(pc.status_filter(current_cert))
+
+    group = request.GET.get('group')
+    if group == 'Бусад':
+        products = products.filter(Q(itemgroupid='Бусад') | Q(itemgroupid__isnull=True) | Q(itemgroupid=''))
+    elif group:
+        products = products.filter(itemgroupid=group)
+
+    # Нөөцтэй бараа эхэнд, дууссан нь сүүлд; тогтвортой эрэмбэ хуудаслалтад давхардал гаргахгүй
+    products = products.annotate(
+        has_stock=Case(When(stock_qty__gt=0, then=Value(1)), default=Value(0), output_field=IntegerField()),
+    ).order_by('-has_stock', 'name', 'pkid')
+
+    # Харагдац: 'group' (анхдагч) - барааны бүлэг бүр нэг мөр, бараа нь хэвтээ гүйлгэнэ;
+    # 'name' - нэрсийн дарааллаар хуудаслах grid. Бүлэг/ангилал сонгосон бол нэг л мөр
+    # үлдэх тул grid-ээр харуулна.
+    view_mode = 'name' if request.GET.get('view') == 'name' else 'group'
+    effective_view = 'name' if (category or group) else view_mode
+
+    page_obj = None
+    category_groups = []
+    if effective_view == 'name':
+        paginator = Paginator(products, 24)
+        page_obj = paginator.get_page(request.GET.get('page'))
+        page_obj.object_list = _attach_base_channel_prices(page_obj.object_list)
+        shown = page_obj.object_list
+        total_count = paginator.count
+    else:
+        shown = _attach_base_channel_prices(products)
+        total_count = len(shown)
+        groups = {}
+        for product in shown:
+            groups.setdefault(product.itemgroupid or 'Бусад', []).append(product)
+        # Бүлгийг нэрээр, "Бусад"-ыг хамгийн сүүлд
+        category_groups = [
+            {'name': name, 'products': items}
+            for name, items in sorted(groups.items(), key=lambda kv: (kv[0] == 'Бусад', kv[0]))
+        ]
 
     # ProductExtension холбох
-    product_ids = [p.id for p in page_obj]
+    product_ids = [p.id for p in shown]
     extensions = {ext.item_id: ext for ext in ProductExtension.objects.filter(item_id__in=product_ids)}
-    
-    for product in page_obj:
+
+    for product in shown:
         product.extension = extensions.get(product.id)
-    
+        if product.stock_qty <= 0:
+            product.stock_status = 'out'
+        elif product.stock_qty < PRODUCT_LIST_MIN_STOCK:
+            product.stock_status = 'low'
+        else:
+            product.stock_status = 'in'
+        qty_per_box = product.extension.qty_per_box if product.extension else None
+        product.box_price = product.saleprice * qty_per_box if product.saleprice and qty_per_box else None
+    if request.user.is_authenticated:
+        pc.decorate(shown)
+
+    # Холбоосуудад дамжуулах шүүлтүүд (page/view-гүй) - URL-д зөв encode хийгдэнэ
+    filter_params = request.GET.copy()
+    for key in ('page', 'view'):
+        filter_params.pop(key, None)
+    if jijig_min_qty == 'true':
+        filter_params['jijig_min'] = 'true'
+    filter_qs = filter_params.urlencode()
+    cert_links = []
+    if request.user.is_authenticated:
+        for code, label, icon in [('', 'Бүгд', '')] + [(c, l, i) for c, l, i, _ in pc.STATUSES]:
+            params = filter_params.copy()
+            params.pop('cert', None)
+            if code:
+                params['cert'] = code
+            if view_mode == 'name':
+                params['view'] = 'name'
+            cert_links.append({'code': code, 'label': label, 'icon': icon, 'url': '?' + params.urlencode()})
+    list_params = filter_params.copy()
+    if view_mode == 'name':
+        list_params['view'] = 'name'
+    list_qs = list_params.urlencode()
+
     # Filters
     categories = OpenDataItem.objects.filter(activestatus='Y').values_list('itemcategoryname', flat=True).distinct()
     brands = OpenDataItem.objects.filter(activestatus='Y').values_list('brandname', flat=True).distinct()
     
     context = {
         'page_obj': page_obj,
+        'category_groups': category_groups,
+        'total_count': total_count,
+        'view_mode': view_mode,
+        'effective_view': effective_view,
+        'filter_qs': filter_qs,
+        'list_qs': list_qs,
         'categories': [cat for cat in categories if cat],
+        'item_groups': item_groups,
+        'current_group': group,
         'brands': [brand for brand in brands if brand],
         'current_category': category,
         'current_brand': brand,
         'search_query': search_query,
         'jijig_min_qty': jijig_min_qty,
+        'current_cert': current_cert,
+        'cert_links': cert_links,
     }
-    
+
     return render(request, 'shop/products.html', context)
 
 
 def product_detail(request, pk):
     """Бүтээгдэхүүний дэлгэрэнгүй"""
     from django.shortcuts import get_object_or_404
+    from shop.access import request_menu_keys
     
     product = get_object_or_404(OpenDataItem, pk=pk)
     _attach_base_channel_prices([product])
@@ -171,6 +302,29 @@ def product_detail(request, pk):
 
     product.extension = extension
 
+    # Шинжилгээний бичиг г.м. хавсралт - зөвхөн нэвтэрсэн хэрэглэгчид
+    attachments, doc_types = [], []
+    if request.user.is_authenticated:
+        from shop.models import ProductAttachment, ProductDocType
+        from shop.services.product_certs import attachment_status, items_payload
+        from shop.services.product_files import item_names
+        attachments = list(ProductAttachment.objects.filter(items__item_id=product.id).distinct()
+                           .select_related('created_by', 'doc_type').prefetch_related('items'))
+        names = item_names(i.item_id for a in attachments for i in a.items.all())
+        doc_types = list(ProductDocType.objects.filter(is_active=True))
+        payload = items_payload(attachments)
+        for a in attachments:
+            # Энэ бараанд үйлчлэх огноо (тусдаа огноо өгсөн бол түүнийг)
+            link = next((i for i in a.items.all() if i.item_id == product.id), None)
+            a.own_expiry = bool(link and link.own_expiry)
+            a.eff_expires = link.expires_on if a.own_expiry else a.expires_on
+            a.eff_no_expiry = link.no_expiry if a.own_expiry else a.no_expiry
+            a.cert_status, a.cert_text = attachment_status(a, expires=a.eff_expires, no_expiry=a.eff_no_expiry)
+            a.items_json = payload.get(a.pk, '[]')
+            # Энэ бичиг хамаарах бусад бараа (нэг зурагт олон барааны бичиг байж болно)
+            a.other_items = [{'id': i.item_id, 'name': names.get(i.item_id) or i.item_id}
+                             for i in a.items.all() if i.item_id != product.id]
+
     # Төстэй бүтээгдэхүүнүүд
     related = OpenDataItem.objects.filter(
         itemcategoryname=product.itemcategoryname,
@@ -181,20 +335,322 @@ def product_detail(request, pk):
     context = {
         'product': product,
         'related_products': related,
+        'attachments': attachments,
+        'doc_types': doc_types,
+        'can_attach': 'product_attachment_upload' in request_menu_keys(request),
     }
     
     return render(request, 'shop/product_detail.html', context)
 
 
+@login_required
+def product_attachment(request, pk):
+    """Бүтээгдэхүүний хавсралт - нэвтэрсэн бүх хэрэглэгч харна (?download=1 бол татаж авна)."""
+    from django.http import FileResponse
+    from django.shortcuts import get_object_or_404
+    from shop.models import ProductAttachment
+
+    attachment = get_object_or_404(ProductAttachment, pk=pk)
+    return FileResponse(attachment.file.open('rb'), filename=attachment.original_name or None,
+                        as_attachment=request.GET.get('download') == '1')
+
+
+@login_required
+def product_attachment_upload(request, pk):
+    """Шинжилгээний бичиг хавсаргах (олон файл/зураг) - 'product_attachment_upload' эрхтэй албан тушаалд."""
+    import os
+    from django.contrib import messages
+    from django.shortcuts import get_object_or_404
+    from shop.models import ProductAttachment
+    from shop.services.product_certs import parse_doc_meta
+    from shop.services.product_files import link_items, normalize_upload
+
+    product = get_object_or_404(OpenDataItem, pk=pk)
+    back = reverse('shop:product_detail', args=[product.id]) + '#attachments'
+    if request.method != 'POST':
+        return redirect(back)
+    meta, errors = parse_doc_meta(request.POST)
+    if errors:
+        for error in errors:
+            messages.error(request, error)
+        return redirect(back)
+    note = request.POST.get('note', '').strip()[:200]
+    # Энэ бараа + "өөр бараанд ч хамаарна" гэж сонгосон бараанууд
+    item_ids = [product.id] + request.POST.getlist('item_ids')
+    saved, skipped = 0, []
+    for f in request.FILES.getlist('files'):
+        if os.path.splitext(f.name)[1].lower() not in ProductAttachment.ALLOWED_EXTS:
+            skipped.append(f.name)
+            continue
+        try:
+            f, name = normalize_upload(f)
+        except Exception:  # эвдэрсэн/танигдахгүй HEIC
+            skipped.append(f.name)
+            continue
+        attachment = ProductAttachment.objects.create(file=f, original_name=name[:255], note=note,
+                                                      created_by=request.user, **meta)
+        linked = link_items(attachment, item_ids)
+        saved += 1
+    if saved:
+        messages.success(request, f'{saved} файл хавсаргалаа' + (f' ({linked} бараанд).' if linked > 1 else '.'))
+    if skipped:
+        messages.warning(request, f"Зөвхөн зураг (jpg, png, heic) эсвэл PDF хавсаргана: {', '.join(skipped)}")
+    if not saved and not skipped:
+        messages.warning(request, 'Файл сонгоогүй байна.')
+    return redirect(back)
+
+
+@login_required
+def product_attachment_delete(request, pk):
+    """Хавсралтыг нэг бараанаас салгах (item_id), эсвэл бүх бараанаас бүр мөсөн устгах (all=1) -
+    хавсаргах эрхтэй албан тушаалд. Сүүлийн бараанаас салгавал файл устна."""
+    from django.contrib import messages
+    from django.shortcuts import get_object_or_404
+    from shop.models import ProductAttachment
+    from shop.services.product_files import delete_attachment, unlink_item
+
+    attachment = get_object_or_404(ProductAttachment, pk=pk)
+    back_item = request.POST.get('back_item', '')
+    back = reverse('shop:product_detail', args=[back_item]) + '#attachments' if back_item else reverse('shop:products')
+    if request.method == 'POST':
+        name = attachment.original_name
+        if request.POST.get('all') == '1':
+            delete_attachment(attachment)
+            messages.success(request, f'{name} бүх бараанаас устгагдлаа.')
+        elif unlink_item(attachment, request.POST.get('item_id', '')):
+            messages.success(request, f'{name} устгагдлаа.')
+        else:
+            messages.success(request, f'{name} энэ бараанаас салгагдлаа (бусад бараанд хэвээр).')
+    return redirect(back)
+
+
+@login_required
+def product_attachment_link(request, pk):
+    """Хавсралтыг өөр бараануудтай холбох (POST item_ids) - нэг бичигт олон барааны шинжилгээ байх үед."""
+    from django.contrib import messages
+    from django.shortcuts import get_object_or_404
+    from shop.models import ProductAttachment
+    from shop.services.product_files import link_items
+
+    attachment = get_object_or_404(ProductAttachment, pk=pk)
+    back_item = request.POST.get('back_item', '')
+    if request.method == 'POST':
+        added = link_items(attachment, request.POST.getlist('item_ids'))
+        messages.success(request, f'{attachment.original_name}: {added} бараа нэмж холболоо.' if added
+                         else 'Шинээр холбох бараа сонгоогүй байна.')
+    return redirect(reverse('shop:product_detail', args=[back_item]) + '#attachments' if back_item else reverse('shop:products'))
+
+
+@login_required
+def product_attachment_edit(request, pk):
+    """Бичгийн төрөл, олгосон/дуусах огноо, тайлбарыг засах (POST) - хавсаргах эрхтэй албан тушаалд.
+    Огноо бичиг дээр хадгалагдах тул холбогдсон бүх бараанд нэг дор үйлчилнэ."""
+    from django.contrib import messages
+    from django.shortcuts import get_object_or_404
+    from django.utils.http import url_has_allowed_host_and_scheme
+    from django.db import transaction
+    from shop.models import ProductAttachment
+    from shop.services.product_certs import parse_doc_meta, parse_item_overrides
+
+    attachment = get_object_or_404(ProductAttachment, pk=pk)
+    back_item = request.POST.get('back_item', '')
+    back = request.POST.get('next', '')
+    if not url_has_allowed_host_and_scheme(back, allowed_hosts={request.get_host()}, require_https=request.is_secure()):
+        back = reverse('shop:product_detail', args=[back_item]) + '#attachments' if back_item else reverse('shop:product_certificates')
+    if request.method == 'POST':
+        meta, errors = parse_doc_meta(request.POST)
+        overrides, item_errors = parse_item_overrides(request.POST, attachment.items.all(), meta['issued_on'])
+        errors += item_errors
+        if errors:
+            for error in errors:
+                messages.error(request, error)
+        else:
+            with transaction.atomic():
+                for field, value in meta.items():
+                    setattr(attachment, field, value)
+                attachment.note = request.POST.get('note', '').strip()[:200]
+                attachment.save(update_fields=[*meta, 'note'])
+                # Бараа тус бүрийн тусдаа огноо (own=False бол ерөнхий огноог авна)
+                for link, (own, expires, no_expiry) in overrides.items():
+                    link.own_expiry, link.expires_on, link.no_expiry = own, expires, no_expiry
+                    link.save(update_fields=['own_expiry', 'expires_on', 'no_expiry'])
+            own_count = sum(1 for own, _, _ in overrides.values() if own)
+            messages.success(request, f'{attachment.original_name}: мэдээлэл хадгалагдлаа'
+                             + (f' ({own_count} бараа тусдаа огноотой).' if own_count else '.'))
+    return redirect(back)
+
+
+@login_required
+def product_certificates(request):
+    """Шинжилгээний бичгийн хяналт: бараа бүрийн бичгийн хугацааны төлөв (дууссан/удахгүй/бичиггүй г.м.),
+    шүүлт, Excel. Төлөвийг services.product_certs тооцоолно."""
+    from datetime import date
+    from django.db.models import DecimalField, OuterRef, Subquery
+    from django.db.models.functions import Coalesce
+    from shop.access import request_menu_keys
+    from shop.models import ProductDocType
+    from shop.models_inventory import InventorySnapshot
+    from shop.services import product_certs as pc
+
+    today = date.today()
+    tracked = pc.tracked_types()
+    type_param = request.GET.get('type', '')
+    if type_param == 'all':
+        type_ids = [t.pk for t in tracked]
+    else:
+        type_ids = [t.pk for t in tracked if str(t.pk) == type_param] or [t.pk for t in tracked[:1]]
+        type_param = str(type_ids[0]) if type_ids else 'all'
+    status = request.GET.get('status', '')
+    status = status if status in pc.STATUS_LABELS else ''
+    q = ' '.join(request.GET.get('q', '').split())
+    group = request.GET.get('group', '')
+    # Checkbox-ийн өмнө hidden 'false' илгээгддэг тул сүүлийн утгыг авна (default: үлдэгдэлтэй л)
+    stock_values = request.GET.getlist('stock_only')
+    stock_only = (stock_values[-1] if stock_values else 'true') != 'false'
+    sort = request.GET.get('sort', 'priority')
+    sort = sort if sort in ('priority', 'expires', '-expires', 'name') else 'priority'
+
+    stock_sq = InventorySnapshot.objects.filter(itemname=OuterRef('name')).values('total_qty')[:1]
+    items = OpenDataItem.objects.filter(activestatus='Y').annotate(
+        stock_qty=Coalesce(Subquery(stock_sq), Value(Decimal('0')), output_field=DecimalField()))
+    if stock_only:
+        items = items.filter(stock_qty__gt=0)
+    if group:
+        items = items.filter(itemgroupid=group)
+    for word in q.split():
+        items = items.filter(Q(name__icontains=word) | Q(id__icontains=word) | Q(barcode__icontains=word)
+                             | Q(brandname__icontains=word))
+    items = pc.annotate_status(items, type_ids, today)
+
+    # Төлөв бүрийн тоо - төлөвийн шүүлтээс өмнө (хайрцаг дээр дарж шүүнэ)
+    counts = dict(items.order_by().values_list('cert_status').annotate(n=Count('pkid')))
+    if status:
+        items = items.filter(pc.status_filter(status))
+    order = {
+        'priority': ('cert_priority', F('cert_expires').asc(nulls_last=True), 'name'),
+        'expires': (F('cert_expires').asc(nulls_last=True), 'name'),
+        '-expires': (F('cert_expires').desc(nulls_last=True), 'name'),
+        'name': ('name',),
+    }[sort]
+    rows = pc.decorate(list(items.order_by(*order)), today)
+    best_links = pc.latest_documents([r.id for r in rows], type_ids)
+    payload = pc.items_payload({link.attachment for link in best_links.values()})
+    for r in rows:
+        link = best_links.get(r.id)
+        r.cert_doc = link.attachment if link else None
+        r.cert_own = bool(link and link.own_expiry)  # энэ бараанд тусдаа огноотой
+        r.cert_items_json = payload.get(r.cert_doc.pk, '[]') if r.cert_doc else '[]'
+
+    if request.GET.get('export') == 'xlsx':
+        return _product_certificates_xlsx(rows, today)
+
+    query = request.GET.copy()
+    for key in ('status', 'export'):
+        query.pop(key, None)
+    tiles = [{'code': code, 'label': label, 'icon': icon, 'color': color, 'count': counts.get(code, 0),
+              'url': '?' + (query.urlencode() + '&' if query else '') + f'status={code}'}
+             for code, label, icon, color in pc.STATUSES]
+    groups = (OpenDataItem.objects.filter(activestatus='Y').exclude(itemgroupid__isnull=True).exclude(itemgroupid='')
+              .order_by('itemgroupid').values_list('itemgroupid', flat=True).distinct())
+    export_query = request.GET.copy()
+    export_query['export'] = 'xlsx'
+    context = {
+        'active_page': 'product_certificates',
+        'rows': rows,
+        'tiles': tiles,
+        'total': sum(counts.values()),
+        'all_url': '?' + query.urlencode(),
+        'tracked_types': tracked,
+        'doc_types': ProductDocType.objects.all(),
+        'filters': {'type': type_param, 'status': status, 'q': q, 'group': group, 'stock_only': stock_only, 'sort': sort},
+        'groups': list(groups),
+        'soon_days': pc.SOON_DAYS,
+        'today': today,
+        'export_url': '?' + export_query.urlencode(),
+        'can_manage': 'product_attachment_upload' in request_menu_keys(request),
+    }
+    return render(request, 'shop/product_certificates.html', context)
+
+
+def _product_certificates_xlsx(rows, today):
+    import openpyxl
+    from io import BytesIO
+    from django.http import HttpResponse
+    from openpyxl.styles import Font, PatternFill
+    from openpyxl.utils import get_column_letter
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = 'Шинжилгээний бичиг'
+    headers = ['Код', 'Барааны нэр', 'Бүлэг', 'Үлдэгдэл', 'Төлөв', 'Дуусах огноо', 'Үлдсэн хоног', 'Тайлбар', 'Бичиг']
+    fills = {'expired': 'FDE2E2', 'soon': 'FEF3C7', 'no_date': 'FFEDD5', 'none': 'F3F4F6'}
+    ws.append([f'Шинжилгээний бичгийн хяналт · {today:%Y-%m-%d}'])
+    ws['A1'].font = Font(bold=True, size=13)
+    ws.append([])
+    ws.append(headers)
+    for cell in ws[3]:
+        cell.font = Font(bold=True)
+    for r in rows:
+        doc = r.cert_doc
+        ws.append([r.id, r.name, r.itemgroupid or '', float(r.stock_qty), r.cert_label, r.cert_expires,
+                   r.cert_days, r.cert_text, doc.original_name if doc else ''])
+        if r.cert_status in fills:
+            fill = PatternFill(start_color=fills[r.cert_status], end_color=fills[r.cert_status], fill_type='solid')
+            for cell in ws[ws.max_row]:
+                cell.fill = fill
+        ws.cell(row=ws.max_row, column=6).number_format = 'yyyy-mm-dd'
+    for col, width in enumerate([10, 50, 18, 10, 18, 12, 12, 24, 30], start=1):
+        ws.column_dimensions[get_column_letter(col)].width = width
+    ws.freeze_panes = 'A4'
+    buffer = BytesIO()
+    wb.save(buffer)
+    response = HttpResponse(buffer.getvalue(), content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    response['Content-Disposition'] = f'attachment; filename="certificates_{today:%Y%m%d}.xlsx"'
+    return response
+
+
+@login_required
+def product_doc_types(request):
+    """Бичгийн төрөл нэмэх / идэвхжүүлэх / хугацаа хянах эсэхийг солих (POST) - хавсаргах эрхтэй албан тушаалд."""
+    from django.contrib import messages
+    from shop.models import ProductDocType
+
+    if request.method == 'POST':
+        action = request.POST.get('action')
+        if action == 'add':
+            name = ' '.join(request.POST.get('name', '').split())[:100]
+            if not name:
+                messages.warning(request, 'Төрлийн нэр оруулна уу.')
+            elif ProductDocType.objects.filter(name__iexact=name).exists():
+                messages.warning(request, f'"{name}" төрөл аль хэдийн байна.')
+            else:
+                last = ProductDocType.objects.order_by('-sort_order').values_list('sort_order', flat=True).first() or 0
+                ProductDocType.objects.create(name=name, tracks_expiry=request.POST.get('tracks_expiry') == '1',
+                                              sort_order=min(last + 10, 32767))
+                messages.success(request, f'"{name}" төрөл нэмэгдлээ.')
+        elif action in ('toggle_active', 'toggle_tracks'):
+            doc_type = ProductDocType.objects.filter(pk=request.POST.get('id') or None).first()
+            if doc_type:
+                field = 'is_active' if action == 'toggle_active' else 'tracks_expiry'
+                setattr(doc_type, field, not getattr(doc_type, field))
+                doc_type.save(update_fields=[field])
+                messages.success(request, f'"{doc_type.name}" төрөл шинэчлэгдлээ.')
+    return redirect(reverse('shop:product_certificates') + '#doc-types')
+
+
+@login_required
+def product_search(request):
+    """Бараа хайх JSON (хавсралтыг олон бараатай холбоход) - ?q=нэр/код/баркод."""
+    from shop.services.product_files import search_items
+    return JsonResponse({'results': search_items(request.GET.get('q'))})
+
+
+@login_required
 def product_edit(request, pk):
-    """Бүтээгдэхүүний нэмэлт мэдээлэл засах (staff only)"""
+    """Бүтээгдэхүүний нэмэлт мэдээлэл засах - 'product_edit' үйлдлийн эрхтэй албан тушаалд
+    (эрхийг middleware шалгана, menuconfig.SUBPAGE_MENU_KEYS / ACTION_PERMISSIONS)."""
     from django.shortcuts import get_object_or_404, redirect
-    from django.contrib.admin.views.decorators import staff_member_required
-    
-    # Staff эрх шалгах
-    if not request.user.is_staff:
-        return redirect('shop:products')
-    
+
     product = get_object_or_404(OpenDataItem, pk=pk)
     
     # Extension авах эсвэл үүсгэх
@@ -276,7 +732,124 @@ def dashboard(request):
         'total_employees': total_employees,
     }
 
+    # Удирдлагын нэгтгэл - 'exec_summary' эрхтэй (Ерөнхий нягтлан үргэлж) хэрэглэгчид
+    from shop.access import request_menu_keys
+    if 'exec_summary' in request_menu_keys(request):
+        from shop.services import exec_summary as es
+        period = es.parse_period(request.GET)
+        tab = request.GET.get('tab', 'sales')
+        tab = tab if tab in {k for k, _, _ in es.SECTIONS} else 'sales'
+        query = request.GET.copy()
+        query.pop('tab', None)
+        context.update({
+            'exec': True,
+            'period': period,
+            'periods': es.PERIODS,
+            'compares': es.COMPARES,
+            'sections': [{'key': k, 'label': l, 'icon': i, 'soon': k in es.COMING_SOON,
+                          'url': '?' + (query.urlencode() + '&' if query else '') + f'tab={k}'} for k, l, i in es.SECTIONS],
+            'tab': tab,
+            'data': es.BUILDERS[tab](period) if tab in es.BUILDERS else None,
+            'can_plan': 'sales_plan' in request_menu_keys(request),
+        })
+
     return render(request, 'shop/dashboard.html', context)
+
+
+@login_required
+def sales_plan(request):
+    """Борлуулалтын сарын төлөвлөгөө: суваг бүрийн дүн ба ХТ тус бүрийн төлөвлөгөөт барааны тоо ширхгийн зорилт.
+    ?q= бол бараа хайх JSON. Удирдлагын нэгтгэлийн (/dashboard/) биелэлтэд ашиглагдана."""
+    from django.contrib import messages
+    from django.db import connection, transaction
+    from shop.models import SalesPlan, SalesPlanItem
+    from shop.services.exec_summary import HT_PREFIX, _shift_months
+    from shop.services.product_files import item_names, search_items
+
+    if 'q' in request.GET:
+        return JsonResponse({'results': search_items(request.GET.get('q'))})
+
+    try:
+        month = datetime.strptime(request.GET.get('month') or request.POST.get('month', ''), '%Y-%m').date()
+    except ValueError:
+        month = timezone.localdate().replace(day=1)
+    with connection.cursor() as cursor:
+        cursor.execute('SELECT "Id", "Name" FROM "OpenDataDistributionChannel" ORDER BY "Id"')
+        all_channels = cursor.fetchall()
+    # Төлөвлөгөөт бараа ХТ-ээр; дүнгийн төлөвлөгөө бүх сувагт
+    ht_channels = [(cid, name) for cid, name in all_channels if (name or '').startswith(HT_PREFIX)]
+
+    def parse_amount(value):
+        try:
+            return max(Decimal((value or '0').replace(',', '').replace(' ', '') or '0'), Decimal(0))
+        except InvalidOperation:
+            return None
+
+    redirect_url = reverse('shop:sales_plan') + f'?month={month:%Y-%m}'
+    if request.method == 'POST':
+        if request.POST.get('action') == 'copy_prev':
+            prev = _shift_months(month, -1)
+            with transaction.atomic():
+                for plan in SalesPlan.objects.filter(month=prev):
+                    SalesPlan.objects.get_or_create(month=month, channel_id=plan.channel_id,
+                                                    defaults={'amount': plan.amount, 'updated_by': request.user})
+                for item in SalesPlanItem.objects.filter(month=prev):
+                    SalesPlanItem.objects.get_or_create(month=month, item_id=item.item_id, channel_id=item.channel_id,
+                                                        defaults={'target_qty': item.target_qty, 'updated_by': request.user})
+            messages.success(request, f'{prev:%Y-%m} сарын төлөвлөгөөг хууллаа (байгаа утгыг өөрчлөөгүй).')
+            return redirect(redirect_url)
+        bad = []
+        with transaction.atomic():
+            for cid, name in all_channels:
+                raw = request.POST.get(f'plan_{cid}')
+                if raw is None:
+                    continue
+                amount = parse_amount(raw)
+                if amount is None:
+                    bad.append(name)
+                elif amount:
+                    SalesPlan.objects.update_or_create(month=month, channel_id=cid,
+                                                       defaults={'amount': amount, 'updated_by': request.user})
+                else:
+                    SalesPlan.objects.filter(month=month, channel_id=cid).delete()
+            item_ids = [i for i in request.POST.getlist('items') if i]
+            # Жагсаалтаас хассан бараа устна
+            SalesPlanItem.objects.filter(month=month).exclude(item_id__in=item_ids).delete()
+            for item_id in item_ids:
+                for cid, name in ht_channels:
+                    qty = parse_amount(request.POST.get(f'qty_{item_id}_{cid}'))
+                    if qty is None:
+                        bad.append(f'{item_id} / {name}')
+                    elif qty:
+                        SalesPlanItem.objects.update_or_create(month=month, item_id=item_id, channel_id=cid,
+                                                               defaults={'target_qty': qty, 'updated_by': request.user})
+                    else:
+                        SalesPlanItem.objects.filter(month=month, item_id=item_id, channel_id=cid).delete()
+        if bad:
+            messages.warning(request, 'Тоо биш утгыг алгаслаа: ' + ', '.join(bad[:5]))
+        messages.success(request, f'{month:%Y-%m} сарын төлөвлөгөө хадгалагдлаа.')
+        return redirect(redirect_url)
+
+    plans = {p.channel_id: p.amount for p in SalesPlan.objects.filter(month=month)}
+    targets = {}
+    for t in SalesPlanItem.objects.filter(month=month):
+        targets.setdefault(t.item_id, {})[t.channel_id] = t.target_qty
+    names = item_names(targets)
+    items = [{'id': item_id, 'name': names.get(item_id, item_id),
+              'cells': [targets[item_id].get(cid) for cid, _ in ht_channels]}
+             for item_id in sorted(targets, key=lambda i: names.get(i, i))]
+    context = {
+        'active_page': 'sales_plan',
+        'month': month,
+        'prev_month': _shift_months(month, -1),
+        'next_month': _shift_months(month, 1),
+        'channels': [{'id': cid, 'name': name, 'amount': plans.get(cid), 'is_ht': (name or '').startswith(HT_PREFIX)}
+                     for cid, name in all_channels],
+        'ht_channels': ht_channels,
+        'items': items,
+        'plan_total': sum(plans.values()),
+    }
+    return render(request, 'shop/sales_plan.html', context)
 
 
 SALES_REPORT_TABS = ['summary', 'product', 'customer', 'channel', 'group', 'seller', 'warehouse', 'daily']
@@ -434,127 +1007,106 @@ def _get_available_years(sales_qs):
 
 
 def inventory_report(request):
-    """Барааны үлдэгдэл - InventorySnapshot хүснэгтээс (2 цаг тутамд шинэчлэгддэг)"""
+    """Барааны үлдэгдэл - InventorySnapshot хүснэгтээс (2 цаг тутамд шинэчлэгддэг).
+    Шүүлтийн параметрүүдийг shop.services.inventory_report-оос үз."""
     # Зөвхөн ажилтанд зөвшөөрөх
     if not request.user.is_staff:
         from django.contrib import messages
         messages.warning(request, 'Энэ хуудас зөвхөн ажилтанд зориулагдсан.')
         return redirect('shop:home')
-    
-    from shop.models_inventory import InventorySnapshot
-    from django.db.models import Q
+
     from django.core.paginator import Paginator
-    
-    # Шүүлтийн параметрүүд
-    warehouse_filter = request.GET.get('warehouse')
-    product_filter = request.GET.get('product')
-    brand_filter = request.GET.get('brand')
-    show_stock_only = request.GET.get('stock_only', 'true')  # Default: үлдэгдэлтэй л харуулах
-    jijig_min_qty = request.GET.get('jijig_min', 'false')  # Агуулах жижигт 10+ үлдэгдэлтэй
-    
-    # "None" болон хоосон утгуудыг цэвэрлэх
-    def clean_param(value):
-        if not value or value.strip() == '' or value.strip().lower() == 'none':
-            return None
-        return value.strip()
-    
-    warehouse_filter = clean_param(warehouse_filter)
-    product_filter = clean_param(product_filter)
-    brand_filter = clean_param(brand_filter)
-    
-    # Snapshot-с өгөгдөл авах (их хурдан!)
-    inventory_qs = InventorySnapshot.objects.all()
-    
-    # Үлдэгдэлтэй барааг л харуулах эсэх
-    if show_stock_only == 'true':
-        inventory_qs = inventory_qs.filter(total_qty__gt=0)
-    
-    # Агуулах жижигт 10+ үлдэгдэлтэй шүүлт
-    if jijig_min_qty == 'true':
-        inventory_qs = inventory_qs.filter(jijig_qty__gte=10)
-    
-    # Шүүлт хэрэглэх
-    if product_filter:
-        inventory_qs = inventory_qs.filter(itemname__icontains=product_filter)
-    
-    if brand_filter:
-        inventory_qs = inventory_qs.filter(brandname__icontains=brand_filter)
-    
-    # Нэрээр эрэмбэлэх (A → Z)
-    inventory_qs = inventory_qs.order_by('itemname')
-    
-    # Агуулахаар шүүх (үлдэгдэлтэй агуулахаар)
-    if warehouse_filter:
-        if warehouse_filter == 'Агуулах Толгойт':
-            inventory_qs = inventory_qs.filter(tolgoit_qty__gt=0)
-        elif warehouse_filter == 'Агуулах жижиг':
-            inventory_qs = inventory_qs.filter(jijig_qty__gt=0)
-        elif warehouse_filter == 'Агуулах алтжин':
-            inventory_qs = inventory_qs.filter(altjin_qty__gt=0)
-    
-    # Pagination (50 items per page)
-    paginator = Paginator(inventory_qs, 50)
-    page_number = request.GET.get('page', 1)
-    page_obj = paginator.get_page(page_number)
-    
-    # Dropdown жагсаалтууд
-    target_warehouses = ['Агуулах Толгойт', 'Агуулах жижиг', 'Агуулах алтжин']
-    
-    # Dropdown-д хэт олон зүйл ачаалахгүйн тулд limit
-    all_snapshots = InventorySnapshot.objects.all()
-    if product_filter:
-        all_snapshots = all_snapshots.filter(itemname__icontains=product_filter)
-    if brand_filter:
-        all_snapshots = all_snapshots.filter(brandname__icontains=brand_filter)
-    
-    products_list = all_snapshots.values_list('itemname', flat=True).distinct().order_by('itemname')[:500]
-    brands_list = all_snapshots.values_list('brandname', flat=True).distinct().exclude(
-        brandname__isnull=True
-    ).exclude(brandname='').order_by('brandname')[:100]
-    
-    # Template-д илгээх өгөгдлийг бэлтгэх
-    inventory_data = []
-    for snapshot in page_obj:
-        inventory_data.append({
-            'itemname': snapshot.itemname,
-            'brandname': snapshot.brandname or '-',
-            'warehouses': {
-                'Агуулах Толгойт': {
-                    'endqty': float(snapshot.tolgoit_qty),
-                    'date': snapshot.tolgoit_date
-                },
-                'Агуулах жижиг': {
-                    'endqty': float(snapshot.jijig_qty),
-                    'date': snapshot.jijig_date
-                },
-                'Агуулах алтжин': {
-                    'endqty': float(snapshot.altjin_qty),
-                    'date': snapshot.altjin_date
-                }
-            },
-            'total_qty': float(snapshot.total_qty)
-        })
-    
-    # Сүүлийн шинэчлэлтийн огноо
-    latest_update = InventorySnapshot.objects.order_by('-updated_at').first()
-    last_updated = latest_update.updated_at if latest_update else None
-    
+    from shop.models_inventory import InventorySnapshot
+    from shop.services import inventory_report as ir
+
+    f = ir.parse_filters(request.GET)
+    base_qs = InventorySnapshot.objects.all()
+    inventory_qs = ir.order_queryset(ir.filter_queryset(base_qs, f), f['sort'])
+
+    paginator = Paginator(inventory_qs, f['per_page'])
+    page_obj = paginator.get_page(request.GET.get('page'))
+
+    inventory_data = [{
+        'itemname': snapshot.itemname,
+        'brandname': snapshot.brandname or '-',
+        'warehouses': [{
+            'endqty': float(getattr(snapshot, f'{key}_qty')),
+            'date': getattr(snapshot, f'{key}_date'),
+        } for key, _ in ir.WAREHOUSES],
+        'total_qty': float(snapshot.total_qty),
+    } for snapshot in page_obj]
+
+    # Брэндийн сонголт: бусад шүүлтэд тохирох брэндүүд (сонгосон брэнд үргэлж харагдана)
+    brand_options = set(ir.filter_queryset(base_qs, {**f, 'brand': []}).exclude(brandname__isnull=True)
+                        .exclude(brandname='').values_list('brandname', flat=True).distinct())
+    brands_list = sorted(brand_options | set(f['brand']))
+    # Хайлтын санал болгох нэрс (datalist) - хайлтаас бусад шүүлтээр
+    suggestions = (ir.filter_queryset(base_qs, {**f, 'q': ''}).order_by('itemname')
+                   .values_list('itemname', flat=True).distinct()[:2000])
+
+    # Хуудаслалт/эрэмбэлэлтийн холбоосонд одоогийн шүүлтийг (page-гүйгээр) зөв urlencode хийж дамжуулна
+    query = request.GET.copy()
+    query.pop('page', None)
+    query.pop('product', None)  # хуучин параметр -> q
+    if f['q']:
+        query['q'] = f['q']
+
+    def url_with(**changes):
+        params = query.copy()
+        for name, value in changes.items():
+            if value is None:
+                params.pop(name, None)
+            elif isinstance(value, list):
+                params.setlist(name, value)
+            else:
+                params[name] = value
+        return '?' + params.urlencode()
+
+    def sort_url(key):
+        return url_with(sort=key if f['sort'] != key else f'-{key}')
+
+    totals = ir.totals(inventory_qs)
+    current_sort = f['sort'].lstrip('-')
+    sort_dir = 'desc' if f['sort'].startswith('-') else 'asc'
+    columns = [{'key': key, 'label': label, 'sort_url': sort_url(key), 'total': totals[f'{key}_qty'],
+                'sort_dir': sort_dir if current_sort == key else ''} for key, label in ir.WAREHOUSES]
+
+    # Идэвхтэй шүүлтийн "chip"-үүд - тус бүрийг дангаар нь арилгах холбоостой
+    active_filters = []
+    if f['q']:
+        active_filters.append({'label': f'Хайлт: {f["q"]}', 'remove_url': url_with(q=None)})
+    for key in f['warehouse']:
+        rest = [k for k in f['warehouse'] if k != key]
+        active_filters.append({'label': ir.WAREHOUSE_LABELS[key], 'remove_url': url_with(warehouse=rest)})
+    for brand in f['brand']:
+        rest = [b for b in f['brand'] if b != brand]
+        active_filters.append({'label': f'Брэнд: {brand}', 'remove_url': url_with(brand=rest)})
+    if f['min_qty'] is not None:
+        active_filters.append({'label': f'Үлдэгдэл ≥ {f["min_qty"].normalize():f}', 'remove_url': url_with(min_qty=None)})
+    if f['jijig_min']:
+        active_filters.append({'label': f'Жижиг ≥ {ir.JIJIG_MIN}', 'remove_url': url_with(jijig_min=None)})
+
+    latest_update = InventorySnapshot.objects.order_by('-updated_at').values_list('updated_at', flat=True).first()
+
     context = {
         'inventory_data': inventory_data,
         'page_obj': page_obj,
-        'target_warehouses': target_warehouses,
-        'warehouses_list': target_warehouses,
-        'products_list': [{'name': p} for p in products_list],
-        'brands_list': list(brands_list),
-        'selected_warehouse': warehouse_filter,
-        'selected_product': product_filter,
-        'selected_brand': brand_filter,
-        'show_stock_only': show_stock_only,  # Үлдэгдэлтэй барааг л харуулах эсэх
-        'jijig_min_qty': jijig_min_qty,  # Агуулах жижигт 10+ үлдэгдэл
-        'total_items': inventory_qs.count(),
-        'last_updated': last_updated,  # Сүүлийн шинэчлэлт
+        'filters': f,
+        'warehouses': ir.WAREHOUSES,
+        'columns': columns,
+        'name_sort': {'url': sort_url('name'), 'dir': sort_dir if current_sort == 'name' else ''},
+        'brand_sort': {'url': sort_url('brand'), 'dir': sort_dir if current_sort == 'brand' else ''},
+        'total_sort': {'url': sort_url('total'), 'dir': sort_dir if current_sort == 'total' else ''},
+        'brands_list': brands_list,
+        'suggestions': list(suggestions),
+        'page_sizes': ir.PAGE_SIZES,
+        'jijig_min_value': ir.JIJIG_MIN,
+        'grand_total': totals['total_qty'],
+        'total_items': paginator.count,
+        'query_string': query.urlencode(),
+        'active_filters': active_filters,
+        'last_updated': latest_update,
     }
-    
     return render(request, 'shop/inventory.html', context)
 
 
@@ -758,6 +1310,102 @@ def item_prices_export(request):
     )
     response['Content-Disposition'] = 'attachment; filename="item_prices.xlsx"'
     return response
+
+
+def item_price_history(request):
+    """Барааны үнийн түүх - сонгосон үнийн жагсаалт (суваг)-д сонгосон бараа (олон) бүрийн өмнөх бүх үнэ.
+
+    Хэрэглэгч тусгайлсан үнэ (customerpkid) биш, ерөнхий сувгийн үнийг огноогоор нь эрэмбэлж, үнэ бүрийн
+    өмнөхөөсөө өөрчлөгдсөн дүн / хувийг тооцно. Олон бараа сонгосон бол нэг графикт харьцуулна.
+    """
+    if not request.user.is_staff:
+        from django.contrib import messages
+        messages.warning(request, 'Энэ хуудас зөвхөн ажилтанд зориулагдсан.')
+        return redirect('shop:home')
+
+    from datamigration.models import OpenDataItem, OpenDataItemPrice, OpenDataItemPriceChannel
+
+    channels = list(OpenDataItemPriceChannel.objects.all().order_by('code'))
+    channel_by_pk = {str(c.pkid): c for c in channels}
+    channel_pk = request.GET.get('channel', '')
+    if channel_pk not in channel_by_pk:
+        # Анхдагч: 001 - Үндсэн үнэ
+        base = next((c for c in channels if c.code == '001'), channels[0] if channels else None)
+        channel_pk = str(base.pkid) if base else ''
+    channel = channel_by_pk.get(channel_pk)
+
+    # Сонгох боломжтой бараа: тухайн жагсаалтад ядаж нэг үнэтэй
+    price_qs = OpenDataItemPrice.objects.filter(customerpkid__isnull=True, pricechannelpkid=channel.pkid) if channel else OpenDataItemPrice.objects.none()
+    priced_item_pks = set(price_qs.values_list('itempkid', flat=True).distinct())
+    item_options = [
+        {'pk': pk, 'name': name, 'code': code or '', 'barcode': barcode or ''}
+        for pk, name, code, barcode in OpenDataItem.objects.filter(pkid__in=priced_item_pks)
+        .order_by('name').values_list('pkid', 'name', 'id', 'barcode')
+    ]
+    item_by_pk = {o['pk']: o for o in item_options}
+
+    selected_item_pks = []
+    for v in request.GET.getlist('item'):
+        try:
+            pk = int(v)
+        except (TypeError, ValueError):
+            continue
+        if pk in item_by_pk and pk not in selected_item_pks:
+            selected_item_pks.append(pk)
+
+    history_by_item = {}
+    for r in (price_qs.filter(itempkid__in=selected_item_pks).exclude(price__isnull=True)
+              .order_by('itempkid', 'pricedate').values('itempkid', 'pricedate', 'price')):
+        history_by_item.setdefault(r['itempkid'], []).append(r)
+
+    cards = []
+    for pk in selected_item_pks:
+        records = history_by_item.get(pk, [])
+        rows = []
+        prev = None
+        for r in records:
+            change = r['price'] - prev if prev is not None else None
+            rows.append({
+                'date': r['pricedate'],
+                'price': r['price'],
+                'change': change,
+                'change_pct': (change / prev * 100) if change is not None and prev else None,
+            })
+            prev = r['price']
+        prices = [r['price'] for r in rows]
+        first, last = (prices[0], prices[-1]) if prices else (None, None)
+        cards.append({
+            'pk': pk,
+            'name': item_by_pk[pk]['name'],
+            'code': item_by_pk[pk]['code'],
+            'barcode': item_by_pk[pk]['barcode'],
+            'rows': list(reversed(rows)),   # хамгийн сүүлийнх нь дээрээ
+            'current': last,
+            'current_date': rows[-1]['date'] if rows else None,
+            'first': first,
+            'first_date': rows[0]['date'] if rows else None,
+            'total_change': (last - first) if prices else None,
+            'total_change_pct': ((last - first) / first * 100) if prices and first else None,
+            'change_count': sum(1 for r in rows if r['change']),
+            'min': min(prices) if prices else None,
+            'max': max(prices) if prices else None,
+        })
+
+    chart_data = [
+        {'name': c['name'], 'points': [[r['date'].isoformat(), r['price']] for r in reversed(c['rows']) if r['date']]}
+        for c in cards if c['rows']
+    ]
+
+    context = {
+        'channels': channels,
+        'channel': channel,
+        'channel_pk': channel_pk,
+        'item_options': item_options,
+        'selected_item_pks': selected_item_pks,
+        'cards': cards,
+        'chart_data': chart_data,
+    }
+    return render(request, 'shop/item_price_history.html', context)
 
 
 @login_required
@@ -1095,7 +1743,7 @@ def purchase_report(request):
     from urllib.parse import urlencode
     from shop.services import purchase_report as service
 
-    tab = request.GET.get('tab') if request.GET.get('tab') in service.TAB_KEYS else 'summary'
+    tab = request.GET.get('tab') if request.GET.get('tab') in service.TAB_KEYS else 'tree'
     filters = service.parse_filters(request.GET)
     options = service.filter_options(filters)
     data = {}
@@ -1158,7 +1806,7 @@ def purchase_report_export(request):
     """Татан авалтын тайлангийн идэвхтэй tab-ыг (шүүлттэй нь) Excel-ээр. Баримт tab-д мөр бүр (бараагаар) хамт."""
     from shop.services import purchase_report as service
 
-    tab = request.GET.get('tab') if request.GET.get('tab') in service.TAB_KEYS else 'summary'
+    tab = request.GET.get('tab') if request.GET.get('tab') in service.TAB_KEYS else 'tree'
     filters = service.parse_filters(request.GET)
     period = (f"{filters['date_from'] or 'эхнээс'} ~ {filters['date_to'] or 'одоо'}"
               if filters['date_from'] or filters['date_to'] else 'бүх хугацаа')
@@ -2309,7 +2957,8 @@ def menu_permission_config(request):
     """
     from django.contrib import messages
     from shop.models import MenuPermission, MenuGroupAssignment
-    from shop.menuconfig import ALWAYS_ALL_MENU_POSITIONS, get_configurable_menu_items, get_group_choices, get_effective_menu_groups
+    from shop.menuconfig import (ACTION_PERMISSIONS, ALWAYS_ALL_MENU_POSITIONS, get_configurable_menu_items,
+                                 get_group_choices, get_effective_menu_groups)
 
     if not request.user.is_superuser:
         messages.warning(request, 'Энэ хуудас зөвхөн админд зориулагдсан.')
@@ -2344,7 +2993,7 @@ def menu_permission_config(request):
             if position in ALWAYS_ALL_MENU_POSITIONS:
                 messages.info(request, f'"{position}" албан тушаал бүх цэсийг автоматаар харах тул тохиргоо хийх шаардлагагүй.')
             elif position in positions:
-                for item in menu_items:
+                for item in menu_items + ACTION_PERMISSIONS:
                     field_name = f"visible__{item['key']}"
                     MenuPermission.objects.update_or_create(
                         position_name=position,
@@ -2380,6 +3029,11 @@ def menu_permission_config(request):
             })
         if rows:
             permission_groups.append({'label': group['label'] or group['key'], 'rows': rows})
+    # Цэсэнд харагдахгүй үйлдлийн эрхүүд (бүтээгдэхүүн засах г.м.)
+    permission_groups.append({'label': 'Үйлдлийн эрх', 'rows': [{
+        'key': a['key'], 'label': a['label'], 'icon': a['icon'], 'field_name': f"visible__{a['key']}",
+        'is_visible': True if is_always_all_position else existing_for_position.get(a['key'], False),
+    } for a in ACTION_PERMISSIONS]})
 
     group_overrides = dict(MenuGroupAssignment.objects.values_list('menu_key', 'group_key'))
     group_rows = [
@@ -6175,12 +6829,47 @@ DATA_SYNC_FAVORITES = [
 ]
 
 
+# Энэ процесст ажиллаж буй татах ажлууд. Сервер дахин ачаалагдвал (runserver-ийн автомат reload, restart)
+# thread дуусгалгүй тасардаг тул лог «running» хэвээр гацна - _data_sync_close_orphans түүнийг илрүүлнэ.
+_DATA_SYNC_ALIVE = set()
+_DATA_SYNC_PID_KEY = 'data_sync:pid:{}'
+
+
+def _data_sync_close_orphans():
+    """Вэбээс эхлүүлсэн боловч ажиллуулж байсан процесс/thread нь алга болсон «running» логийг алдаа болгоно.
+    Командын мөрөөс (sync_table) эхлүүлснийг pid бүртгэлгүй тул хөндөхгүй."""
+    import os
+    from django.core.cache import cache
+    from shop.models import OpenDataSyncLog
+
+    for log in OpenDataSyncLog.objects.filter(status=OpenDataSyncLog.STATUS_RUNNING):
+        pid = cache.get(_DATA_SYNC_PID_KEY.format(log.id))
+        if pid is None:
+            continue
+        if pid == os.getpid():
+            alive = log.id in _DATA_SYNC_ALIVE
+        else:
+            try:
+                os.kill(pid, 0)
+                alive = True
+            except OSError:
+                alive = False
+        if not alive:
+            OpenDataSyncLog.objects.filter(id=log.id, status=OpenDataSyncLog.STATUS_RUNNING).update(
+                status=OpenDataSyncLog.STATUS_ERROR, finished_at=timezone.now(),
+                message=f'Тасарсан: сервер дахин ачаалагдсан ({log.message}). Дахин татна уу.'[:1000])
+
+
 def _data_sync_run(log_id):
     """Ард (thread) нэг хүснэгт татаж, явц/үр дүнг OpenDataSyncLog-д бичнэ."""
+    import os
+    from django.core.cache import cache
     from django.db import connection as db_connection
     from shop.models import OpenDataSyncLog
     from datamigration.sync import sync_view
 
+    _DATA_SYNC_ALIVE.add(log_id)
+    cache.set(_DATA_SYNC_PID_KEY.format(log_id), os.getpid(), 24 * 60 * 60)
     log = OpenDataSyncLog.objects.get(id=log_id)
     try:
         result = sync_view(log.table_name, log=lambda text: OpenDataSyncLog.objects.filter(id=log_id).update(message=text))
@@ -6194,6 +6883,7 @@ def _data_sync_run(log_id):
         OpenDataSyncLog.objects.filter(id=log_id).update(
             status=OpenDataSyncLog.STATUS_ERROR, message=str(e)[:1000], finished_at=timezone.now())
     finally:
+        _DATA_SYNC_ALIVE.discard(log_id)
         db_connection.close()
 
 
@@ -6219,6 +6909,7 @@ def data_sync(request):
     from django.db import connection
     from shop.models import OpenDataSyncLog
 
+    _data_sync_close_orphans()
     with connection.cursor() as cursor:
         cursor.execute(
             '''
@@ -6260,6 +6951,7 @@ def data_sync_start(request):
     table = request.POST.get('table', '').strip()
     if not table or not table.replace('_', '').isalnum():
         return JsonResponse({'error': 'Хүснэгтийн нэр буруу'}, status=400)
+    _data_sync_close_orphans()
     running = OpenDataSyncLog.objects.filter(
         table_name=table, status=OpenDataSyncLog.STATUS_RUNNING, started_at__gte=timezone.now() - _td(minutes=30)).first()
     if running:
@@ -6278,6 +6970,7 @@ def data_sync_status(request):
     if not request.user.is_superuser:
         return JsonResponse({'error': 'forbidden'}, status=403)
     ids = [int(i) for i in request.GET.get('ids', '').split(',') if i.isdigit()]
+    _data_sync_close_orphans()
     logs = OpenDataSyncLog.objects.filter(id__in=ids).select_related('user')
     return JsonResponse({'logs': [_data_sync_log_json(l) for l in logs]})
 
@@ -6501,3 +7194,642 @@ def unloading_export(request):
 def money_mn(value):
     """1234567 -> '1,234,567₮' (мессежид)."""
     return f'{Decimal(value or 0):,.0f}₮'
+
+
+# ---------------------------------------------------------------------------
+# Импортын захиалга (Гадаад харилцаа) ба Замын мэдээ
+# ---------------------------------------------------------------------------
+
+@login_required
+def import_orders(request):
+    """Импортын захиалгууд (чингэлгүүд) - Гадаад харилцааны менежер бүртгэж засна."""
+    from django.contrib import messages
+    from shop.access import forbidden_response
+    from shop.models import ImportShipment
+    from shop.services import imports as svc
+
+    if request.method == 'POST' and request.POST.get('action') == 'create':
+        if not svc.can_edit(request):
+            return forbidden_response(request)
+        shipment = ImportShipment.objects.create(code=svc.next_code(), created_by=request.user, updated_by=request.user)
+        messages.success(request, f'{shipment.code} захиалга үүслээ. Нийлүүлэгчээ нэмнэ үү.')
+        return redirect('shop:import_shipment', pk=shipment.pk)
+
+    show = request.GET.get('show', 'active')
+    shipments = svc.prefetched_shipments()
+    if show == 'active':
+        shipments = shipments.filter(arrival_actual__isnull=True)
+    shipments = [svc.decorate(s) for s in shipments]
+    for shipment in shipments:
+        shipment.timeline = svc.tracking_timeline(shipment, full=False)  # ачигдсанаас хойшх зам, хоног
+    paid_totals = {}  # жагсаалтын нийт шилжүүлсэн дүн валютаар
+    tax_total = sum(shipment.tax['total'] for shipment in shipments)  # гааль + НӨАТ, төгрөгөөр
+    for shipment in shipments:
+        for currency, amount in shipment.paid_totals:
+            paid_totals[currency] = paid_totals.get(currency, 0) + amount
+    return render(request, 'shop/import_orders.html', {
+        'active_page': 'import_orders', 'shipments': shipments, 'show': show, 'paid_totals': sorted(paid_totals.items()), 'tax_total': tax_total,
+        'editable': svc.can_edit(request), 'step_labels': svc.STEP_LABELS,
+    })
+
+
+@login_required
+def import_shipment(request, pk):
+    """Нэг чингэлгийн дэлгэрэнгүй. Засах эрхгүй (захирал) бол зөвхөн харна; ХТ-д нээгдэхгүй (Замын мэдээ л)."""
+    from django.contrib import messages
+    from django.shortcuts import get_object_or_404
+    from shop.access import forbidden_response
+    from shop.models import ImportFreightCost, ImportShipment, ImportSupplierOrder
+    from shop.services import imports as svc
+
+    if not svc.can_view_full(request):
+        return forbidden_response(request)
+    editable = svc.can_edit(request)
+    shipment = get_object_or_404(ImportShipment, pk=pk)
+
+    if request.method == 'POST':
+        if not editable:
+            return forbidden_response(request)
+        if request.POST.get('action') == 'delete_shipment':
+            code = shipment.code
+            svc.delete_with_files(shipment=shipment)
+            messages.success(request, f'{code} захиалгыг устгалаа.')
+            return redirect('shop:import_orders')
+        for warning in svc.save_shipment(shipment, request.POST, request.FILES, request.user):
+            messages.warning(request, warning)
+        messages.success(request, 'Хадгаллаа.')
+        return redirect(f"{reverse('shop:import_shipment', args=[shipment.pk])}{request.POST.get('anchor', '')}")
+
+    shipment = svc.decorate(svc.prefetched_shipments().get(pk=pk))
+    orders = list(shipment.supplier_orders.all())
+    catalog = svc.item_catalog() if editable else {}
+    supplier_items = svc.supplier_items([o.supplier_name for o in orders]) if editable else {}
+    for order in orders:
+        order.suggested = supplier_items.get(order.supplier_name, [])
+        preferred = set(order.suggested)
+        order.other_items = [n for n in catalog if n not in preferred]
+    return render(request, 'shop/import_shipment.html', {
+        'active_page': 'import_orders' if editable else 'import_tracking',
+        'shipment': shipment, 'orders': orders, 'editable': editable,
+        'transit_points': list(shipment.transit_points.all()),
+        'freight_costs': list(shipment.freight_costs.all()),
+        'size_choices': ImportShipment.SIZE_CHOICES, 'pay_choices': ImportSupplierOrder.PAY_CHOICES,
+        'currency_choices': [c for c, _ in ImportSupplierOrder.CURRENCY_CHOICES],
+        'measures': svc.MEASURES, 'weight_measures': sorted(svc.WEIGHT_MEASURES),
+        'suppliers': svc.suppliers() if editable else [], 'carriers': svc.carriers() if editable else [],
+        'transport_modes': svc.transport_modes() if editable else [],
+        'catalog': catalog,
+        'default_duty': svc.DEFAULT_DUTY_RATE, 'default_vat': svc.DEFAULT_VAT_RATE,
+        'freight_json': {'total': float(shipment.freight_total), 'currency': shipment.freight_currency},
+        'kind_initial': ImportFreightCost.KIND_INITIAL,
+        'max_attachment_mb': svc.MAX_ATTACHMENT_MB, 'max_attachments': svc.MAX_ATTACHMENTS,
+        'today': timezone.localdate(),
+    })
+
+
+@login_required
+def import_tracking(request):
+    """Замын мэдээ - замд яваа чингэлгүүд. Үнэ/өртөг/төлбөрийг зөвхөн дэлгэрэнгүй үзэх эрхтэй хүн харна."""
+    from shop.services import imports as svc
+
+    full = svc.can_view_full(request)
+    shipments = svc.tracking_shipments(full=full)
+    paid_totals = {}  # харагдаж буй чингэлгүүдийн нийт шилжүүлсэн дүн валютаар
+    tax_total = sum(shipment.tax['total'] for shipment in shipments)  # гааль + НӨАТ, төгрөгөөр
+    for shipment in shipments:
+        for currency, amount in shipment.paid_totals:
+            paid_totals[currency] = paid_totals.get(currency, 0) + amount
+    return render(request, 'shop/import_tracking.html', {
+        'active_page': 'import_tracking', 'shipments': shipments, 'paid_totals': sorted(paid_totals.items()), 'tax_total': tax_total,
+        'full': full, 'recent_days': svc.RECENT_ARRIVED_DAYS,
+    })
+
+
+@login_required
+def import_receipt(request, pk):
+    """Төлбөрийн баримтын зураг - /media/-аар нийтэд нээхгүй, эрх шалгаж үзүүлнэ."""
+    from django.http import FileResponse, Http404
+    from django.shortcuts import get_object_or_404
+    from shop.access import forbidden_response
+    from shop.models import ImportPayment
+    from shop.services import imports as svc
+
+    if not svc.can_view_full(request):
+        return forbidden_response(request)
+    payment = get_object_or_404(ImportPayment, pk=pk)
+    if not payment.receipt:
+        raise Http404
+    return FileResponse(payment.receipt.open('rb'))
+
+
+@login_required
+def import_attachment(request, pk):
+    """Үе шатын хавсралт - эрх шалгаж, анхны нэрээр нь үзүүлнэ."""
+    from django.http import FileResponse
+    from django.shortcuts import get_object_or_404
+    from shop.access import forbidden_response
+    from shop.models import ImportAttachment
+    from shop.services import imports as svc
+
+    if not svc.can_view_full(request):
+        return forbidden_response(request)
+    attachment = get_object_or_404(ImportAttachment, pk=pk)
+    return FileResponse(attachment.file.open('rb'), filename=attachment.original_name or None,
+                        as_attachment=request.GET.get('download') == '1')
+
+
+# ---------------------------------------------------------------------------
+# Түгээлтийн машин - харуул машин гарах/ирэх цагийг бүртгэнэ (том товчтой, хялбар маягт)
+# ---------------------------------------------------------------------------
+
+_WEEKDAYS_MN = ['Даваа', 'Мягмар', 'Лхагва', 'Пүрэв', 'Баасан', 'Бямба', 'Ням']
+
+
+def _delivery_date(value):
+    try:
+        return datetime.strptime(value or '', '%Y-%m-%d').date()
+    except ValueError:
+        return timezone.localdate()
+
+
+def _parse_hhmm(value):
+    try:
+        return datetime.strptime((value or '').strip(), '%H:%M').time()
+    except ValueError:
+        return None
+
+
+def _small_int(value):
+    try:
+        return min(max(int(value), 0), 9999)
+    except (TypeError, ValueError):
+        return None
+
+
+@login_required
+def delivery_trips(request):
+    """Түгээлтийн машины өдрийн бүртгэл: жолооч, туслах, машин, гарсан цаг, харилцагчийн тоо, ирсэн цаг, үлдэгдэл."""
+    from shop.models import DeliveryTrip
+    from shop.services import delivery_trips as svc
+
+    day = _delivery_date(request.GET.get('date'))
+    trips = list(DeliveryTrip.objects.filter(date=day))
+    today = timezone.localdate()
+
+    def hhmm(t):
+        return t.strftime('%H:%M') if t else ''
+
+    trips_js = {str(t.pk): {
+        'id': t.pk, 'driver': t.driver_name, 'helper': t.helper_name, 'plate': t.vehicle_plate,
+        'depart': hhmm(t.depart_time), 'customers': t.customer_count, 'return': hhmm(t.return_time),
+        'returned': t.returned_count, 'note': t.remainder_note,
+    } for t in trips}
+    context = {
+        'active_page': 'delivery_trips',
+        'day': day,
+        'weekday': _WEEKDAYS_MN[day.weekday()],
+        'is_today': day == today,
+        'prev_day': day - timedelta(days=1),
+        'next_day': day + timedelta(days=1),
+        'today': today,
+        'trips': trips,
+        'out_count': sum(1 for t in trips if not t.return_time),
+        'delivery_js': {
+            'drivers': svc.people_options(svc.DRIVER_POSITION, 'driver_name'),
+            'helpers': svc.people_options(svc.HELPER_POSITION, 'helper_name'),
+            'vehicles': svc.vehicle_options(),
+            'trips': trips_js,
+            # Календарьт бүртгэлтэй өдрүүдийг тэмдэглэнэ
+            'trip_dates': [d.isoformat() for d in DeliveryTrip.objects.filter(date__gte=day - timedelta(days=400))
+                           .order_by('date').values_list('date', flat=True).distinct()],
+            'day': day.isoformat(),
+            'today': today.isoformat(),
+        },
+    }
+    return render(request, 'shop/delivery_trips.html', context)
+
+
+@login_required
+def delivery_trips_save(request):
+    """Түгээлтийн машины бүртгэл хадгалах / устгах (POST)."""
+    from django.contrib import messages
+    from shop.models import DeliveryTrip
+    from shop.services import delivery_trips as svc
+
+    if request.method != 'POST':
+        return redirect('shop:delivery_trips')
+    trip = None
+    if request.POST.get('id'):
+        trip = DeliveryTrip.objects.filter(pk=_small_int(request.POST['id']) or 0).first()
+    day = trip.date if trip else _delivery_date(request.POST.get('date'))
+    back = f"{reverse('shop:delivery_trips')}?date={day:%Y-%m-%d}"
+
+    if request.POST.get('action') == 'delete':
+        if trip:
+            trip.delete()
+            messages.success(request, f'{trip.vehicle_plate} машины бүртгэлийг устгалаа.')
+        return redirect(back)
+
+    driver = request.POST.get('driver', '').strip()[:100]
+    helper = request.POST.get('helper', '').strip()[:100]
+    if helper == 'Туслахгүй':
+        helper = ''
+    plate = svc.normalize_plate(request.POST.get('plate'))
+    if not driver or not plate:
+        messages.error(request, 'Жолоочийн нэр болон машины дугаарыг заавал бөглөнө үү.')
+        return redirect(back)
+
+    trip = trip or DeliveryTrip(date=day, created_by=request.user)
+    trip.driver_name = driver
+    trip.driver_code = svc.code_for_name(svc.people_options(svc.DRIVER_POSITION, 'driver_name'), driver)
+    trip.helper_name = helper
+    trip.helper_code = svc.code_for_name(svc.people_options(svc.HELPER_POSITION, 'helper_name'), helper) if helper else ''
+    trip.vehicle_plate = plate
+    trip.depart_time = _parse_hhmm(request.POST.get('depart_time'))
+    trip.customer_count = _small_int(request.POST.get('customer_count'))
+    trip.return_time = _parse_hhmm(request.POST.get('return_time'))
+    trip.returned_count = _small_int(request.POST.get('returned_count'))
+    trip.remainder_note = request.POST.get('remainder_note', '').strip()[:300]
+    trip.save()
+    messages.success(request, f'{plate} · {driver} хадгалагдлаа.')
+    return redirect(back)
+
+
+def _delivery_list_context(request):
+    from shop.services import delivery_trips as svc
+    filters = svc.list_filters(request.GET)
+    return filters, svc.list_data(filters)
+
+
+@login_required
+def delivery_trips_list(request):
+    """Түгээлтийн машины жагсаалт (нягтлан): хугацаа, жолооч, туслах, машин, төлөвөөр шүүж, нэгтгэлтэй харна."""
+    from shop.services import delivery_trips as svc
+
+    filters, data = _delivery_list_context(request)
+    today = timezone.localdate()
+    week_start = today - timedelta(days=today.weekday())
+    prev_month_end = today.replace(day=1) - timedelta(days=1)
+    periods = [
+        ('Өнөөдөр', today, today),
+        ('Өчигдөр', today - timedelta(days=1), today - timedelta(days=1)),
+        ('Энэ 7 хоног', week_start, today),
+        ('Энэ сар', today.replace(day=1), today),
+        ('Өмнөх сар', prev_month_end.replace(day=1), prev_month_end),
+    ]
+    query = request.GET.copy()
+    context = {
+        'active_page': 'delivery_trips',
+        **filters, **data, **svc.filter_choices(),
+        'status_choices': svc.STATUS_CHOICES,
+        'periods': [{'label': label, 'from': f, 'to': t,
+                     'on': f == filters['date_from'] and t == filters['date_to']} for label, f, t in periods],
+        'export_query': query.urlencode(),
+        'printed_at': timezone.localtime(),
+    }
+    return render(request, 'shop/delivery_trips_list.html', context)
+
+
+@login_required
+def delivery_trips_export(request):
+    """Түгээлтийн машины жагсаалт Excel-ээр (шүүлтээрээ)."""
+    import openpyxl
+    from django.http import HttpResponse
+    from openpyxl.styles import Border, Font, PatternFill, Side
+
+    filters, data = _delivery_list_context(request)
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = 'Түгээлт'
+    ws.cell(row=1, column=1, value=f"Түгээлтийн машины бүртгэл {filters['date_from']:%Y.%m.%d} - {filters['date_to']:%Y.%m.%d}").font = Font(bold=True, size=13)
+    head = ['№', 'Огноо', 'Гараг', 'Жолооч', 'Туслах', 'Машины дугаар', 'Гарсан цаг', 'Харилцагч', 'Ирсэн цаг',
+            'Явсан хугацаа', 'Буцаж ирсэн айл', 'Шалтгаан']
+    side = Side(style='thin', color='999999')
+    border = Border(left=side, right=side, top=side, bottom=side)
+    fill = PatternFill('solid', fgColor='E5E7EB')
+    for col, label in enumerate(head, 1):
+        c = ws.cell(row=3, column=col, value=label)
+        c.font, c.fill, c.border = Font(bold=True), fill, border
+    r = 3
+    for i, row in enumerate(data['rows'], 1):
+        t = row['trip']
+        r += 1
+        values = [i, t.date, _WEEKDAYS_MN[t.date.weekday()], t.driver_name, t.helper_name or 'Туслахгүй', t.vehicle_plate,
+                  t.depart_time.strftime('%H:%M') if t.depart_time else '', t.customer_count,
+                  t.return_time.strftime('%H:%M') if t.return_time else '', row['duration'], t.returned_count, t.remainder_note]
+        for col, v in enumerate(values, 1):
+            c = ws.cell(row=r, column=col, value=v)
+            c.border = border
+            if col == 2:
+                c.number_format = 'yyyy.mm.dd'
+    r += 1
+    totals = data['totals']
+    for col, v in ((4, 'Нийт'), (6, f"{totals['trips']} удаа"), (8, totals['customers']), (11, totals['returned'])):
+        c = ws.cell(row=r, column=col, value=v)
+        c.font, c.border = Font(bold=True), border
+    for col, width in enumerate([5, 12, 9, 18, 18, 14, 11, 11, 11, 12, 15, 40], 1):
+        ws.column_dimensions[openpyxl.utils.get_column_letter(col)].width = width
+
+    ws2 = wb.create_sheet('Жолоочоор')
+    for col, label in enumerate(['Жолооч', 'Өдөр', 'Удаа', 'Харилцагч', 'Буцаж ирсэн айл', 'Хүргэсэн'], 1):
+        c = ws2.cell(row=1, column=col, value=label)
+        c.font, c.fill, c.border = Font(bold=True), fill, border
+    for i, d in enumerate(data['by_driver'], 2):
+        for col, v in enumerate([d['name'], d['days'], d['trips'], d['customers'], d['returned'], d['delivered']], 1):
+            ws2.cell(row=i, column=col, value=v).border = border
+    ws2.column_dimensions['A'].width = 20
+    for letter in 'BCDEF':
+        ws2.column_dimensions[letter].width = 14
+
+    response = HttpResponse(content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    response['Content-Disposition'] = f"attachment; filename=\"delivery_trips_{filters['date_from']:%Y%m%d}_{filters['date_to']:%Y%m%d}.xlsx\""
+    wb.save(response)
+    return response
+
+
+# ---------------------------------------------------------------------------
+# Хангамж -> Тээврийн хэрэгсэл: Шатахуун (Petrovis картын гүйлгээ, сарын үлдэгдэл), Сэлбэг хэрэгсэл
+# ---------------------------------------------------------------------------
+
+def _fuel_row_json(row):
+    t, m = row['t'], row['m']
+    return {
+        'id': t.pk, 'amount': float(-t.amount), 'date': timezone.localtime(t.txn_at).date().isoformat(),
+        'fuel_type': row.get('fuel_type') or '', 'unit_price': float(row['unit_price']) if row.get('unit_price') else None,
+        'quantity_saved': t.quantity is not None and t.unit_price is not None,
+        'plate': t.vehicle_plate, 'km': t.odometer_km,
+        'prev_km': m.get('prev_km'), 'distance': m.get('distance'), 'per100': m.get('per100'),
+        'cash': t.is_cash, 'time': timezone.localtime(t.txn_at).strftime('%H:%M'), 'station': t.merchant,
+        'driver': t.driver_name, 'personal': bool(row.get('personal')), 'note': row.get('note') or '',
+        'quantity': float(t.quantity) if t.quantity is not None else None,
+    }
+
+
+_VEHICLE_TABS = ('fuel', 'parts', 'reports')
+
+
+def _vehicle_tab_data(request, tab):
+    """Таб бүрийн шүүлт ба өгөгдөл - хуудас, хэвлэх, Excel гурав хоёулаа үүнийг ашиглана."""
+    from shop.services import fuel, vehicle_parts as parts, vehicles as vh
+
+    if tab == 'fuel':
+        f = fuel.fuel_filters(request.GET)
+        return f, None
+    if tab == 'parts':
+        return parts.part_filters(request.GET), None
+    today = timezone.localdate()
+    d_from, d_to = vh.period(request.GET, today.replace(month=1, day=1), today)
+    f = {'date_from': d_from, 'date_to': d_to, 'report': request.GET.get('report', 'vehicle_summary'),
+         'plate': request.GET.get('plate', ''), 'metric': request.GET.get('metric', 'total')}
+    return f, vh.build_report(f['report'], d_from, d_to, request.GET)
+
+
+@login_required
+def vehicles(request):
+    """Тээврийн хэрэгсэл: Шатахуун (картын гүйлгээ, үлдэгдлийн тулгалт, машин/жолооч/км), Сэлбэг хэрэгсэл
+    (засвар үйлчилгээний бүртгэл), Тайлан (машинаар, сараар, жолоочоор г.м. - хэвлэх, Excel)."""
+    from shop.models import FuelTransaction, VehiclePartRecord
+    from shop.services import fuel, vehicle_parts as parts, vehicles as vh
+
+    tab = request.GET.get('tab') if request.GET.get('tab') in _VEHICLE_TABS else 'fuel'
+    f, report = _vehicle_tab_data(request, tab)
+    query = request.GET.copy()
+    query.pop('tab', None)
+    context = {
+        'active_page': 'vehicles', 'tab': tab, 'f': f, 'query': query.urlencode(),
+        'presets': [{'label': label, 'from': a, 'to': b, 'on': a == f['date_from'] and b == f['date_to']}
+                    for label, a, b in vh.period_presets()],
+        'period_label': vh.period_label(f['date_from'], f['date_to']),
+        'vehicle_options': vh.vehicle_options(),
+        'driver_options': vh.driver_options(),
+        'plate_specials': [(vh.OUR_PLATES, 'Манай машинууд'), (vh.PERSONAL, 'Хувийн машин'), (vh.NO_PLATE, 'Машин сонгоогүй')],
+    }
+    if tab == 'fuel':
+        data = fuel.fuel_data(f)
+        months = fuel.available_months()
+        stations = sorted({m.split(',')[-1].strip() for m in FuelTransaction.objects.filter(txn_type=FuelTransaction.PURCHASE)
+                           .values_list('merchant', flat=True).distinct() if m})
+        context.update({
+            **data, 'months': months, 'status_choices': fuel.STATUS_CHOICES,
+            'selected_month': vh.single_month(f['date_from'], f['date_to']),
+            'fuel_types': list(fuel.type_price_history()), 'stations': stations,
+            'fuel_drivers': sorted(set(FuelTransaction.objects.exclude(driver_name='').values_list('driver_name', flat=True))),
+            'fuel_js': {
+                'rows': {str(r['t'].pk): _fuel_row_json(r) for r in data['rows'] if r['t'].is_purchase},
+                'type_prices': fuel.type_price_history(),
+                'ours': [v['plate'] for v in context['vehicle_options'] if v['ours']],
+            },
+        })
+    elif tab == 'parts':
+        data = parts.part_data(f)
+        context.update({
+            **data, 'categories': parts.category_options(), 'suppliers': parts.supplier_options(),
+            'part_drivers': sorted(set(VehiclePartRecord.objects.exclude(driver_name='').values_list('driver_name', flat=True))),
+            'today': timezone.localdate(),
+            'parts_js': {str(p.pk): {
+                'id': p.pk, 'date': p.date.isoformat(), 'plate': p.vehicle_plate, 'category': p.category,
+                'description': p.description, 'quantity': float(p.quantity), 'unit_price': float(p.unit_price),
+                'driver': p.driver_name, 'km': p.odometer_km, 'supplier': p.supplier, 'note': p.note,
+            } for p in data['rows']},
+        })
+    else:
+        context.update({'report': vh.render_report(report), 'reports': vh.REPORTS, 'metrics': vh.MONTHLY_METRICS})
+    return render(request, 'shop/vehicles.html', context)
+
+
+@login_required
+def vehicles_export(request):
+    """Тээврийн хэрэгслийн хуудасны (шүүлтээрээ) Excel, хэвлэх хувилбар: ?tab=fuel|parts|reports&format=xlsx|print"""
+    from shop.services import fuel, vehicle_parts as parts, vehicles as vh
+
+    tab = request.GET.get('tab') if request.GET.get('tab') in _VEHICLE_TABS else 'fuel'
+    f, report = _vehicle_tab_data(request, tab)
+    if tab == 'fuel' and request.GET.get('layout') == 'vehicle':
+        # Машины тайлан: шүүсэн шатахууныг машин бүрийн блокоор (Машины_Тайлан.xlsx загвар)
+        matrix = vh.fuel_matrix(fuel.fuel_data(f)['rows'], f['date_from'], f['date_to'])
+        meta = [('Хугацаа', vh.period_label(f['date_from'], f['date_to']))] + fuel.fuel_filter_meta(f)
+        if request.GET.get('format') == 'print':
+            return render(request, 'shop/vehicles_matrix_print.html', {
+                'm': matrix, 'meta': meta, 'cols': vh.MATRIX_COLS, 'printed_at': timezone.localtime(),
+                'printed_by': request.user.get_full_name() or request.user.username})
+        return vh.fuel_matrix_excel(matrix, meta, f"Машины_Тайлан_{f['date_from']:%Y-%m-%d}_to_{f['date_to']:%Y-%m-%d}")
+    if tab == 'fuel':
+        report = fuel.export_report(f)
+    elif tab == 'parts':
+        report = parts.export_report(f)
+    name = {'fuel': 'fuel', 'parts': 'parts'}.get(tab, f"report_{report.get('kind', '')}")
+    if request.GET.get('format') == 'print':
+        return render(request, 'shop/vehicles_print.html', {'report': vh.render_report(report), 'printed_at': timezone.localtime(),
+                                                            'printed_by': request.user.get_full_name() or request.user.username})
+    return vh.excel_response(report, f"{name}_{f['date_from']:%Y%m%d}_{f['date_to']:%Y%m%d}")
+
+
+@login_required
+def vehicles_fuel_cash_save(request):
+    """Бэлэн (кассаас төлсөн) шатахуун нэмэх / засах / устгах (POST маягт)."""
+    from django.contrib import messages
+    from shop.models import FuelTransaction
+    from shop.services import fuel
+
+    back = request.POST.get('back') or reverse('shop:vehicles')
+    if not back.startswith('/'):
+        back = reverse('shop:vehicles')
+    if request.method != 'POST':
+        return redirect(back)
+    txn = None
+    if str(request.POST.get('id', '')).isdigit():
+        txn = FuelTransaction.objects.filter(pk=int(request.POST['id']), card_no=FuelTransaction.CASH_CARD).first()
+        if not txn:
+            messages.error(request, 'Бэлэн шатахууны бүртгэл олдсонгүй.')
+            return redirect(back)
+    if request.POST.get('action') == 'delete' and txn:
+        txn.delete()
+        messages.success(request, f'{timezone.localtime(txn.txn_at):%Y.%m.%d} · бэлэн {-txn.amount:,.0f}₮ устгагдлаа.')
+        return redirect(back)
+    saved, error = fuel.save_cash(request.POST, request.user, txn)
+    if error:
+        messages.error(request, error)
+    else:
+        messages.success(request, f'Бэлэн шатахуун {-saved.amount:,.0f}₮ хадгалагдлаа.')
+    return redirect(back)
+
+
+@login_required
+def vehicles_parts_save(request):
+    """Сэлбэг, засварын бүртгэл нэмэх (олон мөр) / засах / устгах (POST)."""
+    from django.contrib import messages
+    from shop.models import VehiclePartRecord
+    from shop.services import vehicle_parts as parts
+
+    back = request.POST.get('back') or f"{reverse('shop:vehicles')}?tab=parts"
+    if not back.startswith('/'):
+        back = f"{reverse('shop:vehicles')}?tab=parts"
+    if request.method != 'POST':
+        return redirect(back)
+    record = None
+    if str(request.POST.get('id', '')).isdigit():
+        record = VehiclePartRecord.objects.filter(pk=int(request.POST['id'])).first()
+        if not record:
+            messages.error(request, 'Бүртгэл олдсонгүй.')
+            return redirect(back)
+    if request.POST.get('action') == 'delete' and record:
+        record.delete()
+        messages.success(request, f'{record.date:%Y.%m.%d} · {record.description} устгагдлаа.')
+        return redirect(back)
+    count, error = parts.save_entry(request.POST, request.user, record)
+    if error:
+        messages.error(request, error)
+    else:
+        messages.success(request, 'Хадгалагдлаа.' if record and count == 1 else f'{count} мөр хадгалагдлаа.')
+    return redirect(back)
+
+
+@login_required
+def vehicles_parts_import(request):
+    """Сэлбэгийн бүртгэлийн Excel импорт (хуучин "Машины бүртгэл" загвар)."""
+    from django.contrib import messages
+    from shop.services import vehicle_parts as parts
+
+    url = f"{reverse('shop:vehicles')}?tab=parts"
+    if request.method != 'POST':
+        return redirect(url)
+    for f in request.FILES.getlist('files'):
+        try:
+            res = parts.import_records(parts.read_workbook(f), request.user)
+        except parts.PartsImportError as exc:
+            messages.error(request, f'{f.name}: {exc}')
+            continue
+        msg = f"{f.name}: {res['created']} мөр нэмэгдлээ"
+        if res['skipped']:
+            msg += f", {res['skipped']} нь өмнө орсон тул алгаслаа"
+        if res['invalid']:
+            msg += f", {res['invalid']} мөр огноо/тайлбаргүй тул орсонгүй"
+        messages.success(request, msg + '.')
+        if res['future']:
+            messages.warning(request, f"{res['future']} мөр ирээдүйн огноотой байна - шалгаж засна уу.")
+    return redirect(url)
+
+
+@login_required
+def vehicles_fuel_import(request):
+    """Шатахууны картын гүйлгээний жагсаалт ба/эсвэл сарын үлдэгдлийн Excel импорт (POST, олон файл)."""
+    from django.contrib import messages
+    from shop.services import fuel as svc
+
+    if request.method != 'POST':
+        return redirect('shop:vehicles')
+    files = request.FILES.getlist('files')
+    if not files:
+        messages.error(request, 'Excel файл сонгоно уу.')
+        return redirect('shop:vehicles')
+    parsed = []
+    for f in files:
+        try:
+            parsed.append((f.name, *svc.read_workbook(f)))
+        except svc.FuelImportError as exc:
+            messages.error(request, f'{f.name}: {exc}')
+    if not parsed:
+        return redirect('shop:vehicles')
+
+    target_month = None
+    txn_months = []
+    for name, kind, records in parsed:
+        if kind == 'transactions':
+            res = svc.import_transactions(records, request.user)
+            txn_months += res['months']
+            msg = f"{name}: {res['created']} гүйлгээ нэмэгдлээ"
+            if res['skipped']:
+                msg += f", {res['skipped']} нь өмнө орсон тул алгаслаа"
+            if res['invalid']:
+                msg += f", {res['invalid']} мөр огноо/дүнгүй тул орсонгүй"
+            messages.success(request, msg + '.')
+    txn_months = sorted(set(txn_months))
+    balance_month = svc.parse_month(request.POST.get('balance_month'))
+    for name, kind, records in parsed:
+        if kind != 'balance':
+            continue
+        # Сарыг сонгоогүй бол гүйлгээтэй тулгаж таарсан сарыг олно
+        month = balance_month or svc.guess_balance_month(records) or (txn_months[0] if len(txn_months) == 1 else None)
+        if not month:
+            messages.error(request, f'{name}: үлдэгдэл аль сарынх болохыг тодорхойлж чадсангүй - тухайн сарын '
+                                    'гүйлгээг хамт оруулах эсвэл "Үлдэгдлийн сар"-ыг сонгоно уу.')
+            continue
+        res = svc.import_balances(records, month, request.user)
+        target_month = month
+        messages.success(request, f"{name}: {month:%Y-%m} сарын үлдэгдэл - {res['created']} карт нэмэгдэж, "
+                                  f"{res['updated']} шинэчлэгдлээ.")
+    target_month = target_month or (txn_months[-1] if txn_months else None)
+    url = reverse('shop:vehicles')
+    return redirect(f'{url}?month={target_month:%Y-%m}' if target_month else url)
+
+
+@login_required
+def vehicles_fuel_save(request):
+    """Шатахууны гүйлгээний гараас оруулах утга (төрөл, үнэ, хэмжээ, машин, жолооч, км) - JSON POST.
+    Хариуд нь хадгалсан мөр болон тухайн машинуудын км/100км-ийн тооцоог буцаана."""
+    import json
+    from shop.models import FuelTransaction
+    from shop.services import fuel as svc
+
+    if request.method != 'POST':
+        return JsonResponse({'ok': False, 'error': 'POST'}, status=405)
+    try:
+        payload = json.loads(request.body or '{}')
+    except ValueError:
+        return JsonResponse({'ok': False, 'error': 'Буруу хүсэлт'}, status=400)
+    txn_id = str(payload.get('id', ''))
+    txn = FuelTransaction.objects.filter(pk=int(txn_id)).first() if txn_id.isdigit() else None
+    if not txn:
+        return JsonResponse({'ok': False, 'error': 'Гүйлгээ олдсонгүй'}, status=404)
+    old_plate = txn.vehicle_plate
+    error = svc.save_row(txn, payload, request.user)
+    if error:
+        return JsonResponse({'ok': False, 'error': error}, status=400)
+    metrics = svc.plate_metrics({old_plate, txn.vehicle_plate})
+    return JsonResponse({
+        'ok': True,
+        'row': {'id': txn.pk, 'fuel_type': txn.fuel_type, 'unit_price': float(txn.unit_price) if txn.unit_price else None,
+                'quantity': float(txn.quantity) if txn.quantity is not None else None, 'plate': txn.vehicle_plate,
+                'driver_name': txn.driver_name, 'km': txn.odometer_km},
+        'metrics': {str(k): v for k, v in metrics.items()},
+    })

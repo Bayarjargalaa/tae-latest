@@ -48,3 +48,7 @@ htmlcov/
 # Migrations (optional - uncomment to ignore)
 # */migrations/*.py
 # !*/migrations/__init__.py
+
+# SSL сертификат, хувийн түлхүүр - хэзээ ч commit хийхгүй
+/certs
+/docs/*.zip

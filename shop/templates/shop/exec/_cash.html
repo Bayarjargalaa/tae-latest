@@ -1,0 +1,72 @@
+{% load humanize exec_filters %}
+{% with k=data.kpis %}
+<div class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3 mb-4">
+    {% with opening=k.opening|mnt_short bank=k.bank|mnt_short cashbox=k.cashbox|mnt_short fx=k.fx|mnt_short transfer=k.transfer|mnt_short burn=k.burn|mnt_short %}
+    {% include 'shop/exec/_kpi.html' with label='Мөнгөн хөрөнгө' value=k.closing|mnt_short delta=k.change sub='Эхэнд '|add:opening %}
+    {% include 'shop/exec/_kpi.html' with label='Орлого' value=k.inflow|mnt_short sub='Данс хоорондын шилжүүлэггүй' %}
+    {% include 'shop/exec/_kpi.html' with label='Зарлага' value=k.outflow|mnt_short sub='Шилжүүлэг '|add:transfer|add:' тусад' %}
+    {% include 'shop/exec/_kpi.html' with label='Цэвэр мөнгөн урсгал' value=k.net|mnt_short sub='Орлого - зарлага' %}
+    {% include 'shop/exec/_kpi.html' with label='Банк / касс' value=bank|add:' / '|add:cashbox sub='Валютаар '|add:fx %}
+    {% include 'shop/exec/_kpi.html' with label='Мөнгөний хүрэлцээ' value=k.runway|floatformat:1|add:' сар' sub='Сарын дундаж зарлага '|add:burn hint='Одоогийн үлдэгдэл сүүлийн 3 сарын дундаж зарлагыг хэдэн сар даах вэ' %}
+    {% endwith %}
+</div>
+
+<section class="bg-white rounded-xl border border-gray-100 shadow-sm p-4 mb-4">
+    <h2 class="font-semibold text-gray-800">📈 Өдөр бүрийн мөнгөн хөрөнгийн үлдэгдэл</h2>
+    <p class="text-xs text-gray-500 mb-2">Касс, банкны бүх дансны нийт (валютыг төгрөгөөр).</p>
+    <div class="h-56"><canvas id="chart-cash" role="img" aria-label="Мөнгөн хөрөнгийн өдөр бүрийн үлдэгдэл"></canvas></div>
+    {{ data.chart|json_script:'data-cash-chart' }}
+</section>
+
+<div class="grid grid-cols-1 xl:grid-cols-2 gap-4 mb-4">
+    <section class="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
+        <h2 class="font-semibold text-gray-800 mb-3">⬇️ Орлого - эх үүсвэрээр</h2>
+        <ul class="space-y-2">
+            {% for f in data.in_cats %}
+            <li class="text-sm">
+                <div class="flex justify-between gap-2"><span class="truncate text-gray-700">{{ f.cat }}</span><span class="tabular-nums shrink-0">{{ f.inflow|mnt_short }}</span></div>
+                <div class="mt-1 h-1.5 rounded-full bg-gray-100 overflow-hidden"><div class="h-full rounded-full bg-[#1baf7a]" style="width: {% widthratio f.inflow k.inflow|default:1 100 %}%"></div></div>
+            </li>
+            {% empty %}<li class="text-sm text-gray-500">Орлого алга.</li>
+            {% endfor %}
+        </ul>
+    </section>
+    <section class="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
+        <h2 class="font-semibold text-gray-800 mb-3">⬆️ Зарлага - зориулалтаар</h2>
+        <ul class="space-y-2">
+            {% for f in data.out_cats %}
+            <li class="text-sm">
+                <div class="flex justify-between gap-2"><span class="truncate text-gray-700">{{ f.cat }}</span><span class="tabular-nums shrink-0">{{ f.outflow|mnt_short }}</span></div>
+                <div class="mt-1 h-1.5 rounded-full bg-gray-100 overflow-hidden"><div class="h-full rounded-full bg-[#eb6834]" style="width: {% widthratio f.outflow k.outflow|default:1 100 %}%"></div></div>
+            </li>
+            {% empty %}<li class="text-sm text-gray-500">Зарлага алга.</li>
+            {% endfor %}
+        </ul>
+        <p class="text-[11px] text-gray-400 mt-3">"(ангилаагүй)" - мөнгөн гүйлгээний урсгалын ангилал сонгоогүй гүйлгээ.</p>
+    </section>
+</div>
+
+<section class="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden mb-4">
+    <h2 class="font-semibold text-gray-800 p-4 pb-2">🏦 Данс тус бүр</h2>
+    <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+            <thead class="bg-gray-50 text-xs text-gray-500">
+                <tr><th class="px-3 py-2 text-left">Данс</th><th class="px-3 py-2 text-left">Валют</th><th class="px-3 py-2 text-right">Эхний</th><th class="px-3 py-2 text-right">Орсон</th><th class="px-3 py-2 text-right">Гарсан</th><th class="px-3 py-2 text-right">Эцсийн</th></tr>
+            </thead>
+            <tbody class="divide-y divide-gray-100">
+                {% for a in data.accounts %}
+                <tr class="hover:bg-gray-50">
+                    <td class="px-3 py-1.5"><div class="truncate max-w-[22rem]" title="{{ a.name }}">{{ a.name }}</div><div class="text-[11px] text-gray-400">{{ a.id }} · {{ a.kind }}</div></td>
+                    <td class="px-3 py-1.5"><span class="text-[11px] font-semibold rounded px-1.5 py-0.5 {% if a.currency == 'MNT' %}bg-gray-100 text-gray-700{% else %}bg-blue-50 text-blue-800{% endif %}">{{ a.currency }}</span></td>
+                    <td class="px-3 py-1.5 text-right tabular-nums">{{ a.opening|floatformat:0|intcomma }}</td>
+                    <td class="px-3 py-1.5 text-right tabular-nums text-green-800">{{ a.debit|floatformat:0|intcomma }}</td>
+                    <td class="px-3 py-1.5 text-right tabular-nums text-red-800">{{ a.credit|floatformat:0|intcomma }}</td>
+                    <td class="px-3 py-1.5 text-right tabular-nums font-semibold">{{ a.closing|floatformat:0|intcomma }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <p class="text-[11px] text-gray-400 px-4 py-2">Данс бүрийн орсон/гарсан дүнд данс хоорондын шилжүүлэг орсон. Валютын дансны дүн төгрөгөөр (журналын дүн).</p>
+</section>
+{% endwith %}

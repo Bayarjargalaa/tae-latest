@@ -1,0 +1,135 @@
+{# Удирдлагын нэгтгэлийн графикууд (Chart.js 4) - идэвхтэй бүлгийн canvas байвал л зурна. #}
+<script>
+(function () {
+    if (!window.Chart) return;
+    // Өнгө: үндсэн цуврал - цэнхэр, харьцуулах - саарал (онцлох нэг, бусдыг бүдэг), өсөлт/бууралт - aqua/улбар шар
+    var C = {blue: '#2a78d6', gray: '#898781', aqua: '#1baf7a', orange: '#eb6834', ink: '#52514e', grid: '#e1e0d9', axis: '#c3c2b7', violet: '#6250d6'};
+    Chart.defaults.font.family = 'system-ui, -apple-system, "Segoe UI", sans-serif';
+    Chart.defaults.color = C.gray;
+    Chart.defaults.plugins.legend.labels.boxWidth = 12;
+    Chart.defaults.plugins.legend.labels.boxHeight = 2;
+
+    var full = new Intl.NumberFormat('mn-MN', {maximumFractionDigits: 0});
+    function short(v) {
+        var a = Math.abs(v), s = v < 0 ? '-' : '';
+        if (a >= 1e9) return s + Number((a / 1e9).toFixed(1)) + ' тэрбум';
+        if (a >= 1e6) return s + (a / 1e6).toFixed(0) + ' сая';
+        if (a >= 1e3) return s + (a / 1e3).toFixed(0) + ' мянга';
+        return s + a.toFixed(0);
+    }
+    function data(id) { var el = document.getElementById(id); return el ? JSON.parse(el.textContent) : null; }
+    function dayLabel(iso) { return iso.slice(5).replace('-', '/'); }
+    var yAxis = {
+        beginAtZero: true, border: {display: false},
+        grid: {color: C.grid, drawTicks: false}, ticks: {callback: short, padding: 6, maxTicksLimit: 6}
+    };
+    var xAxis = {grid: {display: false}, border: {color: C.axis}, ticks: {maxRotation: 0, autoSkipPadding: 12}};
+    var tooltip = {
+        mode: 'index', intersect: false, backgroundColor: '#0b0b0b', padding: 10,
+        callbacks: {label: function (ctx) { return ' ' + ctx.dataset.label + ': ' + full.format(ctx.parsed.y) + '₮'; }}
+    };
+    // Хулганы байрлалын босоо шугам (line график)
+    var crosshair = {
+        id: 'crosshair',
+        afterDraw: function (chart) {
+            var a = chart.tooltip && chart.tooltip.getActiveElements();
+            if (!a || !a.length) return;
+            var x = a[0].element.x, ctx = chart.ctx, area = chart.chartArea;
+            ctx.save(); ctx.strokeStyle = C.axis; ctx.lineWidth = 1;
+            ctx.beginPath(); ctx.moveTo(x, area.top); ctx.lineTo(x, area.bottom); ctx.stroke(); ctx.restore();
+        }
+    };
+    function line(label, values, color, extra) {
+        return Object.assign({label: label, data: values, borderColor: color, backgroundColor: color, borderWidth: 2,
+                              pointRadius: 0, pointHoverRadius: 4, pointHoverBorderWidth: 2, pointHoverBorderColor: '#fff', tension: 0.2}, extra || {});
+    }
+    function lineChart(id, labels, datasets, showLegend) {
+        var el = document.getElementById(id);
+        if (!el) return;
+        new Chart(el, {
+            type: 'line', data: {labels: labels, datasets: datasets}, plugins: [crosshair],
+            options: {
+                maintainAspectRatio: false, interaction: {mode: 'index', intersect: false},
+                scales: {x: xAxis, y: yAxis},
+                plugins: {legend: {display: !!showLegend, position: 'top', align: 'end'}, tooltip: tooltip}
+            }
+        });
+    }
+
+    // Борлуулалт - хуримтлагдсан
+    var s = data('data-sales-chart');
+    if (s) {
+        var sets = [line('Энэ хугацаа', s.current, C.blue)];
+        if (s.compare && s.compare.length) sets.push(line('Харьцуулах хугацаа', s.compare, C.gray, {borderDash: [5, 4]}));
+        if (s.plan && s.plan.length) sets.push(line('Төлөвлөгөөний хурд', s.plan, C.violet, {borderDash: [2, 3], borderWidth: 1.5}));
+        lineChart('chart-sales', s.labels.map(dayLabel), sets, sets.length > 1);
+    }
+
+    // Мөнгөн хөрөнгө - өдрийн үлдэгдэл
+    var c = data('data-cash-chart');
+    if (c) {
+        yAxis.beginAtZero = false;
+        lineChart('chart-cash', c.labels.map(dayLabel), [line('Үлдэгдэл', c.balance, C.blue, {fill: {target: 'origin', above: 'rgba(42,120,214,0.06)'}})]);
+    }
+
+    // Авлага/өглөг - 12 сарын үлдэгдэл
+    var t = data('data-recpay-trend');
+    if (t) {
+        lineChart('chart-recpay', t.map(function (r) { return r.label; }),
+                  [line('Үлдэгдэл', t.map(function (r) { return r.balance; }), C.blue, {pointRadius: 3})]);
+    }
+
+    // Хүний нөөц - ажилтны тоо (шугам), орсон/гарсан (багана) - өөр хэмжүүр тул тусдаа график
+    var hr = data('data-hr-trend');
+    if (hr) {
+        var labels = hr.map(function (r) { return r.label; });
+        var count = {mode: 'index', intersect: false, backgroundColor: '#0b0b0b', padding: 10,
+                     callbacks: {label: function (ctx) { return ' ' + ctx.dataset.label + ': ' + ctx.parsed.y + ' хүн'; }}};
+        var intAxis = Object.assign({}, yAxis, {ticks: {precision: 0, padding: 6, maxTicksLimit: 6}});
+        var hc = document.getElementById('chart-hr-headcount');
+        if (hc) new Chart(hc, {
+            type: 'line', plugins: [crosshair],
+            data: {labels: labels, datasets: [line('Ажилтан', hr.map(function (r) { return r.headcount; }), C.blue, {pointRadius: 3})]},
+            options: {maintainAspectRatio: false, interaction: {mode: 'index', intersect: false},
+                      scales: {x: xAxis, y: Object.assign({}, intAxis, {beginAtZero: false})}, plugins: {legend: {display: false}, tooltip: count}}
+        });
+        var fl = document.getElementById('chart-hr-flow');
+        if (fl) new Chart(fl, {
+            type: 'bar',
+            data: {labels: labels, datasets: [
+                {label: 'Орсон', data: hr.map(function (r) { return r.hires; }), backgroundColor: C.aqua, borderRadius: 4, borderSkipped: 'start', maxBarThickness: 18},
+                {label: 'Гарсан', data: hr.map(function (r) { return r.leavers; }), backgroundColor: C.orange, borderRadius: 4, borderSkipped: 'start', maxBarThickness: 18}]},
+            options: {maintainAspectRatio: false, interaction: {mode: 'index', intersect: false},
+                      scales: {x: xAxis, y: intAxis}, plugins: {legend: {display: true, position: 'top', align: 'end'}, tooltip: count}}
+        });
+    }
+
+    // Бараа материал - эхний үлдэгдлээс эцсийн үлдэгдэл хүртэл (waterfall)
+    var w = data('data-waterfall');
+    var wel = document.getElementById('chart-waterfall');
+    if (w && wel) {
+        var running = 0, ranges = [], colors = [], ends = [];
+        w.forEach(function (step) {
+            if (step.kind === 'total') { ranges.push([0, step.value]); running = step.value; colors.push(C.ink); ends.push(step.value); }
+            else { ranges.push([running, running + step.value]); ends.push(running, running + step.value); running += step.value; colors.push(step.value >= 0 ? C.aqua : C.orange); }
+        });
+        // Үлдэгдлийн хажууд хөдөлгөөн жижиг тул тэнхлэгийг 0-ээс биш, өгөгдлийн хүрээнээс эхлүүлнэ
+        var lo = Math.min.apply(null, ends), hi = Math.max.apply(null, ends);
+        var yMin = Math.max(0, lo - Math.max((hi - lo) * 0.6, hi * 0.02));
+        new Chart(wel, {
+            type: 'bar',
+            data: {labels: w.map(function (s) { return s.label; }),
+                   datasets: [{label: 'Дүн', data: ranges, backgroundColor: colors, borderRadius: 4, borderSkipped: false,
+                               borderColor: '#fff', borderWidth: 2, maxBarThickness: 48}]},
+            options: {
+                maintainAspectRatio: false,
+                scales: {x: Object.assign({}, xAxis, {ticks: {maxRotation: 0, autoSkip: false, font: {size: 11},
+                          callback: function (v) { var l = this.getLabelForValue(v); return l.length > 12 ? l.split(' ') : l; }}}),
+                         y: Object.assign({}, yAxis, {beginAtZero: false, min: yMin})},
+                plugins: {legend: {display: false}, tooltip: {backgroundColor: '#0b0b0b', padding: 10, callbacks: {
+                    label: function (ctx) { var st = w[ctx.dataIndex]; return ' ' + (st.kind === 'total' ? '' : (st.value >= 0 ? '+' : '')) + full.format(st.value) + '₮'; }}}}
+            }
+        });
+    }
+})();
+</script>

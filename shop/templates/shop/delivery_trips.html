@@ -1,0 +1,417 @@
+{% extends 'base.html' %}
+
+{% block title %}Түгээлтийн машин - Euro Foods{% endblock %}
+
+{% block hide_mobile_menu %}hidden{% endblock %}
+
+{% block extra_css %}
+<style>
+/* Tailwind-ийн flex/grid класс hidden атрибутыг дарахаас сэргийлнэ (календарь, маягт ачаалахад нээгдчихгүй) */
+[hidden] { display: none !important; }
+/* Харуул (хараа муутай, настай хүмүүс) ашиглана - бүх товч, бичиг том, ялгаатай */
+.dt-btn { font-size: 1.25rem; font-weight: 600; padding: .9rem .75rem; border-radius: .9rem; border: 3px solid #d1d5db; background: #fff; color: #111827; line-height: 1.2; min-height: 3.6rem; }
+.dt-btn:active { transform: scale(.97); }
+.dt-btn.on { background: #1d4ed8; border-color: #1d4ed8; color: #fff; }
+.dt-btn.used { border-style: dashed; }
+.dt-btn.on .dt-sub { color: #dbeafe; }
+.dt-sub { display: block; font-size: .85rem; font-weight: 500; color: #6b7280; margin-top: .15rem; }
+.dt-input { font-size: 1.5rem; padding: .7rem 1rem; border: 3px solid #9ca3af; border-radius: .9rem; width: 100%; background: #fff; }
+.dt-input:focus { outline: none; border-color: #1d4ed8; box-shadow: 0 0 0 4px #bfdbfe; }
+.dt-step { font-size: 1.3rem; font-weight: 700; color: #111827; display: flex; align-items: center; gap: .6rem; margin-bottom: .75rem; }
+.dt-step .n { display: inline-flex; width: 2.4rem; height: 2.4rem; border-radius: 9999px; background: #1d4ed8; color: #fff; align-items: center; justify-content: center; font-size: 1.2rem; flex-shrink: 0; }
+.dt-section { background: #fff; border-radius: 1rem; padding: 1.1rem; border: 1px solid #e5e7eb; }
+.dt-clock { font-size: 3.4rem; font-weight: 800; font-variant-numeric: tabular-nums; letter-spacing: .05em; text-align: center; border: 3px solid #1d4ed8; border-radius: 1rem; padding: .2rem 1rem; background: #eff6ff; color: #1e3a8a; min-width: 12rem; }
+.dt-clock.empty { color: #9ca3af; border-color: #d1d5db; background: #f9fafb; }
+.dt-time-btn { font-size: 1.5rem; font-weight: 700; padding: .7rem 0; border-radius: .7rem; border: 3px solid #d1d5db; background: #fff; font-variant-numeric: tabular-nums; }
+.dt-time-btn.on { background: #1d4ed8; border-color: #1d4ed8; color: #fff; }
+.dt-count { font-size: 2.6rem; font-weight: 800; text-align: center; width: 7rem; border: 3px solid #9ca3af; border-radius: 1rem; padding: .2rem; }
+.dt-pm { font-size: 2.2rem; font-weight: 800; width: 4.2rem; height: 4.2rem; border-radius: 1rem; border: 3px solid #d1d5db; background: #fff; }
+.dt-card { font-size: 1.15rem; }
+.dt-print { display: none; }
+@media print {
+    @page { size: A4 landscape; margin: 10mm; }
+    #sidebar, #sidebar-open-button, #sidebar-overlay, header, footer, .no-print { display: none !important; }
+    main { margin: 0 !important; padding: 0 !important; }
+    body { background: #fff !important; }
+    .dt-print { display: block !important; }
+    .dt-print table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .dt-print th, .dt-print td { border: 1px solid #000; padding: 4px 6px; }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="flex min-h-screen bg-gray-50">
+    {% include 'shop/_sidebar.html' with active_page=active_page %}
+
+    <main class="flex-1 p-3 lg:p-8 min-w-0 space-y-5">
+        <div class="no-print flex flex-wrap items-end justify-between gap-3">
+            <div>
+                <div class="text-sm font-medium text-gray-500 mb-1">Түгээлт</div>
+                <h1 class="text-3xl lg:text-4xl font-bold tracking-tight">🚚 Түгээлтийн машин</h1>
+            </div>
+            <div class="flex flex-wrap gap-2">
+                <button type="button" onclick="window.print()" class="text-base font-medium px-4 py-2 rounded-lg border border-gray-200 bg-white hover:bg-gray-50">🖨 Хэвлэх</button>
+                <a href="{% url 'shop:delivery_trips_list' %}" class="text-base font-medium px-4 py-2 rounded-lg border border-blue-300 text-blue-700 bg-white hover:bg-blue-50">📋 Жагсаалт</a>
+            </div>
+        </div>
+
+        {# Огноо - том сумтай #}
+        <div class="no-print flex items-center gap-2 bg-white rounded-2xl border border-gray-200 p-2">
+            <a href="?date={{ prev_day|date:'Y-m-d' }}" class="dt-btn text-center px-5" title="Өмнөх өдөр">◀</a>
+            <button type="button" id="dt-cal-open" class="flex-1 text-center rounded-xl hover:bg-blue-50 py-1" title="Өдөр сонгох">
+                <div class="text-2xl lg:text-3xl font-bold">📅 {{ day|date:'Y.m.d' }}</div>
+                <div class="text-lg text-gray-600">{{ weekday }} гараг{% if is_today %} · <span class="text-green-700 font-semibold">Өнөөдөр</span>{% endif %}</div>
+                <div class="text-sm text-blue-700">дарж өдөр сонгоно</div>
+            </button>
+            {% if not is_today %}<a href="?date={{ today|date:'Y-m-d' }}" class="dt-btn text-center text-base">Өнөөдөр</a>{% endif %}
+            <a href="?date={{ next_day|date:'Y-m-d' }}" class="dt-btn text-center px-5" title="Дараагийн өдөр">▶</a>
+        </div>
+
+        {% if messages %}
+        <div class="no-print space-y-2">{% for message in messages %}<div class="p-4 rounded-xl text-lg font-semibold {% if message.tags == 'error' %}bg-red-100 text-red-800{% elif message.tags == 'warning' %}bg-yellow-100 text-yellow-800{% else %}bg-green-100 text-green-800{% endif %}">{{ message }}</div>{% endfor %}</div>
+        {% endif %}
+
+        <button type="button" id="dt-new" class="no-print w-full text-2xl lg:text-3xl font-bold text-white bg-green-600 hover:bg-green-700 active:bg-green-800 rounded-2xl py-5 shadow">＋ Машин гарлаа</button>
+
+        {# Өдрийн бүртгэл - картаар #}
+        <div class="no-print">
+            {% if trips %}
+            <div class="text-lg text-gray-600 mb-2">Нийт <b>{{ trips|length }}</b> машин{% if out_count %} · <span class="text-orange-700 font-semibold">{{ out_count }} нь ирээгүй</span>{% endif %}</div>
+            <div class="grid gap-3 md:grid-cols-2 2xl:grid-cols-3">
+                {% for t in trips %}
+                <div class="dt-card bg-white rounded-2xl border-2 {% if t.return_time %}border-gray-200{% else %}border-orange-300{% endif %} p-4 space-y-2">
+                    <div class="flex items-start justify-between gap-2">
+                        <div class="flex items-center gap-3">
+                            <span class="text-2xl font-bold text-gray-400">{{ forloop.counter }}.</span>
+                            <span class="text-2xl font-extrabold tracking-wide bg-yellow-100 border-2 border-gray-800 rounded-lg px-2">{{ t.vehicle_plate }}</span>
+                        </div>
+                        <button type="button" data-edit="{{ t.pk }}" class="dt-btn !min-h-0 !py-2 !text-base">✏ Засах</button>
+                    </div>
+                    <div><span class="text-gray-500">Жолооч:</span> <b>{{ t.driver_name }}</b></div>
+                    <div><span class="text-gray-500">Туслах:</span> <b>{{ t.helper_name|default:"Туслахгүй" }}</b></div>
+                    <div class="flex flex-wrap gap-x-5 gap-y-1">
+                        <div><span class="text-gray-500">Гарсан:</span> <b class="text-xl">{{ t.depart_time|time:'H:i'|default:'—' }}</b></div>
+                        <div><span class="text-gray-500">Харилцагч:</span> <b class="text-xl">{{ t.customer_count|default_if_none:'—' }}</b></div>
+                    </div>
+                    {% if t.return_time %}
+                    <div><span class="text-gray-500">Ирсэн:</span> <b class="text-xl">{{ t.return_time|time:'H:i' }}</b></div>
+                    {% if t.returned_count or t.remainder_note %}
+                    <div class="bg-orange-50 rounded-lg p-2"><span class="text-gray-600">Үлдэгдэл:</span> {% if t.returned_count %}<b>{{ t.returned_count }} айл</b>{% endif %} {{ t.remainder_note }}</div>
+                    {% endif %}
+                    {% else %}
+                    <button type="button" data-return="{{ t.pk }}" class="w-full text-xl font-bold text-white bg-orange-500 hover:bg-orange-600 rounded-xl py-3">🏁 Ирлээ</button>
+                    {% endif %}
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <div class="text-xl text-gray-500 text-center py-10 bg-white rounded-2xl border border-dashed border-gray-300">Энэ өдөр бүртгэл алга.</div>
+            {% endif %}
+        </div>
+
+        {# Хэвлэх хувилбар - цаасан дэвтрийн хэлбэрээр #}
+        <div class="dt-print">
+            <div style="display:flex;justify-content:space-between;font-size:16px;font-weight:700;margin-bottom:6px;">
+                <span>Түгээлтийн машины бүртгэл</span><span>{{ day|date:'Y.m.d' }} · {{ weekday }} гараг</span>
+            </div>
+            <table>
+                <thead>
+                    <tr><th rowspan="2">№</th><th rowspan="2">Жолоочийн нэр</th><th rowspan="2">Туслахын нэр</th><th rowspan="2">Машины дугаар</th><th colspan="3">Хүргэлт</th><th rowspan="2">Үлдэгдэл</th></tr>
+                    <tr><th>Гарсан цаг</th><th>Харилцагч</th><th>Ирсэн цаг</th></tr>
+                </thead>
+                <tbody>
+                    {% for t in trips %}
+                    <tr><td>{{ forloop.counter }}</td><td>{{ t.driver_name }}</td><td>{{ t.helper_name|default:"Туслахгүй" }}</td><td>{{ t.vehicle_plate }}</td>
+                        <td>{{ t.depart_time|time:'H:i' }}</td><td>{{ t.customer_count|default_if_none:'' }}</td><td>{{ t.return_time|time:'H:i' }}</td>
+                        <td>{% if t.returned_count %}{{ t.returned_count }} айл. {% endif %}{{ t.remainder_note }}</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </main>
+</div>
+
+{# Өдөр сонгох календарь - том нүдтэй #}
+<div id="dt-cal" class="no-print fixed inset-0 z-50 bg-black/40 flex items-start sm:items-center justify-center p-2 overflow-y-auto" hidden>
+    <div class="bg-white rounded-2xl w-full max-w-xl p-4 shadow-xl">
+        <div class="flex items-center justify-between gap-2 mb-3">
+            <button type="button" class="dt-btn px-5" data-cal-month="-1" title="Өмнөх сар">◀</button>
+            <div class="text-center">
+                <div id="dt-cal-title" class="text-2xl font-bold"></div>
+            </div>
+            <button type="button" class="dt-btn px-5" data-cal-month="1" title="Дараагийн сар">▶</button>
+        </div>
+        <div class="grid grid-cols-7 gap-1.5 text-center text-base font-semibold text-gray-500 mb-1">
+            <div>Да</div><div>Мя</div><div>Лх</div><div>Пү</div><div>Ба</div><div class="text-red-600">Бя</div><div class="text-red-600">Ня</div>
+        </div>
+        <div id="dt-cal-days" class="grid grid-cols-7 gap-1.5"></div>
+        <div class="flex items-center gap-2 text-sm text-gray-500 mt-2"><span class="inline-block w-2.5 h-2.5 rounded-full bg-green-600"></span> бүртгэлтэй өдөр</div>
+        <div class="grid grid-cols-3 gap-2 mt-3">
+            <a id="dt-cal-yesterday" class="dt-btn text-center">Өчигдөр</a>
+            <a id="dt-cal-today" class="dt-btn text-center !border-green-600 !text-green-800">Өнөөдөр</a>
+            <button type="button" class="dt-btn" data-cal-close>✕ Хаах</button>
+        </div>
+    </div>
+</div>
+
+{# Бүртгэлийн маягт - бүтэн дэлгэцээр #}
+<div id="dt-modal" class="no-print fixed inset-0 z-50 bg-gray-100 overflow-y-auto" hidden>
+    <form id="dt-form" method="post" action="{% url 'shop:delivery_trips_save' %}" class="max-w-4xl mx-auto p-3 lg:p-6 pb-40 space-y-4">
+        {% csrf_token %}
+        <input type="hidden" name="id" id="f-id">
+        <input type="hidden" name="date" value="{{ day|date:'Y-m-d' }}">
+        <input type="hidden" name="action" id="f-action" value="save">
+        <input type="hidden" name="depart_time" id="f-depart">
+        <input type="hidden" name="return_time" id="f-return">
+
+        <div class="flex items-center justify-between gap-3 pt-2">
+            <h2 id="dt-title" class="text-2xl lg:text-3xl font-bold">Машин гарлаа</h2>
+            <button type="button" data-close class="dt-btn !min-h-0 !py-2">✕ Хаах</button>
+        </div>
+
+        <section class="dt-section">
+            <div class="dt-step"><span class="n">1</span>Жолооч</div>
+            <div id="opt-driver" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2 mb-3"></div>
+            <label class="block text-base text-gray-600 mb-1">Жагсаалтад байхгүй бол энд бичнэ:</label>
+            <input type="text" name="driver" id="f-driver" class="dt-input" maxlength="100" autocomplete="off" placeholder="Жолоочийн нэр">
+        </section>
+
+        <section class="dt-section">
+            <div class="dt-step"><span class="n">2</span>Туслах</div>
+            <div id="opt-helper" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2 mb-3"></div>
+            <label class="block text-base text-gray-600 mb-1">Жагсаалтад байхгүй бол энд бичнэ:</label>
+            <input type="text" name="helper" id="f-helper" class="dt-input" maxlength="100" autocomplete="off" placeholder="Туслахын нэр (хоосон бол туслахгүй)">
+        </section>
+
+        <section class="dt-section">
+            <div class="dt-step"><span class="n">3</span>Машины дугаар</div>
+            <div id="opt-plate" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2 mb-3"></div>
+            <label class="block text-base text-gray-600 mb-1">Жагсаалтад байхгүй бол энд бичнэ (жиш: 6259УНЭ):</label>
+            <input type="text" name="plate" id="f-plate" class="dt-input uppercase" maxlength="30" autocomplete="off" placeholder="0000ААА">
+        </section>
+
+        <section class="dt-section" id="sec-depart">
+            <div class="dt-step"><span class="n">4</span>Гарсан цаг</div>
+            <div data-picker="depart"></div>
+        </section>
+
+        <section class="dt-section">
+            <div class="dt-step"><span class="n">5</span>Харилцагчийн тоо</div>
+            <div class="flex items-center gap-3">
+                <button type="button" class="dt-pm" data-step="customers" data-d="-1">−</button>
+                <input type="number" name="customer_count" id="f-customers" class="dt-count" min="0" max="999" inputmode="numeric" placeholder="0">
+                <button type="button" class="dt-pm" data-step="customers" data-d="1">+</button>
+                <span class="text-xl text-gray-600">айл</span>
+            </div>
+        </section>
+
+        <section class="dt-section" id="sec-return">
+            <div class="dt-step"><span class="n">6</span>Ирсэн цаг</div>
+            <div data-picker="return"></div>
+        </section>
+
+        <section class="dt-section">
+            <div class="dt-step"><span class="n">7</span>Үлдэгдэл <span class="text-base font-normal text-gray-500">(хүргэж чадаагүй айл)</span></div>
+            <div class="flex items-center gap-3 mb-4">
+                <button type="button" class="dt-pm" data-step="returned" data-d="-1">−</button>
+                <input type="number" name="returned_count" id="f-returned" class="dt-count" min="0" max="999" inputmode="numeric" placeholder="0">
+                <button type="button" class="dt-pm" data-step="returned" data-d="1">+</button>
+                <span class="text-xl text-gray-600">айл буцаж ирсэн</span>
+            </div>
+            <div class="text-base text-gray-600 mb-2">Шалтгаан (дарж нэмнэ):</div>
+            <div id="opt-reason" class="flex flex-wrap gap-2 mb-3"></div>
+            <textarea name="remainder_note" id="f-note" rows="2" maxlength="300" class="dt-input !text-xl" placeholder="Шалтгаан, тайлбар"></textarea>
+        </section>
+
+        <div class="fixed bottom-0 inset-x-0 bg-white border-t-2 border-gray-200 p-3 z-50">
+            <div class="max-w-4xl mx-auto flex gap-3">
+                <button type="button" id="dt-delete" class="dt-btn !text-red-700 !border-red-300" hidden>🗑 Устгах</button>
+                <button type="button" data-close class="dt-btn flex-1">Болих</button>
+                <button type="submit" class="flex-[2] text-2xl font-bold text-white bg-green-600 hover:bg-green-700 rounded-2xl py-4">💾 Хадгалах</button>
+            </div>
+        </div>
+    </form>
+</div>
+
+{{ delivery_js|json_script:"delivery-data" }}
+<script>
+(function () {
+    const DATA = JSON.parse(document.getElementById('delivery-data').textContent);
+    const REASONS = ['Хаалттай байсан', 'Хүлээж аваагүй', 'Утсаа аваагүй', 'Мөнгөгүй', 'Захиалга цуцалсан', 'Хаяг олдоогүй', 'Цаг хүрээгүй'];
+    const $ = (id) => document.getElementById(id);
+    const modal = $('dt-modal'), form = $('dt-form');
+    const pad = (n) => String(n).padStart(2, '0');
+
+    // --- Сонголтын товчнууд: товч дарахад доорх бичих талбарт нэр орно; бичсэн нэр товчтой таарвал тодорно ---
+    function buildOptions(boxId, inputId, items) {
+        const box = $(boxId), input = $(inputId);
+        items.forEach((it) => {
+            const b = document.createElement('button');
+            b.type = 'button';
+            b.className = 'dt-btn' + (it.used ? ' used' : '');
+            b.dataset.value = it.value;
+            b.innerHTML = '';
+            b.append(it.title);
+            if (it.sub) { const s = document.createElement('span'); s.className = 'dt-sub'; s.textContent = it.sub; b.append(s); }
+            b.addEventListener('click', () => { input.value = it.value; sync(); });
+            box.append(b);
+        });
+        function sync() {
+            const v = input.value.trim().toUpperCase();
+            box.querySelectorAll('.dt-btn').forEach((b) => b.classList.toggle('on', b.dataset.value.toUpperCase() === v));
+        }
+        input.addEventListener('input', sync);
+        return sync;
+    }
+    const syncDriver = buildOptions('opt-driver', 'f-driver', DATA.drivers.map((p) => ({ value: p.name, title: p.name, used: p.used })));
+    const syncHelper = buildOptions('opt-helper', 'f-helper',
+        [{ value: 'Туслахгүй', title: '— Туслахгүй —' }].concat(DATA.helpers.map((p) => ({ value: p.name, title: p.name, used: p.used }))));
+    const syncPlate = buildOptions('opt-plate', 'f-plate', DATA.vehicles.map((v) => ({
+        value: v.plate, title: v.plate.replace(/^(\d{4})/, '$1 '), sub: v.label, used: v.used })));
+
+    // --- 24 цагийн цаг сонгогч: "Одоо", цаг (00-23), минут (5 минутаар), ±1 минут ---
+    const pickers = {};
+    document.querySelectorAll('[data-picker]').forEach((host) => {
+        const key = host.dataset.picker;
+        const hidden = $(key === 'depart' ? 'f-depart' : 'f-return');
+        host.innerHTML = `
+            <div class="flex flex-wrap items-center gap-3 mb-3">
+                <div class="dt-clock empty" data-clock>--:--</div>
+                <button type="button" class="dt-btn !bg-green-50 !border-green-600 !text-green-800 !text-2xl px-6" data-now>🕐 Одоо</button>
+                <button type="button" class="dt-btn !text-lg" data-clear>Арилгах</button>
+            </div>
+            <div class="text-base text-gray-600 mb-1">Цаг:</div>
+            <div class="grid grid-cols-6 lg:grid-cols-12 gap-1.5 mb-3" data-hours></div>
+            <div class="text-base text-gray-600 mb-1">Минут:</div>
+            <div class="grid grid-cols-6 lg:grid-cols-12 gap-1.5 mb-3" data-mins></div>
+            <div class="flex gap-2">
+                <button type="button" class="dt-btn flex-1" data-adj="-1">− 1 минут</button>
+                <button type="button" class="dt-btn flex-1" data-adj="1">+ 1 минут</button>
+            </div>`;
+        const clock = host.querySelector('[data-clock]');
+        const hoursBox = host.querySelector('[data-hours]'), minsBox = host.querySelector('[data-mins]');
+        for (let h = 0; h < 24; h++) hoursBox.insertAdjacentHTML('beforeend', `<button type="button" class="dt-time-btn" data-h="${h}">${pad(h)}</button>`);
+        for (let m = 0; m < 60; m += 5) minsBox.insertAdjacentHTML('beforeend', `<button type="button" class="dt-time-btn" data-m="${m}">${pad(m)}</button>`);
+
+        let h = null, m = null;
+        function render() {
+            const has = h !== null;
+            hidden.value = has ? `${pad(h)}:${pad(m || 0)}` : '';
+            clock.textContent = has ? hidden.value : '--:--';
+            clock.classList.toggle('empty', !has);
+            hoursBox.querySelectorAll('[data-h]').forEach((b) => b.classList.toggle('on', has && +b.dataset.h === h));
+            minsBox.querySelectorAll('[data-m]').forEach((b) => b.classList.toggle('on', has && +b.dataset.m === m));
+        }
+        function set(value) {
+            const mt = /^(\d{1,2}):(\d{2})$/.exec(value || '');
+            h = mt ? +mt[1] : null; m = mt ? +mt[2] : null; render();
+        }
+        host.querySelector('[data-now]').addEventListener('click', () => { const d = new Date(); h = d.getHours(); m = d.getMinutes(); render(); });
+        host.querySelector('[data-clear]').addEventListener('click', () => set(''));
+        hoursBox.addEventListener('click', (e) => { const b = e.target.closest('[data-h]'); if (!b) return; h = +b.dataset.h; if (m === null) m = 0; render(); });
+        minsBox.addEventListener('click', (e) => { const b = e.target.closest('[data-m]'); if (!b) return; if (h === null) h = new Date().getHours(); m = +b.dataset.m; render(); });
+        host.querySelectorAll('[data-adj]').forEach((b) => b.addEventListener('click', () => {
+            if (h === null) { const d = new Date(); h = d.getHours(); m = d.getMinutes(); }
+            const t = (h * 60 + (m || 0) + (+b.dataset.adj) + 1440) % 1440;
+            h = Math.floor(t / 60); m = t % 60; render();
+        }));
+        pickers[key] = { set, now: () => host.querySelector('[data-now]').click() };
+    });
+
+    // --- Тоо: −/+ ---
+    document.querySelectorAll('[data-step]').forEach((b) => b.addEventListener('click', () => {
+        const input = $(b.dataset.step === 'customers' ? 'f-customers' : 'f-returned');
+        input.value = Math.max(0, (parseInt(input.value, 10) || 0) + (+b.dataset.d));
+    }));
+
+    // --- Шалтгааны товч: дарахад тайлбарт нэмнэ ---
+    REASONS.forEach((r) => {
+        const b = document.createElement('button');
+        b.type = 'button'; b.className = 'dt-btn !text-lg !min-h-0 !py-2'; b.textContent = r;
+        b.addEventListener('click', () => {
+            const note = $('f-note');
+            if (!note.value.includes(r)) note.value = note.value.trim() ? `${note.value.trim()}, ${r}` : r;
+        });
+        $('opt-reason').append(b);
+    });
+
+    // --- Өдөр сонгох календарь: сарыг ◀ ▶-аар, өдрийг том нүдээр; бүртгэлтэй өдөр ногоон цэгтэй ---
+    const MONTHS = ['1-р сар', '2-р сар', '3-р сар', '4-р сар', '5-р сар', '6-р сар', '7-р сар', '8-р сар', '9-р сар', '10-р сар', '11-р сар', '12-р сар'];
+    const tripDates = new Set(DATA.trip_dates);
+    const iso = (y, mo, d) => `${y}-${pad(mo + 1)}-${pad(d)}`;
+    const goDay = (value) => { location.href = `?date=${value}`; };
+    const cal = $('dt-cal');
+    let calY, calM;
+    function drawCal() {
+        $('dt-cal-title').textContent = `${calY} он ${MONTHS[calM]}`;
+        const box = $('dt-cal-days');
+        box.innerHTML = '';
+        const lead = (new Date(calY, calM, 1).getDay() + 6) % 7;  // Даваа гарагаас эхэлнэ
+        for (let i = 0; i < lead; i++) box.append(document.createElement('div'));
+        const days = new Date(calY, calM + 1, 0).getDate();
+        for (let d = 1; d <= days; d++) {
+            const value = iso(calY, calM, d);
+            const b = document.createElement('button');
+            b.type = 'button';
+            b.className = 'dt-time-btn relative' + (value === DATA.day ? ' on' : '') + (value === DATA.today ? ' !border-green-600' : '');
+            b.textContent = d;
+            if (tripDates.has(value)) b.insertAdjacentHTML('beforeend', '<span class="absolute bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 rounded-full bg-green-600"></span>');
+            b.addEventListener('click', () => goDay(value));
+            box.append(b);
+        }
+    }
+    $('dt-cal-open').addEventListener('click', () => {
+        const [y, mo] = DATA.day.split('-').map(Number);
+        calY = y; calM = mo - 1; drawCal();
+        cal.hidden = false;
+    });
+    cal.querySelectorAll('[data-cal-month]').forEach((b) => b.addEventListener('click', () => {
+        calM += +b.dataset.calMonth;
+        if (calM < 0) { calM = 11; calY--; } else if (calM > 11) { calM = 0; calY++; }
+        drawCal();
+    }));
+    cal.querySelector('[data-cal-close]').addEventListener('click', () => { cal.hidden = true; });
+    cal.addEventListener('click', (e) => { if (e.target === cal) cal.hidden = true; });
+    $('dt-cal-today').href = `?date=${DATA.today}`;
+    const yd = new Date(DATA.today + 'T00:00'); yd.setDate(yd.getDate() - 1);
+    $('dt-cal-yesterday').href = `?date=${iso(yd.getFullYear(), yd.getMonth(), yd.getDate())}`;
+
+    // --- Маягт нээх / хаах ---
+    function open(trip, focusReturn) {
+        $('f-id').value = trip ? trip.id : '';
+        $('f-action').value = 'save';
+        $('f-driver').value = trip ? trip.driver : '';
+        $('f-helper').value = trip ? (trip.helper || 'Туслахгүй') : '';
+        $('f-plate').value = trip ? trip.plate : '';
+        $('f-customers').value = trip && trip.customers !== null ? trip.customers : '';
+        $('f-returned').value = trip && trip.returned !== null ? trip.returned : '';
+        $('f-note').value = trip ? trip.note : '';
+        pickers.depart.set(trip ? trip.depart : '');
+        pickers.return.set(trip ? trip.return : '');
+        syncDriver(); syncHelper(); syncPlate();
+        $('dt-title').textContent = !trip ? 'Машин гарлаа' : (focusReturn ? `Машин ирлээ · ${trip.plate}` : `Засах · ${trip.plate}`);
+        $('dt-delete').hidden = !trip;
+        modal.hidden = false;
+        document.body.style.overflow = 'hidden';
+        if (!trip) pickers.depart.now();  // шинэ бүртгэлд гарсан цагийг одоогоор урьдчилж бөглөнө
+        if (focusReturn) { if (!trip.return) pickers.return.now(); $('sec-return').scrollIntoView(); } else modal.scrollTop = 0;
+    }
+    function close() { modal.hidden = true; document.body.style.overflow = ''; }
+
+    $('dt-new').addEventListener('click', () => open(null, false));
+    document.querySelectorAll('[data-edit]').forEach((b) => b.addEventListener('click', () => open(DATA.trips[b.dataset.edit], false)));
+    document.querySelectorAll('[data-return]').forEach((b) => b.addEventListener('click', () => open(DATA.trips[b.dataset.return], true)));
+    modal.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', close));
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { if (!modal.hidden) close(); cal.hidden = true; } });
+    $('dt-delete').addEventListener('click', () => {
+        if (!confirm('Энэ бүртгэлийг устгах уу?')) return;
+        $('f-action').value = 'delete'; form.submit();
+    });
+    form.addEventListener('submit', (e) => {
+        if (!$('f-driver').value.trim()) { e.preventDefault(); alert('Жолоочийг сонгоно уу.'); $('f-driver').focus(); return; }
+        if (!$('f-plate').value.trim()) { e.preventDefault(); alert('Машины дугаарыг сонгоно уу.'); $('f-plate').focus(); }
+    });
+})();
+</script>
+{% endblock %}

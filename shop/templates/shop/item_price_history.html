@@ -1,0 +1,238 @@
+{% extends 'base.html' %}
+{% load humanize %}
+
+{% block title %}Үнийн түүх - Euro Foods{% endblock %}
+
+{% block hide_mobile_menu %}hidden{% endblock %}
+
+{% block extra_css %}
+<style>
+    .choices { margin-bottom: 0; }
+    .choices__inner { min-height: 42px; border-radius: 0.5rem; border-color: #d1d5db; background: #fff; padding: 4px 8px; }
+    .choices__list--multiple .choices__item { background: #059669; border-color: #047857; border-radius: 9999px; font-size: 12px; }
+    .choices[data-type*=select-multiple] .choices__button { border-left-color: rgba(255,255,255,.5); }
+    .choices__list--dropdown .choices__item--selectable.is-highlighted { background: #ecfdf5; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="flex min-h-screen bg-gray-50">
+    {% include 'shop/_sidebar.html' with active_page='item_prices' %}
+
+    <main class="flex-1 p-2 lg:p-8 lg:ml-0 min-w-0">
+        <div class="flex flex-wrap items-center justify-between gap-3 mb-6">
+            <div>
+                <h1 class="text-2xl lg:text-3xl font-bold text-gray-900">📈 Үнийн түүх</h1>
+                <p class="text-gray-600 mt-2">Сонгосон үнийн жагсаалтад бараа тус бүрийн өмнөх бүх үнэ, өөрчлөлтийн хамт</p>
+            </div>
+            <a href="{% url 'shop:item_prices' %}" class="bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50 transition whitespace-nowrap">← Барааны үнэ</a>
+        </div>
+
+        <form method="get" id="history-form" class="bg-white rounded-lg shadow p-4 mb-6 flex flex-wrap items-end gap-4">
+            <div class="w-full sm:w-64">
+                <label class="block text-sm font-medium mb-1">Үнийн жагсаалт</label>
+                <select name="channel" id="channel-select" class="border border-gray-300 rounded-lg px-3 py-2 w-full h-[42px] bg-white">
+                    {% for ch in channels %}
+                    <option value="{{ ch.pkid|stringformat:'d' }}" {% if ch.pkid|stringformat:'d' == channel_pk %}selected{% endif %}>{{ ch.code }} - {{ ch.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="flex-1 min-w-[16rem]">
+                <label class="block text-sm font-medium mb-1">Бараа <span class="text-gray-400 font-normal">(нэр, код, баркодоор хайна · олныг сонгож болно)</span></label>
+                <select name="item" id="item-select" multiple>
+                    {% for o in item_options %}
+                    <option value="{{ o.pk|stringformat:'d' }}" {% if o.pk in selected_item_pks %}selected{% endif %}
+                            data-custom-properties='{"code": "{{ o.code|escapejs }}", "barcode": "{{ o.barcode|escapejs }}"}'>{{ o.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="flex gap-2">
+                <button type="submit" class="bg-primary text-white px-6 py-2 rounded-lg hover:bg-green-700 transition h-[42px]">Харах</button>
+                {% if selected_item_pks %}
+                <a href="?channel={{ channel_pk }}" class="px-4 py-2 rounded-lg text-gray-600 hover:bg-gray-100 h-[42px] flex items-center">Цэвэрлэх</a>
+                {% endif %}
+            </div>
+        </form>
+
+        {% if not cards %}
+        <div class="bg-white rounded-lg shadow p-10 text-center text-gray-500">
+            <div class="text-4xl mb-2">🔎</div>
+            Үнийн жагсаалт болон бараагаа сонгоод <span class="font-semibold text-gray-700">"Харах"</span> дарна уу.
+        </div>
+        {% else %}
+
+        <div class="bg-white rounded-lg shadow p-4 mb-6">
+            <div class="flex flex-wrap items-baseline justify-between gap-2 mb-3">
+                <h2 class="font-bold text-gray-900">Үнийн өөрчлөлт <span class="text-gray-400 font-normal text-sm">— {{ channel.code }} {{ channel.name }}</span></h2>
+                <span class="text-xs text-gray-500">Шинэ үнэ батлагдах хүртэл өмнөх үнэ хүчинтэй (шаталсан шугам)</span>
+            </div>
+            <div class="relative h-72 lg:h-80"><canvas id="price-chart"></canvas></div>
+        </div>
+
+        <div class="grid grid-cols-1 xl:grid-cols-2 gap-6">
+            {% for card in cards %}
+            <div class="bg-white rounded-lg shadow overflow-hidden flex flex-col" data-card-index="{{ forloop.counter0 }}">
+                <div class="px-4 pt-4 pb-3 border-b border-l-4 card-accent">
+                    <h3 class="font-bold text-gray-900 leading-snug">{{ card.name }}</h3>
+                    <div class="text-xs text-gray-500 mt-0.5">Код: {{ card.code|default:'-' }}{% if card.barcode %} · Баркод: {{ card.barcode }}{% endif %}</div>
+                    {% if card.rows %}
+                    <div class="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
+                        <div>
+                            <div class="text-xs text-gray-500">Одоогийн үнэ</div>
+                            <div class="text-lg font-bold text-gray-900">{{ card.current|floatformat:0|intcomma }}₮</div>
+                            <div class="text-xs text-gray-400">{{ card.current_date|date:'Y-m-d' }}-с</div>
+                        </div>
+                        <div>
+                            <div class="text-xs text-gray-500">Анхны үнэ</div>
+                            <div class="font-semibold text-gray-700">{{ card.first|floatformat:0|intcomma }}₮</div>
+                            <div class="text-xs text-gray-400">{{ card.first_date|date:'Y-m-d' }}</div>
+                        </div>
+                        <div>
+                            <div class="text-xs text-gray-500">Нийт өөрчлөлт</div>
+                            {% if card.total_change > 0 %}
+                            <div class="font-semibold text-red-600">▲ {{ card.total_change|floatformat:0|intcomma }}₮</div>
+                            {% elif card.total_change < 0 %}
+                            <div class="font-semibold text-emerald-600">▼ {{ card.total_change|floatformat:0|intcomma }}₮</div>
+                            {% else %}
+                            <div class="font-semibold text-gray-500">0₮</div>
+                            {% endif %}
+                            {% if card.total_change_pct is not None %}<div class="text-xs text-gray-400">{{ card.total_change_pct|floatformat:1 }}%</div>{% endif %}
+                        </div>
+                        <div>
+                            <div class="text-xs text-gray-500">Хамгийн бага / их</div>
+                            <div class="font-semibold text-gray-700">{{ card.min|floatformat:0|intcomma }} / {{ card.max|floatformat:0|intcomma }}</div>
+                            <div class="text-xs text-gray-400">{{ card.change_count }} удаа өөрчлөгдсөн</div>
+                        </div>
+                    </div>
+                    {% endif %}
+                </div>
+
+                {% if card.rows %}
+                <div class="overflow-y-auto max-h-96">
+                    <table class="min-w-full text-sm">
+                        <thead class="sticky top-0 bg-gray-50">
+                            <tr class="text-left text-gray-600">
+                                <th class="px-4 py-2 font-semibold">Огноо</th>
+                                <th class="px-4 py-2 font-semibold text-right">Үнэ</th>
+                                <th class="px-4 py-2 font-semibold text-right">Өөрчлөлт</th>
+                                <th class="px-4 py-2 font-semibold text-right">%</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for row in card.rows %}
+                            <tr class="border-t {% if forloop.first %}bg-emerald-50/50{% endif %}">
+                                <td class="px-4 py-1.5 whitespace-nowrap">
+                                    {{ row.date|date:'Y-m-d'|default:'-' }}
+                                    {% if forloop.first %}<span class="ml-1 text-[10px] uppercase tracking-wide bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded">одоо</span>{% endif %}
+                                </td>
+                                <td class="px-4 py-1.5 text-right font-medium text-gray-900">{{ row.price|floatformat:0|intcomma }}₮</td>
+                                {% if row.change is None %}
+                                <td class="px-4 py-1.5 text-right text-gray-400" colspan="2">анхны үнэ</td>
+                                {% elif row.change > 0 %}
+                                <td class="px-4 py-1.5 text-right text-red-600">▲ {{ row.change|floatformat:0|intcomma }}</td>
+                                <td class="px-4 py-1.5 text-right text-red-600">+{{ row.change_pct|floatformat:1 }}%</td>
+                                {% elif row.change < 0 %}
+                                <td class="px-4 py-1.5 text-right text-emerald-600">▼ {{ row.change|floatformat:0|intcomma }}</td>
+                                <td class="px-4 py-1.5 text-right text-emerald-600">{{ row.change_pct|floatformat:1 }}%</td>
+                                {% else %}
+                                <td class="px-4 py-1.5 text-right text-gray-400">—</td>
+                                <td class="px-4 py-1.5 text-right text-gray-400">—</td>
+                                {% endif %}
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="p-6 text-center text-gray-500 text-sm">Энэ жагсаалтад үнийн түүх алга.</div>
+                {% endif %}
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
+    </main>
+</div>
+{{ chart_data|json_script:"chart-data" }}
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const COLORS = ['#059669', '#2563eb', '#dc2626', '#d97706', '#7c3aed', '#0891b2', '#db2777', '#4b5563'];
+
+    new Choices('#item-select', {
+        removeItemButton: true,
+        searchResultLimit: 50,
+        shouldSort: false,
+        placeholderValue: 'Бараа хайж сонгох...',
+        searchPlaceholderValue: 'Нэр, код, баркодоор хайх...',
+        noResultsText: 'Олдсонгүй',
+        noChoicesText: 'Сонгох бараа алга',
+        itemSelectText: '',
+        // Код, баркодыг data-custom-properties-оос; урт нэрийн дундаас ч олдохоор ignoreLocation
+        searchFields: ['label', 'customProperties.code', 'customProperties.barcode'],
+        fuseOptions: { includeScore: true, threshold: 0.3, ignoreLocation: true },
+    });
+
+    // Жагсаалт солиход шууд шинэчилнэ (тухайн жагсаалтад үнэгүй бараа хасагдана)
+    document.getElementById('channel-select').addEventListener('change', function () {
+        document.getElementById('history-form').submit();
+    });
+
+    // Карт бүрийн зүүн хүрээг графикийн шугамын өнгөөр
+    document.querySelectorAll('[data-card-index]').forEach(function (card) {
+        const accent = card.querySelector('.card-accent');
+        if (accent) accent.style.borderLeftColor = COLORS[Number(card.dataset.cardIndex) % COLORS.length];
+    });
+
+    const series = JSON.parse(document.getElementById('chart-data').textContent);
+    const canvas = document.getElementById('price-chart');
+    if (!canvas || !series.length) return;
+
+    const fmtMoney = (v) => Math.round(v).toLocaleString('en-US') + '₮';
+    const fmtDate = (ts) => new Date(ts).toISOString().slice(0, 10);
+    const today = Date.now();
+
+    const datasets = series.map(function (s, i) {
+        const data = s.points.map((p) => ({ x: Date.parse(p[0]), y: p[1] }));
+        // Сүүлийн үнийг өнөөдөр хүртэл сунгана (цэггүй)
+        if (data.length) data.push({ x: Math.max(today, data[data.length - 1].x), y: data[data.length - 1].y, extended: true });
+        const color = COLORS[i % COLORS.length];
+        return {
+            label: s.name,
+            data: data,
+            stepped: 'after',
+            borderColor: color,
+            backgroundColor: color,
+            borderWidth: 2,
+            pointRadius: (ctx) => (ctx.raw && ctx.raw.extended ? 0 : 3),
+            pointHoverRadius: (ctx) => (ctx.raw && ctx.raw.extended ? 0 : 5),
+        };
+    });
+
+    new Chart(canvas, {
+        type: 'line',
+        data: { datasets: datasets },
+        options: {
+            maintainAspectRatio: false,
+            interaction: { mode: 'nearest', intersect: false },
+            scales: {
+                x: { type: 'linear', ticks: { callback: (v) => fmtDate(v), maxTicksLimit: 8 }, grid: { display: false } },
+                y: { ticks: { callback: (v) => fmtMoney(v) } },
+            },
+            plugins: {
+                legend: { position: 'bottom', labels: { boxWidth: 12, usePointStyle: true } },
+                tooltip: {
+                    filter: (item) => !item.raw.extended,
+                    callbacks: {
+                        title: (items) => (items.length ? fmtDate(items[0].raw.x) : ''),
+                        label: (item) => item.dataset.label + ': ' + fmtMoney(item.raw.y),
+                    },
+                },
+            },
+        },
+    });
+});
+</script>
+{% endblock %}

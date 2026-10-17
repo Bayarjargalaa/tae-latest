@@ -1,0 +1,29 @@
+{# Тайлан: сонгосон тайлан (хэвлэх, Excel нь дээд талын товчоор) #}
+<style>
+.vr-table th { background: #f3f4f6; text-align: left; padding: .4rem .5rem; white-space: nowrap; font-weight: 600; color: #4b5563; }
+.vr-table td { padding: .35rem .5rem; border-top: 1px solid #f3f4f6; }
+.vr-table tfoot td { border-top: 2px solid #d1d5db; font-weight: 700; background: #f9fafb; }
+.vr-table .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.vr-table .neg { color: #dc2626; }
+.vr-table .empty { text-align: center; color: #6b7280; padding: 1.5rem; }
+</style>
+<div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-2">
+    {% for k, l, d in reports %}
+    <a href="?tab=reports&report={{ k }}&date_from={{ f.date_from|date:'Y-m-d' }}&date_to={{ f.date_to|date:'Y-m-d' }}{% if f.plate %}&plate={{ f.plate|urlencode }}{% endif %}"
+       class="rounded-xl border p-3 {% if k == report.kind %}border-blue-500 bg-blue-50{% else %}border-gray-200 bg-white hover:border-blue-300{% endif %}">
+        <div class="font-semibold text-sm">{{ l }}</div><div class="text-xs text-gray-500">{{ d }}</div>
+    </a>
+    {% endfor %}
+</div>
+
+<div class="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
+    <div class="flex flex-wrap items-baseline justify-between gap-2">
+        <h2 class="text-xl font-bold">{{ report.title }}</h2>
+        <div class="text-sm text-gray-600">{% for k, v in report.meta %}<span class="mr-3">{{ k }}: <b>{{ v }}</b></span>{% endfor %}</div>
+    </div>
+    {% if report.need_plate %}
+    <div class="text-gray-500 py-8 text-center">Дээрх шүүлтээс машинаа сонгоно уу.</div>
+    {% endif %}
+    {% for table in report.tables %}{% include 'shop/_vehicles_table.html' %}{% endfor %}
+    {% for n in report.notes %}<div class="text-xs text-gray-500 mt-2">* {{ n }}</div>{% endfor %}
+</div>

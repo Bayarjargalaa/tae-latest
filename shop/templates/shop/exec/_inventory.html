@@ -1,0 +1,93 @@
+{% load humanize exec_filters %}
+{% with k=data.kpis %}
+<div class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3 mb-4">
+    {% with pq=k.purchase_qty|floatformat:0|intcomma sq=k.sales_qty|floatformat:0|intcomma rev=k.revenue|mnt_short margin=k.margin|pct act=k.act|mnt_short turn=k.turnover|floatformat:1 slow=k.slow_value|mnt_short %}
+    {% include 'shop/exec/_kpi.html' with label='Бараа материалын үлдэгдэл' value=k.closing|mnt_short delta=k.change good='neutral' sub='хугацааны эхнээс' hint='Ерөнхий журналын 1501 данс' %}
+    {% include 'shop/exec/_kpi.html' with label='Татан авалт' value=k.purchase|mnt_short sub=pq|add:' ширхэг' %}
+    {% include 'shop/exec/_kpi.html' with label='Борлуулалтын өртөг' value=k.cogs|mnt_short sub=sq|add:' ширхэг · борлуулалт '|add:rev %}
+    {% include 'shop/exec/_kpi.html' with label='Бохир ашиг' value=k.gross_profit|mnt_short sub='Ашгийн хувь '|add:margin %}
+    {% include 'shop/exec/_kpi.html' with label='Зарлага (акт, дээж г.м.)' value=k.expense|mnt_short sub='Үүнээс акт '|add:act %}
+    {% include 'shop/exec/_kpi.html' with label='Эргэлтийн хоног (DIO)' value=k.dio|floatformat:0|default:'-'|add:' хоног' sub='Жилд '|add:turn|add:' удаа эргэлдэнэ' hint='Дундаж үлдэгдэл / борлуулалтын өртөг x хоног' %}
+    {% endwith %}
+</div>
+
+<div class="grid grid-cols-1 xl:grid-cols-5 gap-4 mb-4">
+    <!-- Үлдэгдлийн өөрчлөлт -->
+    <section class="xl:col-span-3 bg-white rounded-xl border border-gray-100 shadow-sm p-4">
+        <h2 class="font-semibold text-gray-800">🌊 Үлдэгдлийн өөрчлөлт (₮)</h2>
+        <p class="text-xs text-gray-500 mb-2">Эхний үлдэгдлээс эцсийн үлдэгдэл хүртэл юу нэмж, юу хасагдсан бэ.</p>
+        <div class="h-72"><canvas id="chart-waterfall" role="img" aria-label="Бараа материалын үлдэгдлийн өөрчлөлтийн график"></canvas></div>
+        {{ data.waterfall|json_script:'data-waterfall' }}
+    </section>
+
+    <!-- Зарлагын шалтгаан -->
+    <section class="xl:col-span-2 bg-white rounded-xl border border-gray-100 shadow-sm p-4">
+        <h2 class="font-semibold text-gray-800 mb-3">📤 Зарлага шалтгаанаар</h2>
+        {% if data.reason_rows %}
+        <ul class="space-y-2">
+            {% for r in data.reason_rows %}
+            <li class="text-sm">
+                <div class="flex justify-between gap-2"><span class="text-gray-700">{{ r.label }}</span><span class="tabular-nums">{{ r.amount|mnt_short }} <span class="text-xs text-gray-400">· {{ r.qty|floatformat:0|intcomma }} ш</span></span></div>
+                <div class="mt-1 h-1.5 rounded-full bg-gray-100 overflow-hidden"><div class="h-full rounded-full {% if r.key == 'act' %}bg-[#d03b3b]{% else %}bg-[#2a78d6]{% endif %}" style="width: {% widthratio r.amount k.expense|default:1 100 %}%"></div></div>
+            </li>
+            {% endfor %}
+        </ul>
+        <p class="text-[11px] text-gray-400 mt-3">Шалтгааныг баримтын тайлбараас (акт, амталгаа, шинжилгээ, гааль...) ангилсан.</p>
+        {% else %}<p class="text-sm text-gray-500">Зарлага гараагүй.</p>{% endif %}
+    </section>
+</div>
+
+<!-- Хөдөлгөөн -->
+<section class="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden mb-4">
+    <h2 class="font-semibold text-gray-800 p-4 pb-2">🔄 Бараа материалын хөдөлгөөн</h2>
+    <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+            <thead class="bg-gray-50 text-xs text-gray-500">
+                <tr><th class="px-3 py-2 text-left">Төрөл</th><th class="px-3 py-2 text-right">Орсон (ш)</th><th class="px-3 py-2 text-right">Гарсан (ш)</th>
+                    <th class="px-3 py-2 text-right">Орсон (өртөг)</th><th class="px-3 py-2 text-right">Гарсан (өртөг)</th><th class="px-3 py-2 text-right">Борлуулсан дүн</th></tr>
+            </thead>
+            <tbody class="divide-y divide-gray-100">
+                {% for r in data.rows %}
+                <tr class="hover:bg-gray-50">
+                    <td class="px-3 py-2">{{ r.icon }} {{ r.label }}</td>
+                    <td class="px-3 py-2 text-right tabular-nums">{% if r.in_qty %}{{ r.in_qty|floatformat:0|intcomma }}{% else %}<span class="text-gray-300">–</span>{% endif %}</td>
+                    <td class="px-3 py-2 text-right tabular-nums">{% if r.out_qty %}{{ r.out_qty|floatformat:0|intcomma }}{% else %}<span class="text-gray-300">–</span>{% endif %}</td>
+                    <td class="px-3 py-2 text-right tabular-nums">{% if r.in_amt %}{{ r.in_amt|floatformat:0|intcomma }}{% else %}<span class="text-gray-300">–</span>{% endif %}</td>
+                    <td class="px-3 py-2 text-right tabular-nums">{% if r.out_amt %}{{ r.out_amt|floatformat:0|intcomma }}{% else %}<span class="text-gray-300">–</span>{% endif %}</td>
+                    <td class="px-3 py-2 text-right tabular-nums">{% if r.key == 'sales' %}{{ data.revenue|floatformat:0|intcomma }}{% else %}<span class="text-gray-300">–</span>{% endif %}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <p class="text-[11px] text-gray-400 px-4 py-2">Агуулах хоорондын хөдөлгөөнийг тооцоогүй. Үлдэгдлийн үнэ ерөнхий журналаас, хөдөлгөөн бараа материалын бүртгэлээс.</p>
+</section>
+
+<div class="grid grid-cols-1 xl:grid-cols-2 gap-4 mb-4">
+    <section class="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+        <h2 class="font-semibold text-gray-800 p-4 pb-2">🗑 Актласан бараа</h2>
+        {% if data.act_items %}
+        <table class="w-full text-sm">
+            <thead class="bg-gray-50 text-xs text-gray-500"><tr><th class="px-3 py-2 text-left">Бараа</th><th class="px-3 py-2 text-right">Тоо</th><th class="px-3 py-2 text-right">Өртөг</th></tr></thead>
+            <tbody class="divide-y divide-gray-100">
+                {% for r in data.act_items %}<tr><td class="px-3 py-1.5"><div class="truncate max-w-[18rem]" title="{{ r.name }}">{{ r.name }}</div></td><td class="px-3 py-1.5 text-right tabular-nums">{{ r.qty|floatformat:0|intcomma }}</td><td class="px-3 py-1.5 text-right tabular-nums">{{ r.amount|floatformat:0|intcomma }}</td></tr>{% endfor %}
+            </tbody>
+        </table>
+        {% else %}<p class="text-sm text-gray-500 px-4 pb-4">Акт гараагүй.</p>{% endif %}
+    </section>
+    <section class="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+        <div class="p-4 pb-2">
+            <h2 class="font-semibold text-gray-800">🐢 Борлуулалтгүй үлдэгдэлтэй бараа</h2>
+            <p class="text-xs text-gray-500">{{ k.slow_count }} бараа, ойролцоогоор {{ k.slow_value|mnt_short }} - энэ хугацаанд нэг ч борлуулагдаагүй.</p>
+        </div>
+        {% if data.slow_top %}
+        <table class="w-full text-sm">
+            <thead class="bg-gray-50 text-xs text-gray-500"><tr><th class="px-3 py-2 text-left">Бараа</th><th class="px-3 py-2 text-right">Үлдэгдэл</th><th class="px-3 py-2 text-right">Өртөг</th></tr></thead>
+            <tbody class="divide-y divide-gray-100">
+                {% for r in data.slow_top %}<tr><td class="px-3 py-1.5"><div class="truncate max-w-[18rem]" title="{{ r.name }}">{{ r.name }}</div></td><td class="px-3 py-1.5 text-right tabular-nums">{{ r.qty|floatformat:0|intcomma }}</td><td class="px-3 py-1.5 text-right tabular-nums">{{ r.value|floatformat:0|intcomma }}</td></tr>{% endfor %}
+            </tbody>
+        </table>
+        {% endif %}
+    </section>
+</div>
+{% endwith %}

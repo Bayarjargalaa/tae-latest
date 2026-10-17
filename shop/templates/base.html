@@ -154,9 +154,9 @@
 
                 <!-- Search & Cart -->
                 <div class="flex items-center gap-2 lg:gap-4">
-                    <form action="/search/" method="get" class="hidden lg:block">
+                    <form action="{% url 'shop:products' %}" method="get" role="search" class="hidden lg:block">
                         <div class="relative">
-                            <input type="text" name="q" placeholder="Хайх..." 
+                            <input type="search" name="q" value="{% if request.resolver_match.url_name == 'products' %}{{ request.GET.q }}{% endif %}" placeholder="Бараа хайх..." aria-label="Бараа хайх" 
                                    class="pl-4 pr-10 py-2 border border-gray-300 rounded-full focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent w-48 lg:w-64">
                             <button type="submit" class="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-500 hover:text-primary">
                                 🔍
@@ -165,7 +165,8 @@
                     </form>
                     
                     <!-- Mobile Search Button -->
-                    <button id="mobile-search-btn" class="lg:hidden text-gray-700 hover:text-primary p-2">
+                    <button id="mobile-search-btn" type="button" aria-controls="mobile-search" aria-expanded="false" aria-label="Бараа хайх"
+                            class="lg:hidden text-gray-700 hover:text-primary p-2">
                         🔍
                     </button>
                     
@@ -180,7 +181,19 @@
                             <button type="submit" class="text-gray-600 hover:text-primary text-xs lg:text-sm">Гарах</button>
                         </form>
                     </div>
+                    <!-- Гар утсанд: цэсний товч нуугдсан хяналтын самбарын хуудсуудад ч гарах боломжтой байна -->
+                    <form method="post" action="{% url 'shop:logout' %}" class="md:hidden">
+                        {% csrf_token %}
+                        <button type="submit" title="Гарах ({{ user.first_name|default:user.username }})" aria-label="Гарах"
+                                class="flex items-center gap-1 text-gray-600 hover:text-red-600 p-2 text-xs">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path>
+                            </svg>
+                            Гарах
+                        </button>
+                    </form>
                     {% else %}
+                    <a href="{% url 'shop:login' %}" class="md:hidden text-gray-700 hover:text-primary font-medium text-sm p-2">Нэвтрэх</a>
                     <a href="{% url 'shop:login' %}" class="hidden md:inline text-gray-700 hover:text-primary font-medium text-sm lg:text-base">Нэвтрэх</a>
                     <a href="{% url 'shop:register' %}" class="hidden md:inline bg-secondary text-white px-3 lg:px-4 py-2 rounded-full hover:bg-blue-700 text-xs lg:text-sm">Бүртгүүлэх</a>
                     {% endif %}
@@ -191,7 +204,16 @@
                     </a>
                 </div>
             </div>
-            
+
+            <!-- Гар утасны хайлт (🔍 товчоор нээгдэнэ) -->
+            <form id="mobile-search" action="{% url 'shop:products' %}" method="get" role="search" class="hidden lg:hidden mt-3">
+                <div class="relative">
+                    <input type="search" name="q" placeholder="Бараа хайх..." aria-label="Бараа хайх"
+                           class="w-full pl-4 pr-10 py-2 border border-gray-300 rounded-full focus:outline-none focus:ring-2 focus:ring-primary">
+                    <button type="submit" class="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-500" aria-label="Хайх">🔍</button>
+                </div>
+            </form>
+
             <!-- Mobile Menu -->
             <div id="mobile-menu" class="mobile-menu hidden md:hidden fixed inset-0 bg-white z-50 transform -translate-x-full">
                 <div class="flex flex-col h-full">
@@ -213,9 +235,9 @@
                     <!-- Mobile Menu Content -->
                     <div class="flex-1 overflow-y-auto p-4">
                         <!-- Mobile Search -->
-                        <form action="/search/" method="get" class="mb-6">
+                        <form action="{% url 'shop:products' %}" method="get" role="search" class="mb-6">
                             <div class="relative">
-                                <input type="text" name="q" placeholder="Хайх..." 
+                                <input type="search" name="q" placeholder="Бараа хайх..." aria-label="Бараа хайх" 
                                        class="w-full pl-4 pr-10 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary">
                                 <button type="submit" class="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-500">
                                     🔍
@@ -298,6 +320,17 @@
             if (menuBtn) menuBtn.addEventListener('click', openMenu);
             if (closeBtn) closeBtn.addEventListener('click', closeMenu);
             if (menuOverlay) menuOverlay.addEventListener('click', closeMenu);
+
+            // Гар утасны хайлтын талбарыг нээх/хаах
+            const searchBtn = document.getElementById('mobile-search-btn');
+            const searchForm = document.getElementById('mobile-search');
+            if (searchBtn && searchForm) {
+                searchBtn.addEventListener('click', function() {
+                    const open = searchForm.classList.toggle('hidden') === false;
+                    searchBtn.setAttribute('aria-expanded', String(open));
+                    if (open) searchForm.querySelector('input').focus();
+                });
+            }
         });
     </script>
 

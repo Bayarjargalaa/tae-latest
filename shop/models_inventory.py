@@ -4,6 +4,15 @@
 """
 from django.db import models
 
+# Snapshot-д хадгалах 3 агуулах: MSSQL-ийн WarehouseId код -> (баганын угтвар, дэлгэцийн нэр).
+# Агуулахын нэр программаас өөрчлөгдөж болдог тул кодоор нь танина
+# (жиш: '000' нь өмнө нь "Агуулах Толгойт" байсан).
+SNAPSHOT_WAREHOUSES = {
+    '000': ('tolgoit', 'Агуулах Гурвалжин-1'),
+    '001': ('jijig', 'Агуулах жижиг'),
+    '002': ('altjin', 'Агуулах алтжин'),
+}
+
 
 class InventorySnapshot(models.Model):
     """Барааны үлдэгдлийн snapshot (materialized view)"""

@@ -1,0 +1,166 @@
+{% extends 'base.html' %}
+
+{% block title %}Түгээлтийн машины жагсаалт - Euro Foods{% endblock %}
+
+{% block hide_mobile_menu %}hidden{% endblock %}
+
+{% block extra_css %}
+<style>
+.dl-table th { position: sticky; top: 0; background: #f3f4f6; z-index: 1; }
+.dl-print-head { display: none; }
+@media print {
+    @page { size: A4 landscape; margin: 8mm; }
+    #sidebar, #sidebar-open-button, #sidebar-overlay, header, footer, .no-print { display: none !important; }
+    main { margin: 0 !important; padding: 0 !important; }
+    body { background: #fff !important; }
+    .dl-print-head { display: flex !important; }
+    .dl-card { box-shadow: none !important; border: none !important; padding: 0 !important; }
+    .dl-table { font-size: 11px !important; }
+    .dl-table th, .dl-table td { border: 1px solid #000 !important; padding: 2px 4px !important; }
+    .dl-scroll { overflow: visible !important; max-height: none !important; }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="flex min-h-screen bg-gray-50">
+    {% include 'shop/_sidebar.html' with active_page=active_page %}
+
+    <main class="flex-1 p-3 lg:p-8 min-w-0 space-y-4">
+        <div class="no-print flex flex-wrap items-end justify-between gap-3">
+            <div>
+                <div class="text-xs font-medium text-gray-500 mb-1">Түгээлт · <a href="{% url 'shop:delivery_trips' %}" class="text-blue-600 hover:underline">Түгээлтийн машин</a></div>
+                <h1 class="text-2xl lg:text-3xl font-bold tracking-tight">📋 Түгээлтийн машины жагсаалт</h1>
+            </div>
+            <div class="flex flex-wrap gap-2">
+                <a href="{% url 'shop:delivery_trips' %}" class="text-sm font-medium px-3 py-2 rounded-lg border border-gray-200 bg-white hover:bg-gray-50">← Бүртгэл</a>
+                <a href="{% url 'shop:delivery_trips_export' %}?{{ export_query }}" class="text-sm font-medium px-3 py-2 rounded-lg border border-green-600 text-green-700 bg-white hover:bg-green-50">⬇ Excel</a>
+                <button type="button" onclick="window.print()" class="text-sm font-medium px-3 py-2 rounded-lg border border-gray-200 bg-white hover:bg-gray-50">🖨 Хэвлэх</button>
+            </div>
+        </div>
+
+        {# Шүүлт #}
+        <form method="get" class="no-print bg-white rounded-xl shadow-sm border border-gray-100 p-4 space-y-3">
+            <div class="flex flex-wrap gap-2">
+                {% for p in periods %}
+                <a href="?date_from={{ p.from|date:'Y-m-d' }}&date_to={{ p.to|date:'Y-m-d' }}&driver={{ driver|urlencode }}&helper={{ helper|urlencode }}&plate={{ plate|urlencode }}&status={{ status }}"
+                   class="text-sm px-3 py-1.5 rounded-full border {% if p.on %}bg-blue-600 border-blue-600 text-white{% else %}border-gray-300 hover:bg-gray-50{% endif %}">{{ p.label }}</a>
+                {% endfor %}
+            </div>
+            <div class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3 items-end">
+                <label class="text-sm text-gray-600">Эхлэх огноо
+                    <input type="date" name="date_from" value="{{ date_from|date:'Y-m-d' }}" class="mt-1 w-full border border-gray-300 rounded-lg px-2 py-1.5 text-gray-900">
+                </label>
+                <label class="text-sm text-gray-600">Дуусах огноо
+                    <input type="date" name="date_to" value="{{ date_to|date:'Y-m-d' }}" class="mt-1 w-full border border-gray-300 rounded-lg px-2 py-1.5 text-gray-900">
+                </label>
+                <label class="text-sm text-gray-600">Жолооч
+                    <select name="driver" class="mt-1 w-full border border-gray-300 rounded-lg px-2 py-1.5 text-gray-900">
+                        <option value="">Бүгд</option>
+                        {% for n in drivers %}<option value="{{ n }}" {% if n == driver %}selected{% endif %}>{{ n }}</option>{% endfor %}
+                    </select>
+                </label>
+                <label class="text-sm text-gray-600">Туслах
+                    <select name="helper" class="mt-1 w-full border border-gray-300 rounded-lg px-2 py-1.5 text-gray-900">
+                        <option value="">Бүгд</option>
+                        {% for n in helpers %}<option value="{{ n }}" {% if n == helper %}selected{% endif %}>{{ n }}</option>{% endfor %}
+                    </select>
+                </label>
+                <label class="text-sm text-gray-600">Машин
+                    <select name="plate" class="mt-1 w-full border border-gray-300 rounded-lg px-2 py-1.5 text-gray-900">
+                        <option value="">Бүгд</option>
+                        {% for n in plates %}<option value="{{ n }}" {% if n == plate %}selected{% endif %}>{{ n }}</option>{% endfor %}
+                    </select>
+                </label>
+                <label class="text-sm text-gray-600">Төлөв
+                    <select name="status" class="mt-1 w-full border border-gray-300 rounded-lg px-2 py-1.5 text-gray-900">
+                        {% for v, l in status_choices %}<option value="{{ v }}" {% if v == status %}selected{% endif %}>{{ l }}</option>{% endfor %}
+                    </select>
+                </label>
+            </div>
+            <div class="flex gap-2">
+                <button type="submit" class="text-sm font-semibold px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700">Шүүх</button>
+                <a href="{% url 'shop:delivery_trips_list' %}" class="text-sm px-4 py-2 rounded-lg border border-gray-300 hover:bg-gray-50">Цэвэрлэх</a>
+            </div>
+        </form>
+
+        {# Нэгтгэл #}
+        <div class="no-print grid grid-cols-2 md:grid-cols-5 gap-3">
+            <div class="bg-white rounded-xl border border-gray-100 shadow-sm p-3"><div class="text-xs text-gray-500">Явсан удаа</div><div class="text-2xl font-bold">{{ totals.trips }}</div></div>
+            <div class="bg-white rounded-xl border border-gray-100 shadow-sm p-3"><div class="text-xs text-gray-500">Харилцагч</div><div class="text-2xl font-bold">{{ totals.customers }}</div></div>
+            <div class="bg-white rounded-xl border border-gray-100 shadow-sm p-3"><div class="text-xs text-gray-500">Буцаж ирсэн айл</div><div class="text-2xl font-bold text-orange-700">{{ totals.returned }}</div></div>
+            <div class="bg-white rounded-xl border border-gray-100 shadow-sm p-3"><div class="text-xs text-gray-500">Хүргэсэн</div><div class="text-2xl font-bold text-green-700">{{ totals.delivered }}{% if totals.delivered_pct is not None %} <span class="text-sm font-medium text-gray-500">({{ totals.delivered_pct }}%)</span>{% endif %}</div></div>
+            <div class="bg-white rounded-xl border border-gray-100 shadow-sm p-3"><div class="text-xs text-gray-500">Ирээгүй машин</div><div class="text-2xl font-bold {% if totals.out %}text-red-700{% endif %}">{{ totals.out }}</div></div>
+        </div>
+
+        <div class="dl-card bg-white rounded-xl shadow-sm border border-gray-100 p-3">
+            <div class="dl-print-head justify-between font-bold text-base mb-2">
+                <span>Түгээлтийн машины бүртгэл</span>
+                <span>{{ date_from|date:'Y.m.d' }} - {{ date_to|date:'Y.m.d' }}{% if driver %} · {{ driver }}{% endif %}{% if helper %} · {{ helper }}{% endif %}{% if plate %} · {{ plate }}{% endif %}</span>
+            </div>
+            {% if rows %}
+            <div class="dl-scroll overflow-auto max-h-[70vh]">
+                <table class="dl-table w-full text-sm">
+                    <thead>
+                        <tr class="text-left text-gray-600">
+                            <th class="px-2 py-2">№</th><th class="px-2 py-2">Огноо</th><th class="px-2 py-2">Жолооч</th><th class="px-2 py-2">Туслах</th>
+                            <th class="px-2 py-2">Машин</th><th class="px-2 py-2 text-center">Гарсан</th><th class="px-2 py-2 text-right">Харилцагч</th>
+                            <th class="px-2 py-2 text-center">Ирсэн</th><th class="px-2 py-2 text-center">Хугацаа</th><th class="px-2 py-2 text-right">Буцсан айл</th><th class="px-2 py-2">Шалтгаан</th>
+                            <th class="px-2 py-2 no-print"></th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-100">
+                        {% for r in rows %}{% with t=r.trip %}
+                        <tr class="hover:bg-gray-50 {% if not t.return_time %}bg-red-50{% endif %}">
+                            <td class="px-2 py-1.5 text-gray-500">{{ forloop.counter }}</td>
+                            <td class="px-2 py-1.5 whitespace-nowrap">{{ t.date|date:'Y.m.d' }}</td>
+                            <td class="px-2 py-1.5">{{ t.driver_name }}</td>
+                            <td class="px-2 py-1.5">{{ t.helper_name|default:"Туслахгүй" }}</td>
+                            <td class="px-2 py-1.5 font-semibold whitespace-nowrap">{{ t.vehicle_plate }}</td>
+                            <td class="px-2 py-1.5 text-center tabular-nums">{{ t.depart_time|time:'H:i' }}</td>
+                            <td class="px-2 py-1.5 text-right tabular-nums">{{ t.customer_count|default_if_none:'' }}</td>
+                            <td class="px-2 py-1.5 text-center tabular-nums">{% if t.return_time %}{{ t.return_time|time:'H:i' }}{% else %}<span class="text-red-700">ирээгүй</span>{% endif %}</td>
+                            <td class="px-2 py-1.5 text-center tabular-nums text-gray-600">{{ r.duration }}</td>
+                            <td class="px-2 py-1.5 text-right tabular-nums {% if t.returned_count %}text-orange-700 font-semibold{% endif %}">{{ t.returned_count|default_if_none:'' }}</td>
+                            <td class="px-2 py-1.5 text-gray-700">{{ t.remainder_note }}</td>
+                            <td class="px-2 py-1.5 no-print"><a href="{% url 'shop:delivery_trips' %}?date={{ t.date|date:'Y-m-d' }}" class="text-blue-600 hover:underline whitespace-nowrap">Нээх →</a></td>
+                        </tr>
+                        {% endwith %}{% endfor %}
+                    </tbody>
+                    <tfoot>
+                        <tr class="font-bold border-t-2 border-gray-300">
+                            <td class="px-2 py-2" colspan="5">Нийт {{ totals.trips }} удаа</td>
+                            <td></td>
+                            <td class="px-2 py-2 text-right tabular-nums">{{ totals.customers }}</td>
+                            <td></td><td></td>
+                            <td class="px-2 py-2 text-right tabular-nums">{{ totals.returned }}</td>
+                            <td></td><td class="no-print"></td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+            {% else %}
+            <div class="text-center text-gray-500 py-10">Шүүлтэд тохирох бүртгэл алга.</div>
+            {% endif %}
+        </div>
+
+        {% if by_driver %}
+        <div class="dl-card bg-white rounded-xl shadow-sm border border-gray-100 p-3">
+            <h2 class="font-semibold mb-2">Жолоочоор нэгтгэл</h2>
+            <table class="dl-table w-full text-sm">
+                <thead><tr class="text-left text-gray-600">
+                    <th class="px-2 py-2">Жолооч</th><th class="px-2 py-2 text-right">Өдөр</th><th class="px-2 py-2 text-right">Удаа</th>
+                    <th class="px-2 py-2 text-right">Харилцагч</th><th class="px-2 py-2 text-right">Буцсан айл</th><th class="px-2 py-2 text-right">Хүргэсэн</th>
+                </tr></thead>
+                <tbody class="divide-y divide-gray-100">
+                    {% for d in by_driver %}
+                    <tr><td class="px-2 py-1.5">{{ d.name }}</td><td class="px-2 py-1.5 text-right">{{ d.days }}</td><td class="px-2 py-1.5 text-right">{{ d.trips }}</td>
+                        <td class="px-2 py-1.5 text-right">{{ d.customers }}</td><td class="px-2 py-1.5 text-right">{{ d.returned }}</td><td class="px-2 py-1.5 text-right font-semibold">{{ d.delivered }}</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% endif %}
+    </main>
+</div>
+{% endblock %}

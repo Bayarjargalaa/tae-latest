@@ -1,0 +1,169 @@
+{% load humanize exec_filters %}
+{% with k=data.kpis pay=data.payroll.total att=data.attendance.total %}
+{% if data.skipped_months or data.payroll_in_progress %}
+<div class="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+    ℹ️
+    {% if data.skipped_months %}Цалин, ирцийн тооцоо {{ data.hr_start|default:'—' }} сараас эхэлсэн тул {{ data.skipped_months|length }} сарыг ({{ data.skipped_months|first }}{% if data.skipped_months|length > 1 %} – {{ data.skipped_months|last }}{% endif %}) тооцоогүй.{% endif %}
+    {% if data.payroll_in_progress %}Энэ сарын цалин хаагдаагүй - {{ data.attendance_through }} хүртэлх ирцээрх урьдчилсан бодолт, өмнөх үетэй харьцуулаагүй.{% endif %}
+</div>
+{% endif %}
+
+<div class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3 mb-4">
+    {% with hires=data.hires|stringformat:'s' leavers=data.leavers|stringformat:'s' annual=data.turnover_annual|floatformat:0 rph=k.revenue_per_head|mnt_short through=data.attendance_through|slice:'5:' %}
+    {% include 'shop/exec/_kpi.html' with label='Ажилтны тоо' value=k.headcount|stringformat:'s'|add:' хүн' delta=k.headcount_change delta_unit=' хүн' delta_digits='0' good='neutral' sub='Орсон '|add:hires|add:' · гарсан '|add:leavers %}
+    {% include 'shop/exec/_kpi.html' with label='Ажилтны эргэлт' value=data.turnover|pct sub='Жилд шилжүүлбэл '|add:annual|add:'%' hint='Гарсан ажилтан / дундаж ажилтны тоо' %}
+    {% include 'shop/exec/_kpi.html' with label='Цалингийн зардал' value=k.cost|mnt_short delta=k.cost_change good='neutral' sub='Байгууллагын НДШ-тэй' hint='Бодогдсон нийт цалин + байгууллагаас төлөх НДШ (карт + бэлэн)' %}
+    {% include 'shop/exec/_kpi.html' with label='Дундаж цалин' value=k.avg_gross|mnt_short delta=k.avg_gross_change good='neutral' sub='Нэг ажилтан, сард' hint='Бодогдсон нийт цалин / ажилтан-сар' %}
+    {% include 'shop/exec/_kpi.html' with label='Цалин / борлуулалт' value=k.cost_ratio|pct sub='Нэг ажилтанд '|add:rph|add:' борлуулалт' hint='Цалингийн зардал борлуулалтын хэдэн хувь' %}
+    {% include 'shop/exec/_kpi.html' with label='Ирцийн хувь' value=k.attendance|pct sub=through|add:' хүртэл' hint='Ажилласан / ажиллавал зохих хоног (цаг бүртгэлээр)' %}
+    {% endwith %}
+</div>
+
+<div class="grid grid-cols-1 xl:grid-cols-2 gap-4 mb-4">
+    <section class="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
+        <h2 class="font-semibold text-gray-800">👥 Ажилтны тоо - сүүлийн 12 сар</h2>
+        <p class="text-xs text-gray-500 mb-2">Сарын эцсийн ажилтны тоо.</p>
+        <div class="h-52"><canvas id="chart-hr-headcount" role="img" aria-label="Ажилтны тооны чиг хандлага"></canvas></div>
+    </section>
+    <section class="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
+        <h2 class="font-semibold text-gray-800">🔁 Ажилд орсон, гарсан</h2>
+        <p class="text-xs text-gray-500 mb-2">Сар бүрийн шинээр орсон ба гарсан ажилтан.</p>
+        <div class="h-52"><canvas id="chart-hr-flow" role="img" aria-label="Ажилд орсон, гарсан ажилтны тоо сараар"></canvas></div>
+    </section>
+    {{ data.trend|json_script:'data-hr-trend' }}
+</div>
+
+<!-- Бүтэц -->
+<section class="bg-white rounded-xl border border-gray-100 shadow-sm p-4 mb-4">
+    <div class="flex flex-wrap items-baseline justify-between gap-2 mb-3">
+        <h2 class="font-semibold text-gray-800">🧬 Ажилчдын бүтэц ({{ period.date_to|date:'Y.m.d' }})</h2>
+        <span class="text-xs text-gray-500">Дундаж нас {{ data.avg_age|floatformat:0|default:'-' }} · дундаж ажилласан жил {{ data.avg_tenure|floatformat:1|default:'-' }}
+            · {% for g in data.genders %}{{ g.label }} {{ g.count }}{% if not forloop.last %}, {% endif %}{% endfor %}</span>
+    </div>
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div>
+            <h3 class="text-sm font-medium text-gray-600 mb-2">Хэлтсээр</h3>
+            <ul class="space-y-1.5">{% for r in data.departments %}
+                <li class="text-sm"><div class="flex justify-between"><span class="truncate text-gray-700">{{ r.label }}</span><span class="tabular-nums">{{ r.count }}</span></div>
+                <div class="h-1.5 rounded-full bg-gray-100 overflow-hidden"><div class="h-full rounded-full bg-[#2a78d6]" style="width: {% widthratio r.count k.headcount|default:1 100 %}%"></div></div></li>
+            {% endfor %}</ul>
+        </div>
+        <div>
+            <h3 class="text-sm font-medium text-gray-600 mb-2">Насаар</h3>
+            <ul class="space-y-1.5">{% for r in data.ages %}
+                <li class="text-sm"><div class="flex justify-between"><span class="text-gray-700">{{ r.label }}</span><span class="tabular-nums">{{ r.count }}</span></div>
+                <div class="h-1.5 rounded-full bg-gray-100 overflow-hidden"><div class="h-full rounded-full bg-[#2a78d6]" style="width: {% widthratio r.count k.headcount|default:1 100 %}%"></div></div></li>
+            {% endfor %}</ul>
+        </div>
+        <div>
+            <h3 class="text-sm font-medium text-gray-600 mb-2">Ажилласан хугацаагаар</h3>
+            <ul class="space-y-1.5">{% for r in data.tenures %}
+                <li class="text-sm"><div class="flex justify-between"><span class="text-gray-700">{{ r.label }}</span><span class="tabular-nums">{{ r.count }}</span></div>
+                <div class="h-1.5 rounded-full bg-gray-100 overflow-hidden"><div class="h-full rounded-full bg-[#2a78d6]" style="width: {% widthratio r.count k.headcount|default:1 100 %}%"></div></div></li>
+            {% endfor %}</ul>
+        </div>
+    </div>
+</section>
+
+{% if pay %}
+<div class="grid grid-cols-1 xl:grid-cols-5 gap-4 mb-4">
+    <section class="xl:col-span-3 bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+        <div class="p-4 pb-2 flex flex-wrap justify-between items-baseline gap-2">
+            <h2 class="font-semibold text-gray-800">💵 Цалингийн зардал хэлтсээр</h2>
+            <a href="{% url 'shop:payroll_report' %}" class="text-xs text-blue-700 hover:underline">Цалингийн тайлан →</a>
+        </div>
+        <table class="w-full text-sm">
+            <thead class="bg-gray-50 text-xs text-gray-500"><tr><th class="px-3 py-2 text-left">Хэлтэс</th><th class="px-3 py-2 text-right">Ажилтан</th><th class="px-3 py-2 text-right">Зардал</th><th class="px-3 py-2 text-right">Эзлэх</th><th class="px-3 py-2 text-right">Дундаж цалин</th></tr></thead>
+            <tbody class="divide-y divide-gray-100">
+                {% for d in data.payroll.departments %}
+                <tr><td class="px-3 py-1.5">{{ d.label }}</td><td class="px-3 py-1.5 text-right tabular-nums">{{ d.people }}</td>
+                    <td class="px-3 py-1.5 text-right tabular-nums">{{ d.cost|mnt_short }}</td>
+                    <td class="px-3 py-1.5 text-right tabular-nums text-gray-500">{% widthratio d.cost pay.employer_cost|default:1 100 %}%</td>
+                    <td class="px-3 py-1.5 text-right tabular-nums">{{ d.avg_gross|mnt_short }}</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        <p class="text-[11px] text-gray-400 px-4 py-2">Хаагдсан сар: {{ data.payroll.closed|join:', '|default:'—' }}{% if data.payroll.open %} · хаагдаагүй (шууд бодолт): {{ data.payroll.open|join:', ' }}{% endif %}</p>
+    </section>
+    <section class="xl:col-span-2 bg-white rounded-xl border border-gray-100 shadow-sm p-4">
+        <h2 class="font-semibold text-gray-800">🧾 Цалингийн задаргаа</h2>
+        <p class="text-xs text-gray-500 mb-3">Бодогдсон нийт цалин {{ pay.gross|mnt_short }} + байгууллагын НДШ.</p>
+        <ul class="space-y-2">
+            {% for label, value in data.payroll_parts %}
+            <li class="text-sm">
+                <div class="flex justify-between"><span class="text-gray-700">{{ label }}</span><span class="tabular-nums">{{ value|mnt_short }}</span></div>
+                <div class="h-1.5 rounded-full bg-gray-100 overflow-hidden"><div class="h-full rounded-full {% if forloop.last %}bg-[#eb6834]{% else %}bg-[#2a78d6]{% endif %}" style="width: {% widthratio value pay.employer_cost|default:1 100 %}%"></div></div>
+            </li>
+            {% endfor %}
+        </ul>
+        {% if pay.sales_bonus %}<p class="text-xs text-gray-500 mt-3">Үүнээс борлуулалтын нэмэгдэл {{ pay.sales_bonus|mnt_short }}.</p>{% endif %}
+    </section>
+</div>
+{% endif %}
+
+{% if att %}
+<div class="grid grid-cols-1 xl:grid-cols-5 gap-4 mb-4">
+    <section class="xl:col-span-3 bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+        <div class="p-4 pb-2 flex flex-wrap justify-between items-baseline gap-2">
+            <h2 class="font-semibold text-gray-800">🕒 Ирц хэлтсээр</h2>
+            <a href="{% url 'shop:timesheet' %}" class="text-xs text-blue-700 hover:underline">Хоног бүртгэл →</a>
+        </div>
+        <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+            <thead class="bg-gray-50 text-xs text-gray-500"><tr><th class="px-3 py-2 text-left">Хэлтэс</th><th class="px-3 py-2 text-left min-w-[8rem]">Ирц</th><th class="px-3 py-2 text-right">Ажилласан / зохих хоног</th><th class="px-3 py-2 text-right">Хоцролт (мин)</th><th class="px-3 py-2 text-right">Чөлөө</th><th class="px-3 py-2 text-right" title="Чөлөө, амралтаар тайлбарлагдаагүй тасалсан хоног">Тайлбаргүй</th></tr></thead>
+            <tbody class="divide-y divide-gray-100">
+                {% for d in data.attendance.departments %}
+                <tr>
+                    <td class="px-3 py-1.5">{{ d.label }}</td>
+                    <td class="px-3 py-1.5">
+                        <div class="flex items-center gap-2"><div class="flex-1 h-1.5 rounded-full bg-gray-100 overflow-hidden"><div class="h-full rounded-full bg-[#1baf7a]" style="width: {{ d.rate|clamp100 }}%"></div></div><span class="text-xs tabular-nums w-10 text-right">{{ d.rate|pct:0 }}</span></div>
+                    </td>
+                    <td class="px-3 py-1.5 text-right tabular-nums">{{ d.worked_days|floatformat:0 }} / {{ d.required_days|floatformat:0 }}</td>
+                    <td class="px-3 py-1.5 text-right tabular-nums {% if d.late %}text-amber-700{% else %}text-gray-300{% endif %}">{{ d.late|floatformat:0|intcomma }}</td>
+                    <td class="px-3 py-1.5 text-right tabular-nums">{{ d.leave_days|floatformat:0 }}</td>
+                    <td class="px-3 py-1.5 text-right tabular-nums {% if d.unexplained_days %}text-red-700 font-semibold{% else %}text-gray-300{% endif %}">{{ d.unexplained_days|floatformat:0 }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        </div>
+        <p class="text-[11px] text-gray-400 px-4 py-2">Цаг бүртгүүлдэггүй албан тушаалын ажилласан хоног ажиллавал зохих хоногтой тэнцүү тооцогдоно.
+            {% if data.attendance.pending %}<br><span class="text-amber-700">Энэ сарын бүртгэл хараахан ороогүй {{ data.attendance.pending|length }} ажилтныг тооцоогүй (ХТ-ийн айлчлал, худалдагчийн хоног сарын эцэст ордог): {{ data.attendance.pending|join:', ' }}.</span>{% endif %}</p>
+    </section>
+    <section class="xl:col-span-2 bg-white rounded-xl border border-gray-100 shadow-sm p-4">
+        <h2 class="font-semibold text-gray-800 mb-3">⏰ Хамгийн их хоцорсон</h2>
+        {% if data.attendance.late_top %}
+        <ul class="divide-y divide-gray-100">
+            {% for p in data.attendance.late_top %}
+            <li class="py-1.5 flex justify-between gap-2 text-sm"><div class="min-w-0"><div class="truncate">{{ p.name }}</div><div class="text-[11px] text-gray-400 truncate">{{ p.position }}</div></div><span class="tabular-nums text-amber-700 shrink-0">{{ p.minutes|floatformat:0|intcomma }} мин</span></li>
+            {% endfor %}
+        </ul>
+        {% else %}<p class="text-sm text-gray-500">Хоцролт бүртгэгдээгүй.</p>{% endif %}
+    </section>
+</div>
+{% endif %}
+{% endwith %}
+
+<div class="grid grid-cols-1 xl:grid-cols-3 gap-4 mb-4">
+    <section class="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
+        <h2 class="font-semibold text-gray-800 mb-2">🟢 Шинээр орсон ({{ data.hires }})</h2>
+        <ul class="divide-y divide-gray-100 text-sm">
+            {% for e in data.hire_list %}<li class="py-1.5 flex justify-between gap-2"><div class="min-w-0"><div class="truncate">{{ e.name }}</div><div class="text-[11px] text-gray-400 truncate">{{ e.position }} · {{ e.department }}</div></div><span class="text-xs text-gray-500 tabular-nums shrink-0">{{ e.date }}</span></li>
+            {% empty %}<li class="py-1.5 text-gray-500">Энэ хугацаанд ажилд ороогүй.</li>{% endfor %}
+        </ul>
+    </section>
+    <section class="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
+        <h2 class="font-semibold text-gray-800 mb-2">🔴 Ажлаас гарсан ({{ data.leavers }})</h2>
+        <ul class="divide-y divide-gray-100 text-sm">
+            {% for e in data.leaver_list %}<li class="py-1.5 flex justify-between gap-2"><div class="min-w-0"><div class="truncate">{{ e.name }}</div><div class="text-[11px] text-gray-400 truncate">{{ e.position }} · {{ e.department }}</div></div><span class="text-xs text-gray-500 tabular-nums shrink-0">{{ e.date }}</span></li>
+            {% empty %}<li class="py-1.5 text-gray-500">Энэ хугацаанд ажлаас гараагүй.</li>{% endfor %}
+        </ul>
+    </section>
+    <section class="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
+        <h2 class="font-semibold text-gray-800 mb-2">🎉 Ойрын 30 хоногт</h2>
+        <ul class="divide-y divide-gray-100 text-sm">
+            {% for u in data.upcoming %}<li class="py-1.5 flex justify-between gap-2"><div class="min-w-0"><div class="truncate">{% if u.kind == 'birthday' %}🎂{% else %}🏅{% endif %} {{ u.name }}</div><div class="text-[11px] text-gray-400 truncate">{% if u.kind == 'birthday' %}Төрсөн өдөр{% else %}Ажилд орсны {{ u.years }} жилийн ой{% endif %} · {{ u.position }}</div></div><span class="text-xs tabular-nums shrink-0 {% if u.days == 0 %}text-green-700 font-semibold{% else %}text-gray-500{% endif %}">{% if u.days == 0 %}Өнөөдөр{% else %}{{ u.date|slice:'5:' }}{% endif %}</span></li>
+            {% empty %}<li class="py-1.5 text-gray-500">Алга.</li>{% endfor %}
+        </ul>
+    </section>
+</div>

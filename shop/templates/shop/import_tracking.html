@@ -1,0 +1,162 @@
+{% extends 'base.html' %}
+
+{% block title %}Замын мэдээ - Euro Foods{% endblock %}
+
+{% block hide_mobile_menu %}hidden{% endblock %}
+
+{% block extra_css %}
+{% include 'shop/_import_css.html' %}
+<style>
+    .route { display: flex; align-items: flex-start; overflow-x: auto; padding: 1.4rem 0 .5rem; }
+    .route .pt { position: relative; flex: 1 0 96px; display: grid; justify-items: center; text-align: center; gap: 2px; font-size: .75rem; }
+    .route .pt::before { content: ""; position: absolute; top: 6px; left: 50%; right: -50%; height: 3px; background: #e6ebee; }
+    .route .pt:last-child::before { display: none; }
+    .route .pt.done::before { background: #0b6e8a; }
+    .route .pt .dot { position: relative; width: 14px; height: 14px; border-radius: 50%; background: #fff; border: 3px solid #d1d5db; }
+    .route .pt.done .dot { background: #0b6e8a; border-color: #0b6e8a; }
+    .route .pt.plan .dot { background: #cfe6d7; border-color: #cfe6d7; }
+    .route .pt.plan .p, .route .pt.plan .d { color: #7fb08f; }
+    .route .pt.here .dot { box-shadow: 0 0 0 5px #e1f0f4; }
+    .route .pt .p { font-weight: 600; color: #111827; margin-top: .3rem; }
+    .route .pt .d { color: #6b7280; font-variant-numeric: tabular-nums; }
+    .route .pt .s { color: #6b7280; font-size: .7rem; }
+    .route .pt.here::before { background: #e6ebee; }
+    /* Шат хоорондын хоног - холбох шугамын дунд */
+    .route .gap { position: absolute; left: 0; top: -1.25rem; transform: translateX(-50%); white-space: nowrap; font-size: .68rem; font-weight: 600;
+                  color: #0b6e8a; background: #e1f0f4; border-radius: 999px; padding: 0 .4rem; font-variant-numeric: tabular-nums; }
+    .route .gap.pl { color: #7fb08f; background: #eef6f0; }
+    .route .gap.now { color: #8a5a00; background: #fbf0dc; }
+    /* Захиалга бүр тод хүрээтэй карт; зүүн талын өнгөт зураас = төлөв (ирсэн / замд / ачигдаагүй) */
+    .ship { background: #fff; border: 1.5px solid #cbd5e1; border-left-width: 6px; border-radius: .9rem; overflow: hidden;
+            box-shadow: 0 2px 6px rgba(15, 23, 42, .06), 0 10px 24px -12px rgba(15, 23, 42, .18); }
+    .ship.st-transit { border-left-color: #0b6e8a; }
+    .ship.st-arrived { border-left-color: #2f7d4f; }
+    .ship.st-wait { border-left-color: #9ca3af; }
+    .ship-h { background: #f4f7f9; border-bottom: 1.5px solid #e2e8f0; }
+    .ship.st-arrived .ship-h { background: #f1f8f3; }
+    .mode { display: inline-flex; align-items: center; gap: .3rem; font-size: .78rem; font-weight: 600; color: #0b4f63; background: #e8f3f6; border: 1px solid #cfe3ea; border-radius: 999px; padding: .05rem .55rem .05rem .35rem; }
+    .mode-i { font-size: 1.05rem; line-height: 1; }
+    .ship-title { font-size: 1.2rem; line-height: 1.5rem; font-weight: 700; color: #111827; }
+    .ship-title .sep { color: #9ca3af; font-weight: 400; }
+    @media (min-width: 1024px) { .ship-title { font-size: 1.35rem; line-height: 1.75rem; } }
+    .goods-wrap { border-top: 1.5px solid #e2e8f0; }
+    .goods-wrap .goods { display: none; }
+    .goods-wrap.open .goods { display: block; }
+    .goods-toggle:hover { background: #f8fafc; }
+    .ship .ship-f { background: #f8fafc; border-top: 1.5px solid #e2e8f0; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="flex min-h-screen bg-gray-50">
+    {% include 'shop/_sidebar.html' with active_page=active_page %}
+
+    <main class="flex-1 p-3 lg:p-8 min-w-0 space-y-7">
+        <div>
+            <div class="text-xs font-medium text-gray-500 mb-1">Гадаад харилцаа</div>
+            <h1 class="text-2xl lg:text-3xl font-bold tracking-tight">🧭 Замын мэдээ</h1>
+            <p class="text-sm text-gray-500 mt-1">Замд яваа чингэлгүүд ба сүүлийн {{ recent_days }} хоногт ирсэн ачаа. Ирэх дарааллаар.</p>
+        </div>
+        {% if full and paid_totals or full and tax_total %}
+        <div class="bg-white rounded-xl shadow-sm border border-gray-100 px-4 py-3 flex flex-wrap items-baseline gap-x-4 gap-y-1">
+            {% if tax_total %}<span class="lbl mb-0">Нийт татвар</span><span class="text-lg font-semibold num mr-4">{{ tax_total|floatformat:'0g' }} ₮</span>{% endif %}
+            <span class="lbl mb-0">Нийт шилжүүлсэн</span>
+            {% for c, a in paid_totals %}<span class="text-lg font-semibold num">{{ a|floatformat:'2g' }} {{ c }}</span>{% endfor %}
+        </div>
+        {% endif %}
+
+        {% for s in shipments %}
+        <section class="ship {% if s.arrived %}st-arrived{% elif s.load_actual %}st-transit{% else %}st-wait{% endif %}">
+            <div class="ship-h flex flex-wrap items-start justify-between gap-3 px-4 py-3">
+                <div>
+                    {# Нийлүүлэгчийн нэр томоор, захиалгын дугаар жижгээр #}
+                    <div class="ship-title">{% for o in s.supplier_orders.all %}{{ o.supplier_name }}{% if not forloop.last %}<span class="sep"> · </span>{% endif %}{% empty %}<span class="text-gray-400">Нийлүүлэгч бүртгээгүй</span>{% endfor %}</div>
+                    <div class="flex flex-wrap items-center gap-2 mt-1">
+                        {% if full %}<a href="{% url 'shop:import_shipment' s.pk %}" class="text-xs font-semibold text-gray-500 hover:underline">{{ s.code }}</a>{% else %}<span class="text-xs font-semibold text-gray-500">{{ s.code }}</span>{% endif %}
+                        <span class="pill {% if s.arrived %}ok{% elif s.step_idx >= 0 %}blue{% endif %}">{% if full %}{{ s.status_label }}{% elif s.arrived %}Ирсэн{% elif s.load_actual %}Замд{% else %}Ачигдаагүй{% endif %}</span>
+                        {% if s.transport_mode %}<span class="mode" title="Тээвэрлэх хэлбэр"><span class="mode-i" aria-hidden="true">{{ s.transport_icon }}</span>{{ s.transport_mode }}</span>{% endif %}
+                    </div>
+                    <div class="text-sm text-gray-600 mt-0.5">📍 {{ s.location }}{% if s.location_date %} · <span class="num">{{ s.location_date|date:'Y-m-d' }}</span>{% endif %}</div>
+                    {% if full %}<div class="text-xs text-gray-500 mt-0.5">{{ s.get_container_size_display }}{% if s.container_no %} · {{ s.container_no }}{% endif %}{% if s.carrier_name %} · {{ s.carrier_name }}{% endif %}</div>{% endif %}
+                </div>
+                <div class="text-right">
+                    <div class="lbl">{% if s.arrived %}Ирсэн{% else %}Монголд ирэх{% endif %}</div>
+                    <div class="text-lg font-semibold num">{% if s.arrival_actual %}{{ s.arrival_actual|date:'Y-m-d' }}{% else %}{{ s.arrival_planned|date:'Y-m-d'|default:'—' }}{% endif %}</div>
+                    {% if s.delay_days %}<div class="text-xs late">+{{ s.delay_days }} хоног хоцорсон</div>{% endif %}
+                    {% if full %}<a href="{% url 'shop:import_shipment' s.pk %}" class="text-xs text-sky-800 hover:underline">Дэлгэрэнгүй →</a>{% endif %}
+                </div>
+            </div>
+
+            {# Нэг шугам: шат бүр, хооронд нь зарцуулсан хоног #}
+            <div class="px-4 pt-6 pb-1">
+                <div class="route">
+                    {% for n in s.timeline %}
+                    <div class="pt {{ n.state }}{% if n.here %} here{% endif %}">
+                        {% if n.days is not None and not forloop.first %}<span class="gap {% if n.days_now %}now{% elif n.days_plan %}pl{% endif %}" title="{% if n.days_now %}Өмнөх шатнаас хойш өнөөдрийг хүртэл{% elif n.days_plan %}Төлөвлөсөн{% else %}Өмнөх шатнаас{% endif %}">{{ n.days }} хоног{% if n.days_now %}…{% endif %}</span>{% endif %}
+                        <span class="dot"></span>
+                        <span class="p">{{ n.label }}</span>
+                        {% if n.sub %}<span class="s">{{ n.sub }}</span>{% endif %}
+                        <span class="d">{{ n.date|date:'m-d'|default:'—' }}</span>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% if s.total_days is not None %}<div class="text-xs text-gray-500 text-right pb-1">Ачигдсанаас хойш {% if s.arrived %}ирэх хүртэл{% else %}өнөөдрийг хүртэл{% endif %} <b class="num">{{ s.total_days }}</b> хоног</div>{% endif %}
+            </div>
+
+            {# Барааны задаргаа - анхдагчаар нуусан, чек дээр дарахад харагдана #}
+            <div class="goods-wrap">
+            <label class="goods-toggle px-4 py-2 flex items-center gap-2 text-sm cursor-pointer select-none">
+                <input type="checkbox" class="w-4 h-4 accent-sky-700">
+                <span class="font-medium">Барааг харах</span>
+                <span class="text-xs text-gray-500">{{ s.line_count }} бараа · {{ s.box_total|floatformat:'-2g' }} хайрцаг</span>
+            </label>
+            <div class="goods overflow-x-auto">
+                <table class="im-table">
+                    <thead><tr><th>Нийлүүлэгч</th><th>Бараа</th><th class="r">Хайрцаг</th><th class="r">Тоо хэмжээ</th>{% if full %}<th class="r">Нэгж үнэ</th><th class="r">Дүн</th>{% endif %}</tr></thead>
+                    <tbody>
+                        {% for o in s.supplier_orders.all %}
+                        {% for l in o.lines.all %}
+                        <tr>
+                            {% if forloop.first %}<td rowspan="{{ o.lines.all|length }}" class="font-medium">{{ o.supplier_name }}
+                                {% if full %}<div class="mt-1"><span class="pill {% if o.payment_status == 'full' %}ok{% elif o.payment_status == 'partial' %}warn{% else %}bad{% endif %}">{{ o.get_payment_status_display }}</span></div>
+                                <div class="text-xs text-gray-500 num mt-1">{{ o.goods_total|floatformat:'2g' }} {{ o.currency }}</div>
+                                {% if o.tax_total %}<div class="text-xs text-gray-600 num">Татвар {{ o.tax_total|floatformat:'0g' }} {% if o.tax_currency == 'MNT' %}₮{% else %}{{ o.tax_currency }}{% endif %}</div>{% endif %}
+                                <div class="text-xs num {% if o.payment_status == 'full' %}text-green-700{% elif o.payment_status == 'partial' %}text-amber-700{% else %}text-gray-400{% endif %}">Шилжүүлсэн {{ o.paid_total|floatformat:'2g' }} {{ o.currency }}</div>{% endif %}</td>{% endif %}
+                            <td>{{ l.item_name }}</td>
+                            <td class="r">{{ l.box_qty|floatformat:'-2g' }}</td>
+                            <td class="r">{{ l.total_qty|floatformat:'-3g' }} <span class="text-xs text-gray-500">{% if l.measure == 'Клограм' %}кг{% elif l.measure == 'Ширхэг' %}ш{% else %}{{ l.measure }}{% endif %}</span></td>
+                            {% if full %}<td class="r">{{ l.unit_price|floatformat:'-4g' }}</td><td class="r">{{ l.total_amount|floatformat:'2g' }}</td>{% endif %}
+                        </tr>
+                        {% empty %}
+                        <tr><td class="font-medium">{{ o.supplier_name }}</td><td colspan="{% if full %}5{% else %}3{% endif %}" class="text-gray-400">Бараа бүртгээгүй</td></tr>
+                        {% endfor %}
+                        {% empty %}
+                        <tr><td colspan="{% if full %}6{% else %}4{% endif %}" class="text-gray-400">Нийлүүлэгч бүртгээгүй</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            </div>
+            {% if full and s.freight_total or full and s.paid_totals or full and s.tax.total %}
+            <div class="ship-f px-4 py-2 text-sm flex flex-wrap justify-end gap-x-6 gap-y-1">
+                {% if s.tax.total %}<span title="Гааль {{ s.tax.duty|floatformat:'0g' }} ₮ · НӨАТ {{ s.tax.vat|floatformat:'0g' }} ₮">Татвар: <b class="num">{{ s.tax.total|floatformat:'0g' }} ₮</b></span>{% endif %}
+                {% if s.paid_totals %}<span>Шилжүүлсэн төлбөр: {% for c, a in s.paid_totals %}<b class="num">{{ a|floatformat:'2g' }} {{ c }}</b>{% if not forloop.last %}, {% endif %}{% endfor %}</span>{% endif %}
+                {% if s.freight_total %}<span>Тээврийн зардал: <b class="num">{{ s.freight_total|floatformat:'2g' }} {{ s.freight_currency }}</b></span>{% endif %}
+            </div>
+            {% endif %}
+        </section>
+        {% empty %}
+        <div class="bg-white rounded-xl border border-dashed border-gray-300 p-10 text-center text-gray-500">Одоогоор замд яваа ачаа алга.</div>
+        {% endfor %}
+    </main>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.querySelectorAll('.goods-toggle input').forEach(function (box) {
+    box.checked = false;  // буцаж ирэхэд хаалттай
+    box.addEventListener('change', function () { box.closest('.goods-wrap').classList.toggle('open', box.checked); });
+});
+</script>
+{% endblock %}

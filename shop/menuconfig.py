@@ -42,6 +42,7 @@ MENU_GROUPS = [
             {'key': 'inventory', 'label': 'Барааны үлдэгдэл', 'icon': '📦', 'url_name': 'shop:inventory_report'},
             {'key': 'item_prices', 'label': 'Барааны үнэ', 'icon': '💲', 'url_name': 'shop:item_prices'},
             {'key': 'item_costs', 'label': 'Барааны өртөг', 'icon': '🧾', 'url_name': 'shop:item_costs'},
+            {'key': 'product_certificates', 'label': 'Шинжилгээний бичиг', 'icon': '🧪', 'url_name': 'shop:product_certificates'},
         ],
     },
     {
@@ -50,6 +51,7 @@ MENU_GROUPS = [
         'items': [
             {'key': 'sales_report', 'label': 'Борлуулалтын тайлан', 'icon': '📊', 'url_name': 'shop:sales_report'},
             {'key': 'sales_report_ht', 'label': 'Борлуулалтын тайлан ХТ-р', 'icon': '🧑‍💼', 'url_name': 'shop:sales_report_ht'},
+            {'key': 'sales_plan', 'label': 'Борлуулалтын төлөвлөгөө', 'icon': '🎯', 'url_name': 'shop:sales_plan'},
         ],
     },
     {
@@ -57,6 +59,7 @@ MENU_GROUPS = [
         'label': 'Түгээлт',
         'items': [
             {'key': 'delivery_report', 'label': 'Түгээлтийн тайлан', 'icon': '🚛', 'url_name': 'shop:delivery_report'},
+            {'key': 'delivery_trips', 'label': 'Түгээлтийн машин', 'icon': '🚚', 'url_name': 'shop:delivery_trips'},
         ],
     },
     {
@@ -65,9 +68,18 @@ MENU_GROUPS = [
         'items': [
             {'key': 'purchase_report', 'label': 'Татан авалтын тайлан', 'icon': '🚚', 'url_name': 'shop:purchase_report'},
             {'key': 'unloading', 'label': 'Ачаа буулгалт', 'icon': '🏗️', 'url_name': 'shop:unloading'},
+            {'key': 'vehicles', 'label': 'Тээврийн хэрэгсэл', 'icon': '🚗', 'url_name': 'shop:vehicles'},
             {'key': 'meal_list', 'label': 'Хоолны бүртгэл', 'icon': '🍲', 'url_name': 'shop:meal_list'},
             {'key': 'meal_attendance', 'label': 'Хоол идэх нэрс', 'icon': '📝', 'url_name': 'shop:meal_attendance_list'},
             {'key': 'meal_material_calc', 'label': 'Хоолны материалын тооцоо', 'icon': '🧮', 'url_name': 'shop:meal_material_calc'},
+        ],
+    },
+    {
+        'key': 'import',
+        'label': 'Гадаад харилцаа',
+        'items': [
+            {'key': 'import_orders', 'label': 'Импортын захиалга', 'icon': '🚢', 'url_name': 'shop:import_orders'},
+            {'key': 'import_tracking', 'label': 'Замын мэдээ', 'icon': '🧭', 'url_name': 'shop:import_tracking'},
         ],
     },
     {
@@ -100,6 +112,16 @@ MENU_GROUPS = [
 ]
 
 
+# --- Үйлдлийн эрх: хажуугийн цэсэнд харагдахгүй, гэхдээ цэсний эрхтэй адил албан тушаалаар тохируулна ---------
+# (MenuPermission-д menu_key-ээр хадгалагдана; template-д `'product_edit' in visible_menu_keys` гэж шалгана)
+ACTION_PERMISSIONS = [
+    {'key': 'product_edit', 'label': 'Бүтээгдэхүүний мэдээлэл засах', 'icon': '✏️'},
+    {'key': 'product_attachment_upload', 'label': 'Бүтээгдэхүүнд шинжилгээний бичиг хавсаргах', 'icon': '📄'},
+    # Нүүр хуудсын удирдлагын нэгтгэл (борлуулалт, бараа материал, авлага, өглөг, мөнгөн хөрөнгө) - Ерөнхий нягтлан үргэлж
+    {'key': 'exec_summary', 'label': 'Удирдлагын нэгтгэл (нүүр хуудас)', 'icon': '📈'},
+]
+
+
 # --- URL түвшний эрх (shop.access, shop.middleware.MenuPermissionMiddleware) ---------------------------------
 # Хажуугийн цэснээс нуусан хуудсыг хаягаар нь ч нээж болохгүй. Цэсний item бүрийн url_name өөрийн key-ээр
 # автоматаар хамгаалагдана; энд зөвхөн дэд хуудас (экспорт, хадгалах, засах, тохиргоо г.м.)-ыг аль цэсэнд
@@ -112,6 +134,19 @@ SUBPAGE_MENU_KEYS = {
     'sales_report_ht_breakdown': ('sales_report_ht',),
     'sales_report_ht_export': ('sales_report_ht',),
     'unloading_export': ('unloading',),
+    'delivery_trips_save': ('delivery_trips',),
+    'delivery_trips_list': ('delivery_trips',),
+    'delivery_trips_export': ('delivery_trips',),
+    'vehicles_fuel_import': ('vehicles',),
+    'vehicles_fuel_save': ('vehicles',),
+    'vehicles_fuel_cash_save': ('vehicles',),
+    'vehicles_export': ('vehicles',),
+    'vehicles_parts_save': ('vehicles',),
+    'vehicles_parts_import': ('vehicles',),
+    # Дэлгэрэнгүй/баримтыг view өөрөө нарийвчилж шалгана (services.imports.can_view_full) - ХТ-д нээгдэхгүй
+    'import_shipment': ('import_orders', 'import_tracking'),
+    'import_receipt': ('import_orders', 'import_tracking'),
+    'import_attachment': ('import_orders', 'import_tracking'),
     'purchase_report_export': ('purchase_report',),
     'purchase_report_suggest': ('purchase_report',),
     'receivable_ledger': ('receivable_report',),
@@ -120,6 +155,7 @@ SUBPAGE_MENU_KEYS = {
     'payable_export': ('payable_report',),
     'expense_transaction_detail': ('expense_report', 'expense_report_by_year'),
     'item_prices_export': ('item_prices',),
+    'item_price_history': ('item_prices',),
     'item_costs_export': ('item_costs',),
     'meal_create': ('meal_list',),
     'meal_edit': ('meal_list',),
@@ -145,10 +181,18 @@ SUBPAGE_MENU_KEYS = {
     'payroll_cash_export': ('payroll_cash',),
     'payroll_settings': ('payroll_card', 'payroll_cash'),
     'meal_allowance_export': ('meal_allowance',),
+    'product_edit': ('product_edit',),
+    'product_attachment_upload': ('product_attachment_upload',),
+    'product_attachment_delete': ('product_attachment_upload',),
+    'product_attachment_link': ('product_attachment_upload',),
+    'product_search': ('product_attachment_upload',),
+    'product_attachment_edit': ('product_attachment_upload',),
+    'product_doc_types': ('product_attachment_upload',),
 }
 # Цэсний эрхээс үл хамааран нээлттэй (нэвтрээгүй хэрэглэгчид ч) - эрхийг view өөрөө шалгадаг эсвэл нийтийн хуудас
 PUBLIC_URL_NAMES = {
-    'home', 'products', 'product_detail', 'product_edit', 'register', 'login', 'logout',
+    'home', 'products', 'product_detail', 'register', 'login', 'logout',
+    'product_attachment',  # view нь @login_required - нэвтэрсэн бүх хэрэглэгч харж, татна
     'password_reset', 'password_reset_done', 'password_reset_confirm', 'password_reset_complete',
     'ai_chat_message', 'product_stock_lookup',
 }
