@@ -583,7 +583,8 @@ def fuel_data(f):
             rows.append(row)
 
     purchases = [r for r in rows if r['t'].is_purchase]
-    by_type = defaultdict(lambda: {'amount': Decimal('0'), 'liters': Decimal('0'), 'count': 0})
+    by_type = defaultdict(lambda: {'amount': Decimal('0'), 'liters': Decimal('0'), 'count': 0,
+                                   'ours_amount': Decimal('0'), 'ours_liters': Decimal('0'), 'ours_count': 0})
     for r in purchases:
         if not r['t'].amount:
             continue
@@ -591,6 +592,10 @@ def fuel_data(f):
         d['amount'] += -r['t'].amount
         d['liters'] += r.get('quantity') or 0
         d['count'] += 1
+        if r['t'].vehicle_plate in ours:  # Үүнээс манай машинд хийсэн
+            d['ours_amount'] += -r['t'].amount
+            d['ours_liters'] += r.get('quantity') or 0
+            d['ours_count'] += 1
     all_purchases = [t for t in period_txns if t.is_purchase and t.amount]
     return {
         'rows': rows,

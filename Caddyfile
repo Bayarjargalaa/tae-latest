@@ -12,8 +12,15 @@ tae.mn, www.tae.mn {
     reverse_proxy web:8000
 }
 
-http://www.gotopa.com, http://gotopa.com {
+# gotopa.com - RapidSSL сертификат (gotopa.com.crt = fullchain). Хугацаа: 2027-05-07
+# Django контейнер (gotopa_web) host-ийн 8002 порт дээр.
+gotopa.com, www.gotopa.com {
+    tls /etc/caddy/certs/gotopa.com.crt /etc/caddy/certs/gotopa.com.key
     reverse_proxy host.docker.internal:8002
+}
+
+http://www.gotopa.com, http://gotopa.com {
+    redir https://{host}{uri} permanent
 }
 
 :80 {

@@ -1,0 +1,183 @@
+{% extends 'base.html' %}
+{% load humanize l10n %}
+
+{% block title %}Шатахууны мөнгө олгох тооцоо - Euro Foods{% endblock %}
+
+{% block extra_css %}
+<style>
+.vh-tab { padding: .6rem 1.1rem; font-weight: 600; border-bottom: 3px solid transparent; color: #6b7280; white-space: nowrap; }
+.vh-tab.on { color: #1d4ed8; border-color: #1d4ed8; }
+.fa-table th { position: sticky; top: 0; background: #f3f4f6; z-index: 1; white-space: nowrap; }
+.fa-table td, .fa-table th { padding: .35rem .5rem; }
+.fa-in { width: 100%; border: 1px solid #d1d5db; border-radius: .375rem; padding: .2rem .4rem; font-size: .85rem; background: #fff; text-align: right; }
+.fa-in:focus { outline: none; border-color: #2563eb; box-shadow: 0 0 0 2px #bfdbfe; }
+.fa-in.manual { background: #fef9c3; border-color: #eab308; }
+.fa-in.carried { color: #6b7280; font-style: italic; }
+.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+@media print {
+    @page { size: A4 portrait; margin: 10mm; }
+    #sidebar, #sidebar-open-button, #sidebar-overlay, header, footer, .no-print, #ai-chat-widget { display: none !important; }
+    main { margin: 0 !important; padding: 0 !important; }
+    body, .bg-gray-50 { background: white !important; }
+    .fa-card { border: none !important; box-shadow: none !important; padding: 0 !important; }
+    .fa-table th { position: static; }
+    .fa-in { border: none; background: none !important; padding: 0; font-style: normal !important; color: #000 !important; }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="flex min-h-screen bg-gray-50">
+    {% include 'shop/_sidebar.html' with active_page=active_page %}
+
+    <main class="flex-1 p-3 lg:p-6 min-w-0 space-y-4">
+        <div class="flex flex-wrap items-end justify-between gap-3 no-print">
+            <div>
+                <div class="text-xs font-medium text-gray-500 mb-1">Хангамж</div>
+                <h1 class="text-2xl lg:text-3xl font-bold tracking-tight">🚗 Тээврийн хэрэгсэл</h1>
+            </div>
+            <div class="flex flex-wrap gap-2 no-print">
+                <a href="?tab=fuel_allowance&year={{ year|unlocalize }}&month={{ month }}&q={{ q|urlencode }}&format=print" target="_blank" class="text-sm font-medium px-3 py-2 rounded-lg border border-gray-200 bg-white hover:bg-gray-50">🖨 Хэвлэх</a>
+                <a href="?tab=fuel_allowance&year={{ year|unlocalize }}&month={{ month }}&q={{ q|urlencode }}&export=xlsx" class="text-sm font-medium px-3 py-2 rounded-lg border border-green-600 text-green-700 bg-white hover:bg-green-50">⬇ Excel</a>
+            </div>
+        </div>
+
+        <div class="flex gap-1 border-b border-gray-200 overflow-x-auto no-print">
+            <a href="?tab=fuel" class="vh-tab">⛽ Шатахуун</a>
+            <a href="?tab=parts" class="vh-tab">🔧 Сэлбэг хэрэгсэл</a>
+            <a href="?tab=reports" class="vh-tab">📊 Тайлан</a>
+            <a href="?tab=fuel_allowance" class="vh-tab on">💰 Шатахууны мөнгө олгох тооцоо</a>
+        </div>
+
+        {% if messages %}
+        <div class="space-y-2 no-print">{% for message in messages %}<div class="p-3 rounded-lg text-sm {% if message.tags == 'error' %}bg-red-100 text-red-800{% elif message.tags == 'warning' %}bg-yellow-100 text-yellow-800{% else %}bg-green-100 text-green-800{% endif %}">{{ message }}</div>{% endfor %}</div>
+        {% endif %}
+
+        <form method="get" id="fa-filter" class="bg-white rounded-xl shadow-sm border border-gray-100 p-4 no-print">
+            <input type="hidden" name="tab" value="fuel_allowance">
+            <div class="flex flex-wrap items-end gap-3">
+                <a href="?tab=fuel_allowance&year={{ prev_month.year|unlocalize }}&month={{ prev_month.month }}" class="border border-gray-300 bg-white px-3 py-2 rounded-lg hover:bg-gray-50" title="Өмнөх сар">←</a>
+                <div>
+                    <label for="fa-year" class="block text-sm font-medium mb-1">Он</label>
+                    <select id="fa-year" name="year" class="border border-gray-300 rounded-lg px-3 py-2" onchange="this.form.submit()">
+                        {% for y in years %}<option value="{{ y|unlocalize }}" {% if y == year %}selected{% endif %}>{{ y|unlocalize }}</option>{% endfor %}
+                    </select>
+                </div>
+                <div>
+                    <label for="fa-month" class="block text-sm font-medium mb-1">Сар</label>
+                    <select id="fa-month" name="month" class="border border-gray-300 rounded-lg px-3 py-2" onchange="this.form.submit()">
+                        {% for num, label in months %}<option value="{{ num }}" {% if num == month %}selected{% endif %}>{{ label }}</option>{% endfor %}
+                    </select>
+                </div>
+                <a href="?tab=fuel_allowance&year={{ next_month.year|unlocalize }}&month={{ next_month.month }}" class="border border-gray-300 bg-white px-3 py-2 rounded-lg hover:bg-gray-50" title="Дараагийн сар">→</a>
+                <div class="flex-1 min-w-[12rem]">
+                    <label for="fa-q" class="block text-sm font-medium mb-1">Хайх</label>
+                    <input id="fa-q" type="search" name="q" value="{{ q }}" placeholder="Нэр, код, албан тушаал" class="border border-gray-300 rounded-lg px-3 py-2 w-full">
+                </div>
+                <button type="submit" class="text-sm font-semibold px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700">Шүүх</button>
+            </div>
+        </form>
+
+        <form method="post" class="fa-card bg-white rounded-xl shadow-sm border border-gray-100 p-4 space-y-3">
+            {% csrf_token %}
+            <input type="hidden" name="tab" value="fuel_allowance">
+            <input type="hidden" name="year" value="{{ year|unlocalize }}">
+            <input type="hidden" name="month" value="{{ month }}">
+            <div class="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                    <h2 class="text-lg font-semibold">Шатахууны мөнгө олгох тооцоо - {{ month_label }}</h2>
+                    <p class="text-xs text-gray-500 mt-1 max-w-3xl no-print">
+                        Цалингийн тохиргоонд "Шатахууны мөнгө олгох" чеклэсэн ажилчид. Ажиллах, ажилласан хоног - Хоног бүртгэлээс
+                        (гараар засаж болно, <span class="bg-yellow-100 px-1">шар</span> - гараар зассан; хоосон болговол хоног бүртгэлийн утга).
+                        Олговол зохих дүнг гараас оруулна - оруулаагүй сард өмнөх сарын дүн <i>(налуу)</i> дамжина.
+                        Олгох дүн = олговол зохих дүн × ажилласан хоног ÷ ажиллах хоног.
+                    </p>
+                </div>
+                {% if rows %}<button type="submit" class="bg-primary text-white px-6 py-2 rounded-lg hover:bg-green-700 transition whitespace-nowrap no-print">💾 Хадгалах</button>{% endif %}
+            </div>
+            <div class="overflow-x-auto">
+                <table class="fa-table min-w-full text-sm border border-gray-200">
+                    <thead>
+                        <tr class="text-left">
+                            <th>№</th>
+                            <th>Нэр</th>
+                            <th>Албан тушаал</th>
+                            <th class="text-right">Ажиллах хоног</th>
+                            <th class="text-right">Ажилласан хоног</th>
+                            <th class="text-right">Олговол зохих дүн</th>
+                            <th class="text-right">Олгох дүн</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for r in rows %}
+                        <tr class="border-t fa-row">
+                            <td class="text-gray-500">{{ forloop.counter }}</td>
+                            <td class="whitespace-nowrap">
+                                <span class="font-medium">{{ r.name }}</span> <span class="text-xs text-gray-400">{{ r.employee_code }}</span>
+                                {% if not r.enabled %}<span class="text-xs text-gray-400" title="Цалингийн тохиргоонд чекийг авсан - энэ сарын бүртгэлтэй тул харагдана">(тохиргоонд олгохгүй)</span>{% endif %}
+                                {% if not r.active %}<span class="text-xs text-red-500">(гарсан)</span>{% endif %}
+                                <input type="hidden" name="employee_code" value="{{ r.employee_code }}">
+                            </td>
+                            <td class="text-gray-600 whitespace-nowrap">{{ r.positionname }}</td>
+                            <td class="w-24">
+                                <input type="text" inputmode="decimal" name="required_days" value="{{ r.required_days|unlocalize|floatformat:'-1' }}" data-calc="required"
+                                       class="fa-in {% if r.required_manual %}manual{% endif %}" title="Хоног бүртгэлд: {{ r.auto_required_days|floatformat:'-1' }}">
+                            </td>
+                            <td class="w-24">
+                                <input type="text" inputmode="decimal" name="worked_days" value="{{ r.worked_days|unlocalize|floatformat:'-1' }}" data-calc="worked"
+                                       class="fa-in {% if r.worked_manual %}manual{% endif %}" title="Хоног бүртгэлд: {{ r.auto_worked_days|floatformat:'-1' }}">
+                            </td>
+                            <td class="w-36">
+                                <input type="text" inputmode="decimal" name="due_amount" value="{% if r.due_amount is not None %}{{ r.due_amount|floatformat:0|intcomma }}{% endif %}" data-calc="due"
+                                       class="fa-in {% if r.due_source == 'previous' %}carried{% endif %}"
+                                       {% if r.due_source == 'previous' %}title="Өмнөх сараас дамжсан дүн - хадгалвал энэ сард бүртгэгдэнэ"{% endif %} placeholder="0">
+                            </td>
+                            <td class="num font-semibold" data-amount>{{ r.amount|floatformat:0|intcomma }}</td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="7" class="text-center text-gray-500 py-6">
+                            Шатахууны мөнгө олгох ажилтан алга. Цалингийн тохиргоонд "Шатахууны мөнгө олгох" баганыг чеклэнэ үү.
+                        </td></tr>
+                        {% endfor %}
+                    </tbody>
+                    {% if rows %}
+                    <tfoot>
+                        <tr class="border-t-2 font-semibold bg-gray-50">
+                            <td colspan="5">Нийт</td>
+                            <td class="num" id="fa-total-due">{{ totals.due_amount|floatformat:0|intcomma }}</td>
+                            <td class="num" id="fa-total">{{ totals.amount|floatformat:0|intcomma }}</td>
+                        </tr>
+                    </tfoot>
+                    {% endif %}
+                </table>
+            </div>
+        </form>
+    </main>
+</div>
+
+<script>
+(function () {
+    // Оруулсан утгаар олгох дүнг шууд дахин бодно (хадгалахад сервер дээр мөн адил бодогдоно)
+    const num = (v) => { const n = parseFloat((v || '').replace(/[,\s]/g, '')); return isNaN(n) ? 0 : n; };
+    const fmt = (n) => Math.round(n).toLocaleString('en-US');
+    function recalc() {
+        let totalDue = 0, total = 0;
+        document.querySelectorAll('.fa-row').forEach((tr) => {
+            const req = num(tr.querySelector('[data-calc=required]').value);
+            const worked = num(tr.querySelector('[data-calc=worked]').value);
+            const due = num(tr.querySelector('[data-calc=due]').value);
+            const amount = req ? Math.round(due * worked / req) : 0;
+            tr.querySelector('[data-amount]').textContent = fmt(amount);
+            totalDue += due; total += amount;
+        });
+        const d = document.getElementById('fa-total-due'), t = document.getElementById('fa-total');
+        if (d) d.textContent = fmt(totalDue);
+        if (t) t.textContent = fmt(total);
+    }
+    document.querySelectorAll('.fa-in').forEach((el) => el.addEventListener('input', () => {
+        el.classList.remove('carried');
+        recalc();
+    }));
+})();
+</script>
+{% endblock %}

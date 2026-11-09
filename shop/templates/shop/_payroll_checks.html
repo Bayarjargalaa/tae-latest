@@ -1,0 +1,57 @@
+{% load l10n %}
+{# Цалингийн тулгалт (shop.services.payroll_checks.summarize): checks, sheet (картын/бэлэн хуудсанд 'card'/'cash', хоног бүртгэлд хоосон), closed_sheets [(sheet, нэр)], closed_all, bonus_only (нэмэгдлийн хуудсанд) #}
+{% if checks.issues %}
+<details class="pc-box no-print mb-6 rounded-lg border p-4 {% if checks.errors %}bg-red-50 border-red-300{% elif checks.warnings %}bg-amber-50 border-amber-300{% else %}bg-blue-50 border-blue-200{% endif %}" {% if checks.errors %}open{% endif %}>
+    <summary class="cursor-pointer select-none font-semibold {% if checks.errors %}text-red-800{% elif checks.warnings %}text-amber-800{% else %}text-blue-800{% endif %}">
+        {% if checks.errors %}⛔{% elif checks.warnings %}⚠{% else %}ℹ{% endif %}
+        {% if bonus_only %}Борлуулалтын нэмэгдлийн тулгалт (нэмэгдлийн хуудас ↔ картын / бэлэн цалин):{% else %}Цалингийн тулгалт (хоног бүртгэл, борлуулалтын нэмэгдэл ↔ картын / бэлэн цалин):{% endif %}
+        {% if checks.errors %}<span class="text-red-700">{{ checks.errors }} алдаа</span>{% endif %}
+        {% if checks.warnings %}{% if checks.errors %}, {% endif %}<span class="text-amber-700">{{ checks.warnings }} анхааруулга</span>{% endif %}
+        {% if checks.infos %}{% if checks.errors or checks.warnings %}, {% endif %}<span class="text-blue-700">{{ checks.infos }} мэдээлэл</span>{% endif %}
+        <span class="font-normal text-gray-500 text-sm">- дэлгэрэнгүй харах</span>
+    </summary>
+
+    <div class="mt-3 overflow-x-auto">
+        <table class="min-w-full text-sm bg-white rounded">
+            <thead>
+                <tr class="bg-gray-100 text-left">
+                    <th class="px-2 py-1 w-8"></th>
+                    <th class="px-2 py-1">Ажилтан</th>
+                    {% if not sheet %}<th class="px-2 py-1">Хуудас</th>{% endif %}
+                    <th class="px-2 py-1">Асуудал</th>
+                    <th class="px-2 py-1">Засах</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for i in checks.issues %}
+                <tr class="border-t {% if i.level == 'error' %}text-red-800{% elif i.level == 'warning' %}text-amber-800{% else %}text-gray-600{% endif %}">
+                    <td class="px-2 py-1 text-center">{% if i.level == 'error' %}⛔{% elif i.level == 'warning' %}⚠{% else %}ℹ{% endif %}</td>
+                    <td class="px-2 py-1 whitespace-nowrap font-medium">{% if i.group == 'bonus' and not bonus_only %}<span title="Борлуулалтын нэмэгдэл">🎯</span> {% endif %}{{ i.name }} <span class="text-gray-400 font-normal">#{{ i.code }}</span></td>
+                    {% if not sheet %}<td class="px-2 py-1 whitespace-nowrap">{{ i.sheet_label|default:'-' }}</td>{% endif %}
+                    <td class="px-2 py-1">{{ i.message }}</td>
+                    <td class="px-2 py-1 whitespace-nowrap">
+                        {% if i.fix == 'settings' %}<a class="text-blue-600 hover:underline" href="{% url 'shop:payroll_settings' %}#emp-{{ i.code }}">⚙️ Цалингийн тохиргоо</a>
+                        {% elif i.fix == 'sales_bonus' and not bonus_only %}<a class="text-blue-600 hover:underline" href="{% url 'shop:sales_bonus' %}?year={{ year|unlocalize }}&month={{ month }}">🎯 Борлуулалтын нэмэгдэл</a>
+                        {% elif i.fix == 'sales_bonus' and i.sheet %}<a class="text-blue-600 hover:underline" href="{% if i.sheet == 'card' %}{% url 'shop:payroll_card' %}{% else %}{% url 'shop:payroll_cash' %}{% endif %}?year={{ year|unlocalize }}&month={{ month }}">{{ i.sheet_label }}</a>
+                        {% elif i.fix == 'sales_bonus' %}<span class="text-gray-400">энэ хуудаснаас</span>
+                        {% elif i.fix == 'timesheet' %}<a class="text-blue-600 hover:underline" href="{% url 'shop:timesheet' %}?year={{ year|unlocalize }}&month={{ month }}">📅 Хоног бүртгэл</a>
+                        {% elif i.sheet %}<a class="text-blue-600 hover:underline" href="{% if i.sheet == 'card' %}{% url 'shop:payroll_card' %}{% else %}{% url 'shop:payroll_cash' %}{% endif %}?year={{ year|unlocalize }}&month={{ month }}">{{ i.sheet_label }}</a>
+                        {% else %}<a class="text-blue-600 hover:underline" href="{% url 'shop:payroll_card' %}?year={{ year|unlocalize }}&month={{ month }}">Цалин бодолт</a>{% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</details>
+{% elif not closed_all %}
+<div class="no-print mb-6 rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-800">
+    ✅ {% if bonus_only %}Борлуулалтын нэмэгдлийн тулгалт: нэмэгдлийн хуудас ба картын, бэлэн цалингийн хооронд зөрүү илрээгүй.{% else %}Цалингийн тулгалт: хоног бүртгэл, борлуулалтын нэмэгдэл, картын болон бэлэн цалингийн хооронд зөрүү илрээгүй.{% endif %}
+</div>
+{% endif %}
+{% if closed_sheets %}
+<p class="no-print {% if checks.issues or not closed_all %}-mt-4 {% endif %}mb-6 text-xs text-gray-500">
+    🔒 Хаагдсан хуудас эцсийнх тул тулгалтад ороогүй:
+    {% for s, label in closed_sheets %}<a class="text-blue-600 hover:underline whitespace-nowrap" href="{% if s == 'card' %}{% url 'shop:payroll_card' %}{% else %}{% url 'shop:payroll_cash' %}{% endif %}?year={{ year|unlocalize }}&month={{ month }}#reopen" title="Дахин нээвэл тухайн хуудас тулгалтад орж, засварлах боломжтой болно">{{ label }} (🔓 дахин нээх)</a>{% if not forloop.last %}, {% endif %}{% endfor %}
+</p>
+{% endif %}

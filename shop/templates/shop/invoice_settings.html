@@ -1,0 +1,118 @@
+{% extends 'base.html' %}
+
+{% block title %}Нэхэмжлэхийн тохиргоо - Euro Foods{% endblock %}
+
+{% block hide_mobile_menu %}hidden{% endblock %}
+
+{% block extra_css %}
+<style>
+    .iv-label { display: block; font-size: .75rem; font-weight: 600; color: #6b7280; margin-bottom: .3rem; }
+    .iv-field { width: 100%; border: 1px solid #d1d5db; border-radius: .6rem; padding: .5rem .75rem; font-size: .9rem; background: #fff; }
+    .iv-card { background: #fff; border: 1px solid #f1f1ef; border-radius: 1rem; box-shadow: 0 1px 2px rgba(0,0,0,.04); }
+</style>
+{% endblock %}
+
+{% block content %}
+{% load l10n %}
+<div class="flex min-h-screen bg-gray-50">
+    {% include 'shop/_sidebar.html' with active_page='invoices' %}
+
+    <main class="flex-1 p-3 lg:p-8 min-w-0 max-w-5xl">
+        {% include 'shop/_invoice_nav.html' with title='Нэхэмжлэхийн тохиргоо' current='settings' %}
+
+        {% if not sender_configured %}
+        <div class="mb-4 p-3 rounded-lg text-sm bg-yellow-100 text-yellow-800">
+            Нэхэмжлэх илгээх тусдаа имэйл тохируулаагүй тул <strong>{{ sender|default:'(хоосон)' }}</strong> хаягаас илгээгдэнэ.
+            Серверийн <code>.env</code> файлд <code>INVOICE_EMAIL_HOST_USER</code>, <code>INVOICE_EMAIL_HOST_PASSWORD</code> (Gmail App Password)-ийг нэмнэ үү.
+        </div>
+        {% endif %}
+
+        {# Банкны данс #}
+        <section class="iv-card p-4 lg:p-5 mb-5">
+            <h2 class="font-semibold text-gray-800 mb-3">🏦 Байгууллагын банкны данс</h2>
+            <div class="space-y-2">
+                {% for b in banks %}
+                <form method="post" class="grid grid-cols-2 md:grid-cols-12 gap-2 items-end p-2 rounded-lg {% if not b.is_active %}bg-gray-50 opacity-70{% endif %}">
+                    {% csrf_token %}
+                    <input type="hidden" name="id" value="{{ b.pk }}">
+                    <label class="md:col-span-3"><span class="iv-label">Банк</span><input name="bank_name" value="{{ b.bank_name }}" class="iv-field"></label>
+                    <label class="md:col-span-3"><span class="iv-label">Дансны дугаар</span><input name="account_number" value="{{ b.account_number }}" class="iv-field"></label>
+                    <label class="md:col-span-2"><span class="iv-label">Эзэмшигч</span><input name="account_name" value="{{ b.account_name }}" class="iv-field"></label>
+                    <label class="md:col-span-1"><span class="iv-label">Валют</span><input name="currency" value="{{ b.currency }}" class="iv-field"></label>
+                    <div class="md:col-span-1 text-sm space-y-1">
+                        <label class="flex items-center gap-1"><input type="checkbox" name="is_default" {% if b.is_default %}checked{% endif %}> Анхдагч</label>
+                        <label class="flex items-center gap-1"><input type="checkbox" name="is_active" {% if b.is_active %}checked{% endif %}> Идэвхтэй</label>
+                    </div>
+                    <div class="md:col-span-2 flex gap-1 justify-end">
+                        <button name="action" value="bank_save" class="px-3 py-2 rounded-lg bg-primary text-white text-sm hover:bg-green-700">Хадгалах</button>
+                        <button name="action" value="bank_delete" class="px-3 py-2 rounded-lg border border-red-200 text-red-700 text-sm hover:bg-red-50" onclick="return confirm('{{ b }} дансыг устгах уу?')">Устгах</button>
+                    </div>
+                    <details class="col-span-2 md:col-span-12 text-sm">
+                        <summary class="cursor-pointer text-gray-600"><span class="iv-label inline">Харилцагчийн суваг:</span>
+                            {% for id, name in channels %}{% if id in b.channels %}<span class="inline-block px-2 py-0.5 mr-1 rounded-full bg-green-50 text-green-800 text-xs">{{ id }} {{ name }}</span>{% endif %}{% endfor %}
+                            <span class="text-xs text-gray-400">(энэ сувгийн харилцагчдын нэхэмжлэхэд автоматаар сонгогдоно)</span></summary>
+                        <div class="flex flex-wrap gap-x-4 gap-y-1 mt-2">
+                            {% for id, name in channels %}<label class="inline-flex items-center gap-1"><input type="checkbox" name="channels" value="{{ id }}" {% if id in b.channels %}checked{% endif %}> {{ id }} {{ name }}</label>{% endfor %}
+                        </div>
+                    </details>
+                </form>
+                {% empty %}
+                <p class="text-sm text-gray-500">Данс бүртгээгүй байна.</p>
+                {% endfor %}
+            </div>
+            <form method="post" class="grid grid-cols-2 md:grid-cols-12 gap-2 items-end mt-4 pt-4 border-t border-gray-100">
+                {% csrf_token %}
+                <label class="md:col-span-3"><span class="iv-label">Банк</span>
+                    <input name="bank_name" list="bank-names" class="iv-field" placeholder="Хаан банк" required>
+                    <datalist id="bank-names"><option>Хаан банк</option><option>Голомт банк</option><option>Худалдаа хөгжлийн банк</option><option>Хас банк</option><option>Төрийн банк</option><option>Капитрон банк</option></datalist></label>
+                <label class="md:col-span-3"><span class="iv-label">Дансны дугаар</span><input name="account_number" class="iv-field" required></label>
+                <label class="md:col-span-2"><span class="iv-label">Эзэмшигч</span><input name="account_name" class="iv-field" value="{{ setting.company_name }}"></label>
+                <label class="md:col-span-1"><span class="iv-label">Валют</span><input name="currency" class="iv-field" value="MNT"></label>
+                <label class="md:col-span-1 text-sm flex items-center gap-1 pb-2"><input type="checkbox" name="is_default" {% if not banks %}checked{% endif %}> Анхдагч</label>
+                <div class="md:col-span-2 flex justify-end"><button name="action" value="bank_save" class="px-4 py-2 rounded-lg bg-primary text-white text-sm hover:bg-green-700">➕ Данс нэмэх</button></div>
+                <details class="col-span-2 md:col-span-12 text-sm">
+                    <summary class="cursor-pointer text-gray-600"><span class="iv-label inline">Харилцагчийн суваг:</span>
+                        {% for id, name in channels %}{% if False %}<span class="inline-block px-2 py-0.5 mr-1 rounded-full bg-green-50 text-green-800 text-xs">{{ id }} {{ name }}</span>{% endif %}{% endfor %}
+                        <span class="text-xs text-gray-400">(энэ сувгийн харилцагчдын нэхэмжлэхэд автоматаар сонгогдоно)</span></summary>
+                    <div class="flex flex-wrap gap-x-4 gap-y-1 mt-2">
+                        {% for id, name in channels %}<label class="inline-flex items-center gap-1"><input type="checkbox" name="channels" value="{{ id }}" {% if False %}checked{% endif %}> {{ id }} {{ name }}</label>{% endfor %}
+                    </div>
+                </details>
+            </form>
+        </section>
+
+        {# Нэхэмжлэгч, дугаарлалт, имэйл #}
+        <form method="post" enctype="multipart/form-data" class="iv-card p-4 lg:p-5 space-y-4">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="settings">
+            <h2 class="font-semibold text-gray-800">Нэхэмжлэгчийн мэдээлэл</h2>
+            <div class="grid sm:grid-cols-2 gap-4">
+                <label><span class="iv-label">Байгууллагын нэр</span><input name="company_name" value="{{ setting.company_name }}" class="iv-field"></label>
+                <label><span class="iv-label">Утас, Факс</span><input name="phone" value="{{ setting.phone }}" class="iv-field"></label>
+                <label class="sm:col-span-2"><span class="iv-label">Хаяг</span><input name="address" value="{{ setting.address }}" class="iv-field"></label>
+                <label><span class="iv-label">И-мэйл (нэхэмжлэх дээр)</span><input name="email" value="{{ setting.email }}" class="iv-field"></label>
+                <label><span class="iv-label">Нэхэмжлэл бичсэн <span class="font-normal text-gray-400">(үүсгэсэн хэрэглэгч тодорхойгүй үед)</span></span><input name="prepared_by" value="{{ setting.prepared_by }}" class="iv-field"></label>
+            </div>
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                <label><span class="iv-label">Дугаарын угтвар</span><input name="number_prefix" value="{{ setting.number_prefix }}" class="iv-field"></label>
+                <label><span class="iv-label">Дараагийн дугаар</span><input name="next_number" value="{{ setting.next_number|unlocalize }}" inputmode="numeric" class="iv-field"></label>
+                <label><span class="iv-label">Төлөх хугацаа (хоног)</span><input name="due_days" value="{{ setting.due_days }}" inputmode="numeric" class="iv-field"></label>
+                <label><span class="iv-label">НӨАТ (%)</span><input name="vat_rate" value="{{ setting.vat_rate|unlocalize }}" inputmode="decimal" class="iv-field"></label>
+            </div>
+            <div class="grid sm:grid-cols-2 gap-4">
+                <div><span class="iv-label">Лого</span>
+                    {% if setting.logo %}<img src="{{ setting.logo.url }}" alt="Лого" class="h-14 mb-2 rounded">{% endif %}
+                    <input type="file" name="logo" accept="image/*" class="text-sm"></div>
+                <div><span class="iv-label">Тамга, гарын үсэг</span>
+                    {% if setting.stamp %}<img src="{{ setting.stamp.url }}" alt="Тамга" class="h-14 mb-2">{% endif %}
+                    <input type="file" name="stamp" accept="image/*" class="text-sm"></div>
+            </div>
+            <h2 class="font-semibold text-gray-800 pt-2">Имэйлийн загвар</h2>
+            <p class="text-xs text-gray-500">Орлуулагдах утга: {number} {company} {customer} {date} {due_date} {amount} {bank} {phone} {sender_name} (илгээж буй хүний нэр)</p>
+            <label class="block"><span class="iv-label">Гарчиг</span><input name="email_subject" value="{{ setting.email_subject }}" class="iv-field"></label>
+            <label class="block"><span class="iv-label">Бичвэр</span><textarea name="email_body" rows="8" class="iv-field">{{ setting.email_body }}</textarea></label>
+            <div class="flex justify-end"><button class="px-5 py-2.5 rounded-lg bg-primary text-white font-semibold hover:bg-green-700">Хадгалах</button></div>
+        </form>
+    </main>
+</div>
+{% endblock %}

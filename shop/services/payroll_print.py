@@ -197,6 +197,9 @@ def _cell(spec, row=None, index=None, totals=None):
         text = str(index)
     elif kind in ('text', 'code'):
         text = row.get(spec['key']) or ''
+        if spec['key'] == 'positionname' and row.get('is_shift') and row.get('shift_pay'):
+            # Гараар ажилладаг (харуул г.м) бол дэлгэц дээрх шиг нэг гарын мөнгийг ард нь
+            text = f"{text or '-'} · {format_print_value(row.get('shift_pay'))}/гар"
     elif kind == 'sign':
         # Гарын үсгийн баганад бэлэн цалингийн дансыг харуулна (Цалингийн тохиргооноос), нэг загвараар
         text = print_account(row.get('cash_bank_account'))

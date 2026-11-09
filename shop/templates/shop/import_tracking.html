@@ -55,8 +55,36 @@
         <div>
             <div class="text-xs font-medium text-gray-500 mb-1">Гадаад харилцаа</div>
             <h1 class="text-2xl lg:text-3xl font-bold tracking-tight">🧭 Замын мэдээ</h1>
-            <p class="text-sm text-gray-500 mt-1">Замд яваа чингэлгүүд ба сүүлийн {{ recent_days }} хоногт ирсэн ачаа. Ирэх дарааллаар.</p>
+            <div class="flex flex-wrap items-center justify-between gap-2 mt-1">
+                <p class="text-sm text-gray-500">{% if supplier %}<b class="text-gray-700">{{ supplier }}</b> · {% endif %}{% if filtered %}{{ arrived_from|date:'Y.m.d'|default:'…' }} – {{ arrived_to|date:'Y.m.d'|default:'…' }} хооронд ирсэн ачаа.{% elif show == 'all' %}Бүх ачаа - замд яваа болон хэзээ ч ирсэн.{% elif show == 'active' %}Ирээгүй ачаа - замд яваа болон ачигдаагүй.{% elif show == 'arrived' %}Ирсэн бүх ачаа, сүүлд ирсэн нь дээрээ.{% else %}Замд яваа чингэлгүүд ба сүүлийн {{ recent_days }} хоногт ирсэн ачаа. Ирэх дарааллаар.{% endif %}</p>
+                <div class="flex flex-wrap items-center gap-2">
+                <form method="get" class="flex flex-wrap items-center gap-1.5 text-sm">
+                    <span class="flex items-center gap-1 bg-white border border-gray-200 rounded-lg p-1 mr-1">
+                        <a href="{% url 'shop:import_tracking' %}{% if supplier %}?show=recent&supplier={{ supplier|urlencode }}{% endif %}" class="px-3 py-0.5 rounded-md {% if show == 'recent' %}bg-sky-700 text-white{% else %}hover:bg-gray-100{% endif %}" title="Ирээгүй + сүүлийн {{ recent_days }} хоногт ирсэн">Сүүлийн</a>
+                        <a href="?show=active{% if supplier %}&supplier={{ supplier|urlencode }}{% endif %}" class="px-3 py-0.5 rounded-md {% if show == 'active' %}bg-sky-700 text-white{% else %}hover:bg-gray-100{% endif %}">Ирээгүй</a>
+                        <a href="?show=arrived{% if supplier %}&supplier={{ supplier|urlencode }}{% endif %}" class="px-3 py-0.5 rounded-md {% if show == 'arrived' %}bg-sky-700 text-white{% else %}hover:bg-gray-100{% endif %}">Ирсэн</a>
+                        <a href="?show=all{% if supplier %}&supplier={{ supplier|urlencode }}{% endif %}" class="px-3 py-0.5 rounded-md {% if show == 'all' %}bg-sky-700 text-white{% else %}hover:bg-gray-100{% endif %}">Бүгд</a>
+                    </span>
+                    {% if show != 'recent' and not filtered %}<input type="hidden" name="show" value="{{ show }}">{% endif %}
+                    <select name="supplier" onchange="this.form.submit()" class="border {% if supplier %}border-sky-700 bg-sky-50{% else %}border-gray-300 bg-white{% endif %} rounded-lg px-2 py-1 max-w-[14rem]" title="Нийлүүлэгчээр шүүх">
+                        <option value="">Бүх нийлүүлэгч</option>
+                        {% for name, n in supplier_choices %}<option value="{{ name }}" {% if name == supplier %}selected{% endif %}>{{ name }} ({{ n }})</option>{% endfor %}
+                    </select>
+                    <span class="text-gray-500">Ирсэн огноо:</span>
+                    {% for p in presets %}<a href="?arrived_from={{ p.from|date:'Y-m-d' }}&arrived_to={{ p.to|date:'Y-m-d' }}{% if supplier %}&supplier={{ supplier|urlencode }}{% endif %}" class="px-2.5 py-1 rounded-full border {% if p.on %}bg-sky-700 border-sky-700 text-white{% else %}border-gray-300 bg-white hover:bg-gray-50{% endif %}">{{ p.label }}</a>{% endfor %}
+                    <input type="date" name="arrived_from" value="{{ arrived_from|date:'Y-m-d' }}" class="border border-gray-300 rounded-lg px-2 py-1 bg-white" title="Эхлэх огноо">
+                    <span class="text-gray-400">–</span>
+                    <input type="date" name="arrived_to" value="{{ arrived_to|date:'Y-m-d' }}" class="border border-gray-300 rounded-lg px-2 py-1 bg-white" title="Дуусах огноо">
+                    <button type="submit" class="px-3 py-1 rounded-lg bg-sky-700 text-white font-semibold hover:bg-sky-800">Шүүх</button>
+                    {% if filtered or supplier %}<a href="{% url 'shop:import_tracking' %}" class="text-sky-800 hover:underline ml-1">Цэвэрлэх</a>{% endif %}
+                </form>
+                <a href="{% url 'shop:import_tracking_print' %}{% if filter_query %}?{{ filter_query }}{% endif %}" target="_blank" class="text-sm font-semibold px-3 py-1.5 rounded-lg border border-sky-700 text-sky-800 bg-white hover:bg-sky-50">🖨 Хэвлэх</a>
+                </div>
+            </div>
         </div>
+        {% if shipments %}
+        <div class="-mt-3">{% include 'shop/_import_stats.html' %}</div>
+        {% endif %}
         {% if full and paid_totals or full and tax_total %}
         <div class="bg-white rounded-xl shadow-sm border border-gray-100 px-4 py-3 flex flex-wrap items-baseline gap-x-4 gap-y-1">
             {% if tax_total %}<span class="lbl mb-0">Нийт татвар</span><span class="text-lg font-semibold num mr-4">{{ tax_total|floatformat:'0g' }} ₮</span>{% endif %}
@@ -83,7 +111,10 @@
                     <div class="lbl">{% if s.arrived %}Ирсэн{% else %}Монголд ирэх{% endif %}</div>
                     <div class="text-lg font-semibold num">{% if s.arrival_actual %}{{ s.arrival_actual|date:'Y-m-d' }}{% else %}{{ s.arrival_planned|date:'Y-m-d'|default:'—' }}{% endif %}</div>
                     {% if s.delay_days %}<div class="text-xs late">+{{ s.delay_days }} хоног хоцорсон</div>{% endif %}
-                    {% if full %}<a href="{% url 'shop:import_shipment' s.pk %}" class="text-xs text-sky-800 hover:underline">Дэлгэрэнгүй →</a>{% endif %}
+                    <div class="flex justify-end gap-3 mt-0.5">
+                        <a href="{% url 'shop:import_tracking_print' %}?id={{ s.pk }}" target="_blank" class="text-xs text-sky-800 hover:underline" title="Зөвхөн энэ захиалгыг хэвлэх">🖨 Хэвлэх</a>
+                        {% if full %}<a href="{% url 'shop:import_shipment' s.pk %}" class="text-xs text-sky-800 hover:underline">Дэлгэрэнгүй →</a>{% endif %}
+                    </div>
                 </div>
             </div>
 
@@ -112,7 +143,7 @@
             </label>
             <div class="goods overflow-x-auto">
                 <table class="im-table">
-                    <thead><tr><th>Нийлүүлэгч</th><th>Бараа</th><th class="r">Хайрцаг</th><th class="r">Тоо хэмжээ</th>{% if full %}<th class="r">Нэгж үнэ</th><th class="r">Дүн</th>{% endif %}</tr></thead>
+                    <thead><tr><th>Нийлүүлэгч</th><th>Бараа</th><th class="r">Хайрцаг</th><th class="r">Тоо хэмжээ</th>{% if full %}<th class="r">Нэгж үнэ</th><th class="r">Дүн</th><th class="r" title="001 Үндсэн үнийн жагсаалтын хамгийн сүүлийн огнооны үнэ; шараар - захиалга дээр гараар оруулсан">001 үнэ ₮</th><th class="r" title="001 үнэ × тоо − (бараа + тээвэр + гааль + НӨАТ), төгрөгөөр">Бохир ашиг ₮</th>{% endif %}</tr></thead>
                     <tbody>
                         {% for o in s.supplier_orders.all %}
                         {% for l in o.lines.all %}
@@ -125,20 +156,23 @@
                             <td>{{ l.item_name }}</td>
                             <td class="r">{{ l.box_qty|floatformat:'-2g' }}</td>
                             <td class="r">{{ l.total_qty|floatformat:'-3g' }} <span class="text-xs text-gray-500">{% if l.measure == 'Клограм' %}кг{% elif l.measure == 'Ширхэг' %}ш{% else %}{{ l.measure }}{% endif %}</span></td>
-                            {% if full %}<td class="r">{{ l.unit_price|floatformat:'-4g' }}</td><td class="r">{{ l.total_amount|floatformat:'2g' }}</td>{% endif %}
+                            {% if full %}<td class="r">{{ l.unit_price|floatformat:'-4g' }}</td><td class="r">{{ l.total_amount|floatformat:'2g' }}</td>
+                            <td class="r num{% if l.price_manual %} bg-amber-100{% endif %}">{% if l.price_manual %}<span title="Гараар оруулсан{% if l.erp_price is not None %} · ERP 001: {{ l.erp_price|floatformat:'0g' }} ₮{% endif %}" class="font-medium text-amber-800">{{ l.base_price|floatformat:'0g' }}</span><div class="text-[10px] text-amber-700">гараар</div>{% elif l.base_price is not None %}<span title="{{ l.price_date|date:'Y-m-d' }}"{% if l.price_stale %} class="text-amber-600"{% endif %}>{{ l.base_price|floatformat:'0g' }}</span>{% if l.price_stale %}<div class="text-xs text-amber-600">{{ l.price_date|date:'Y-m-d' }}</div>{% endif %}{% else %}<span class="text-gray-400" title="001 үнэ бүртгэгдээгүй">—</span>{% endif %}</td>
+                            <td class="r num">{% if l.profit is not None %}<span class="{% if l.profit < 0 %}text-red-600{% else %}text-green-700{% endif %} font-medium" title="Борлуулалт {{ l.sale_amount|floatformat:'0g' }} ₮ − өртөг {{ l.cost_mnt|floatformat:'0g' }} ₮">{{ l.profit|floatformat:'0g' }}</span>{% if l.margin is not None %}<div class="text-xs text-gray-500">{{ l.margin }}%</div>{% endif %}{% elif l.base_price is not None %}<span class="text-gray-400" title="Ханш дутуу">—</span>{% else %}<span class="text-gray-400">—</span>{% endif %}</td>{% endif %}
                         </tr>
                         {% empty %}
-                        <tr><td class="font-medium">{{ o.supplier_name }}</td><td colspan="{% if full %}5{% else %}3{% endif %}" class="text-gray-400">Бараа бүртгээгүй</td></tr>
+                        <tr><td class="font-medium">{{ o.supplier_name }}</td><td colspan="{% if full %}7{% else %}3{% endif %}" class="text-gray-400">Бараа бүртгээгүй</td></tr>
                         {% endfor %}
                         {% empty %}
-                        <tr><td colspan="{% if full %}6{% else %}4{% endif %}" class="text-gray-400">Нийлүүлэгч бүртгээгүй</td></tr>
+                        <tr><td colspan="{% if full %}8{% else %}4{% endif %}" class="text-gray-400">Нийлүүлэгч бүртгээгүй</td></tr>
                         {% endfor %}
                     </tbody>
                 </table>
             </div>
             </div>
-            {% if full and s.freight_total or full and s.paid_totals or full and s.tax.total %}
+            {% if full and s.freight_total or full and s.paid_totals or full and s.tax.total or full and s.profit_lines %}
             <div class="ship-f px-4 py-2 text-sm flex flex-wrap justify-end gap-x-6 gap-y-1">
+                {% if s.profit_lines %}<span title="001 үнээр борлуулалт {{ s.sale_total|floatformat:'0g' }} ₮ ({{ s.profit_lines }} бараа)">Бохир ашиг: <b class="num {% if s.profit < 0 %}text-red-600{% else %}text-green-700{% endif %}">{{ s.profit|floatformat:'0g' }} ₮</b>{% if s.margin is not None %} <span class="text-gray-500">({{ s.margin }}%)</span>{% endif %}</span>{% endif %}
                 {% if s.tax.total %}<span title="Гааль {{ s.tax.duty|floatformat:'0g' }} ₮ · НӨАТ {{ s.tax.vat|floatformat:'0g' }} ₮">Татвар: <b class="num">{{ s.tax.total|floatformat:'0g' }} ₮</b></span>{% endif %}
                 {% if s.paid_totals %}<span>Шилжүүлсэн төлбөр: {% for c, a in s.paid_totals %}<b class="num">{{ a|floatformat:'2g' }} {{ c }}</b>{% if not forloop.last %}, {% endif %}{% endfor %}</span>{% endif %}
                 {% if s.freight_total %}<span>Тээврийн зардал: <b class="num">{{ s.freight_total|floatformat:'2g' }} {{ s.freight_currency }}</b></span>{% endif %}
@@ -146,7 +180,7 @@
             {% endif %}
         </section>
         {% empty %}
-        <div class="bg-white rounded-xl border border-dashed border-gray-300 p-10 text-center text-gray-500">Одоогоор замд яваа ачаа алга.</div>
+        <div class="bg-white rounded-xl border border-dashed border-gray-300 p-10 text-center text-gray-500">{% if filtered %}Сонгосон хугацаанд ирсэн ачаа алга.{% else %}Одоогоор замд яваа ачаа алга.{% endif %}</div>
         {% endfor %}
     </main>
 </div>

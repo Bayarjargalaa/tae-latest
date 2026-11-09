@@ -6,7 +6,7 @@ from django.core.paginator import Paginator
 from django.contrib.auth import login
 from django.contrib.auth.decorators import login_required
 from django.contrib.admin.views.decorators import staff_member_required
-from django.http import JsonResponse
+from django.http import HttpResponseForbidden, JsonResponse
 from django.urls import reverse
 from django.db import IntegrityError
 from django.db.models import Sum, Count, Avg, Q, FloatField, DateField, Min, Max, F, ExpressionWrapper, Case, When, Value, IntegerField
@@ -116,6 +116,17 @@ def home(request):
 PRODUCT_LIST_MIN_STOCK = 10
 
 
+def _product_ids_with_image():
+    """Үндсэн зурагтай барааны ID-ууд - product_image_url-тэй ижил дүрмээр: ProductExtension.image_main
+    эсвэл media/products/{item_id}.jpg|jpeg|png|webp файл."""
+    from shop.services.product_images import fallback_files
+    ids = set(
+        ProductExtension.objects.exclude(image_main__isnull=True).exclude(image_main='')
+        .values_list('item_id', flat=True)
+    )
+    return ids | set(fallback_files())
+
+
 def product_list(request):
     """Бүтээгдэхүүний жагсаалт (pagination, filter)"""
     products = OpenDataItem.objects.filter(activestatus='Y')
@@ -183,6 +194,18 @@ def product_list(request):
         if current_cert:
             products = products.filter(pc.status_filter(current_cert))
 
+    # Зурагтай/зураггүй шүүлт - бараа засах эсвэл зураг оруулах эрхтэй (Ерөнхий нягтлан үргэлж) хэрэглэгчид
+    from shop.access import request_menu_keys
+    can_filter_image = bool({'product_edit', 'product_image_upload'} & request_menu_keys(request))
+    current_image = request.GET.get('image', '') if can_filter_image else ''
+    current_image = current_image if current_image in ('missing', 'has') else ''
+    if current_image:
+        ids_with_image = _product_ids_with_image()
+        if current_image == 'missing':
+            products = products.exclude(id__in=ids_with_image)
+        else:
+            products = products.filter(id__in=ids_with_image)
+
     group = request.GET.get('group')
     if group == 'Бусад':
         products = products.filter(Q(itemgroupid='Бусад') | Q(itemgroupid__isnull=True) | Q(itemgroupid=''))
@@ -220,20 +243,29 @@ def product_list(request):
             for name, items in sorted(groups.items(), key=lambda kv: (kv[0] == 'Бусад', kv[0]))
         ]
 
-    # ProductExtension холбох
+    # ProductExtension холбох; хадгалаагүй нэр, улс, хайрцаг дахь тоог импортын захиалга / ERP / нэрээс анхдагчаар
+    from shop.services.imports import product_defaults_bulk, short_item_name
     product_ids = [p.id for p in shown]
     extensions = {ext.item_id: ext for ext in ProductExtension.objects.filter(item_id__in=product_ids)}
+    defaults = product_defaults_bulk(shown)
 
     for product in shown:
-        product.extension = extensions.get(product.id)
+        product.extension = ext = extensions.get(product.id)
+        d = defaults[product.id]
+        product.display_name = (ext and ext.name_mn) or short_item_name(product.name)
+        product.display_country = (ext and ext.country_of_origin) or d['country']
+        if ext and ext.qty_per_box:
+            box_qty, box_measure = ext.qty_per_box, ext.box_measure or d['box_measure']
+        else:
+            box_qty, box_measure = d['qty_per_box'], d['box_measure']
+        product.display_box = ProductExtension.format_box(box_qty, box_measure)
         if product.stock_qty <= 0:
             product.stock_status = 'out'
         elif product.stock_qty < PRODUCT_LIST_MIN_STOCK:
             product.stock_status = 'low'
         else:
             product.stock_status = 'in'
-        qty_per_box = product.extension.qty_per_box if product.extension else None
-        product.box_price = product.saleprice * qty_per_box if product.saleprice and qty_per_box else None
+        product.box_price = product.saleprice * float(box_qty) if product.saleprice and box_qty else None
     if request.user.is_authenticated:
         pc.decorate(shown)
 
@@ -254,6 +286,16 @@ def product_list(request):
             if view_mode == 'name':
                 params['view'] = 'name'
             cert_links.append({'code': code, 'label': label, 'icon': icon, 'url': '?' + params.urlencode()})
+    image_links = []
+    if can_filter_image:
+        for code, label in [('', 'Бүгд'), ('missing', '🚫 Зураггүй'), ('has', '🖼️ Зурагтай')]:
+            params = filter_params.copy()
+            params.pop('image', None)
+            if code:
+                params['image'] = code
+            if view_mode == 'name':
+                params['view'] = 'name'
+            image_links.append({'code': code, 'label': label, 'url': '?' + params.urlencode()})
     list_params = filter_params.copy()
     if view_mode == 'name':
         list_params['view'] = 'name'
@@ -281,6 +323,8 @@ def product_list(request):
         'jijig_min_qty': jijig_min_qty,
         'current_cert': current_cert,
         'cert_links': cert_links,
+        'current_image': current_image,
+        'image_links': image_links,
     }
 
     return render(request, 'shop/products.html', context)
@@ -301,6 +345,17 @@ def product_detail(request, pk):
         extension = None
 
     product.extension = extension
+
+    # Зургийн цомог (томруулж харах): үндсэн, 2, 3-р зураг - байгаа нь л
+    from django.conf import settings
+    from django.utils.http import url_has_allowed_host_and_scheme
+    from shop.services.product_images import image_name
+    gallery = [f'{settings.MEDIA_URL}{name}' for name in (image_name(product, t) for t in ('main', '2', '3')) if name]
+
+    # Жагсаалт руу буцах: картаас ирсэн ?next= (шүүлт, хуудсаа хадгална), эсвэл бүх бараа
+    back_url = request.GET.get('next', '')
+    if not url_has_allowed_host_and_scheme(back_url, allowed_hosts={request.get_host()}):
+        back_url = reverse('shop:products')
 
     # Шинжилгээний бичиг г.м. хавсралт - зөвхөн нэвтэрсэн хэрэглэгчид
     attachments, doc_types = [], []
@@ -334,9 +389,12 @@ def product_detail(request, pk):
 
     context = {
         'product': product,
+        'gallery': gallery,
+        'back_url': back_url,
         'related_products': related,
         'attachments': attachments,
         'doc_types': doc_types,
+        'cert_not_required': bool(extension and extension.cert_not_required),
         'can_attach': 'product_attachment_upload' in request_menu_keys(request),
     }
     
@@ -426,18 +484,39 @@ def product_attachment_delete(request, pk):
 
 @login_required
 def product_attachment_link(request, pk):
-    """Хавсралтыг өөр бараануудтай холбох (POST item_ids) - нэг бичигт олон барааны шинжилгээ байх үед."""
+    """Хавсралтыг өөр бараануудтай холбох (POST item_ids) - нэг бичигт олон барааны шинжилгээ байх үед.
+    Бараа тус бүрд дуусах огноо (item_expires_<id> / item_no_expiry_<id>) өгвөл тэр бараанд тусдаа огноо болно."""
+    from collections import namedtuple
     from django.contrib import messages
+    from django.db import transaction
     from django.shortcuts import get_object_or_404
     from shop.models import ProductAttachment
+    from shop.services.product_certs import parse_item_overrides
     from shop.services.product_files import link_items
 
     attachment = get_object_or_404(ProductAttachment, pk=pk)
     back_item = request.POST.get('back_item', '')
     if request.method == 'POST':
-        added = link_items(attachment, request.POST.getlist('item_ids'))
-        messages.success(request, f'{attachment.original_name}: {added} бараа нэмж холболоо.' if added
-                         else 'Шинээр холбох бараа сонгоогүй байна.')
+        item_ids = request.POST.getlist('item_ids')
+        # Огноо буруу бол юуг ч холбохгүй - засаад дахин оруулна
+        Link = namedtuple('Link', 'item_id')  # холбоос үүсэхээс өмнө огноог шалгах орлуулагч
+        _, errors = parse_item_overrides(request.POST, [Link(i) for i in item_ids], attachment.issued_on)
+        if errors:
+            for error in errors:
+                messages.error(request, error)
+        else:
+            with transaction.atomic():
+                added = link_items(attachment, item_ids)
+                overrides, _ = parse_item_overrides(request.POST, attachment.items.filter(item_id__in=item_ids), attachment.issued_on)
+                own_count = 0
+                for link, (own, expires, no_expiry) in overrides.items():
+                    if own:
+                        link.own_expiry, link.expires_on, link.no_expiry = own, expires, no_expiry
+                        link.save(update_fields=['own_expiry', 'expires_on', 'no_expiry'])
+                        own_count += 1
+            messages.success(request, (f'{attachment.original_name}: {added} бараа нэмж холболоо'
+                                       + (f' ({own_count} нь тусдаа огноотой).' if own_count else '.')) if added
+                             else 'Шинээр холбох бараа сонгоогүй байна.')
     return redirect(reverse('shop:product_detail', args=[back_item]) + '#attachments' if back_item else reverse('shop:products'))
 
 
@@ -572,6 +651,28 @@ def product_certificates(request):
     return render(request, 'shop/product_certificates.html', context)
 
 
+@login_required
+def product_cert_required(request):
+    """Бараануудыг шинжилгээний бичиг шаардлагагүй / шаардлагатай гэж тэмдэглэх (POST item_ids, value=0|1) -
+    хавсаргах эрхтэй албан тушаалд. Шаардлагагүй бараа хяналтад "Бичиг шаардлагагүй" төлөвт гарна."""
+    from django.contrib import messages
+    from django.utils.http import url_has_allowed_host_and_scheme
+    from shop.services import product_certs as pc
+
+    back = request.POST.get('next', '')
+    if not url_has_allowed_host_and_scheme(back, allowed_hosts={request.get_host()}, require_https=request.is_secure()):
+        back = reverse('shop:product_certificates')
+    if request.method == 'POST':
+        not_required = request.POST.get('value') == '0'
+        changed = pc.set_not_required(request.POST.getlist('item_ids'), not_required)
+        if changed:
+            messages.success(request, f'{changed} бараа ' + ('"Бичиг шаардлагагүй" боллоо.' if not_required
+                                                             else 'дахин бичиг шаардлагатай боллоо.'))
+        else:
+            messages.warning(request, 'Бараа сонгоогүй эсвэл өөрчлөгдөх зүйлгүй байна.')
+    return redirect(back)
+
+
 def _product_certificates_xlsx(rows, today):
     import openpyxl
     from io import BytesIO
@@ -583,7 +684,7 @@ def _product_certificates_xlsx(rows, today):
     ws = wb.active
     ws.title = 'Шинжилгээний бичиг'
     headers = ['Код', 'Барааны нэр', 'Бүлэг', 'Үлдэгдэл', 'Төлөв', 'Дуусах огноо', 'Үлдсэн хоног', 'Тайлбар', 'Бичиг']
-    fills = {'expired': 'FDE2E2', 'soon': 'FEF3C7', 'no_date': 'FFEDD5', 'none': 'F3F4F6'}
+    fills = {'expired': 'FDE2E2', 'soon': 'FEF3C7', 'no_date': 'FFEDD5', 'none': 'F3F4F6', 'exempt': 'E2E8F0'}
     ws.append([f'Шинжилгээний бичгийн хяналт · {today:%Y-%m-%d}'])
     ws['A1'].font = Font(bold=True, size=13)
     ws.append([])
@@ -647,35 +748,81 @@ def product_search(request):
 
 @login_required
 def product_edit(request, pk):
-    """Бүтээгдэхүүний нэмэлт мэдээлэл засах - 'product_edit' үйлдлийн эрхтэй албан тушаалд
-    (эрхийг middleware шалгана, menuconfig.SUBPAGE_MENU_KEYS / ACTION_PERMISSIONS)."""
+    """Бүтээгдэхүүний нэмэлт мэдээлэл засах - 'product_edit' үйлдлийн эрхтэй албан тушаалд бүх талбар,
+    'product_image_upload' эрхтэйд зөвхөн үндсэн зураг (эрхийг middleware шалгана,
+    menuconfig.SUBPAGE_MENU_KEYS / ACTION_PERMISSIONS)."""
     from django.shortcuts import get_object_or_404, redirect
+    from django.utils.http import url_has_allowed_host_and_scheme
+    from shop.access import request_menu_keys
 
     product = get_object_or_404(OpenDataItem, pk=pk)
-    
+    can_edit_info = 'product_edit' in request_menu_keys(request)
+    # Хадгалсны дараа ирсэн жагсаалт руугаа (жиш: зураггүй барааны шүүлт) буцна
+    next_url = request.POST.get('next') or request.GET.get('next') or ''
+    if not url_has_allowed_host_and_scheme(next_url, allowed_hosts={request.get_host()}):
+        next_url = ''
+
     # Extension авах эсвэл үүсгэх
     extension, created = ProductExtension.objects.get_or_create(item_id=product.id)
     
     if request.method == 'POST':
-        # Form өгөгдөл хадгалах
-        extension.name_mn = request.POST.get('name_mn', '').strip()
-        extension.country_of_origin = request.POST.get('country_of_origin', '').strip()
-        extension.supplier = request.POST.get('supplier', '').strip()
+        # Form өгөгдөл хадгалах - зөвхөн зураг оруулах эрхтэй бол бусад талбарт хүрэхгүй
+        if can_edit_info:
+            extension.name_mn = request.POST.get('name_mn', '').strip()
+            extension.country_of_origin = request.POST.get('country_of_origin', '').strip()
+            extension.supplier = request.POST.get('supplier', '').strip()
+
+            qty = request.POST.get('qty_per_box', '').strip().replace(',', '.')
+            try:
+                extension.qty_per_box = Decimal(qty) if qty else None
+            except InvalidOperation:
+                extension.qty_per_box = None
+            extension.box_measure = request.POST.get('box_measure', '').strip()[:30]
         
-        qty = request.POST.get('qty_per_box', '').strip()
-        extension.qty_per_box = int(qty) if qty else None
-        
-        # Зураг хадгалах
+        # Зураг: шинээр оруулбал хуучныг (файл, thumbnail) устгаад солино; "Зургийг устгах" бол арилгана
+        from shop.services import product_images
         if 'image_main' in request.FILES:
+            product_images.delete_main_image(extension)
             extension.image_main = request.FILES['image_main']
-        
+        elif request.POST.get('remove_image'):
+            product_images.remove_image(extension)
+
         extension.save()
-        
-        return redirect('shop:products')
+
+        return redirect(next_url or 'shop:products')
     
+    # Хоосон талбарт анхдагч утга: импортын захиалга, MSSQL, барааны нэрээс (services.imports.product_defaults)
+    from shop.services.imports import MEASURES, product_defaults
+    defaults = product_defaults(product) if can_edit_info else {}
+    form = {}
+    if can_edit_info:
+        form = {
+            'qty_per_box': f'{extension.qty_per_box.normalize():f}' if extension.qty_per_box
+            else (f"{defaults['qty_per_box']:f}" if defaults['qty_per_box'] else ''),
+            'box_measure': extension.box_measure or defaults['box_measure'],
+            'country_of_origin': extension.country_of_origin or defaults['country'],
+            'supplier': extension.supplier or defaults['supplier'],
+        }
+        # Анхдагчаар бөглөсөн (хадгалаагүй) талбарын эх сурвалж
+        filled = {'qty_per_box': not extension.qty_per_box, 'country_of_origin': not extension.country_of_origin,
+                  'supplier': not extension.supplier}
+        source_key = {'qty_per_box': 'qty_per_box', 'country_of_origin': 'country', 'supplier': 'supplier'}
+        form['hints'] = {field: defaults['source'].get(source_key[field], '')
+                         for field, empty in filled.items() if empty and form[field]}
+    measures = list(MEASURES)
+    if form.get('box_measure') and form['box_measure'] not in measures:
+        measures.append(form['box_measure'])
+
+    from shop.services.product_images import image_name
+    product.extension = extension
     context = {
         'product': product,
         'extension': extension,
+        'has_image': bool(image_name(product)),
+        'can_edit_info': can_edit_info,
+        'next_url': next_url,
+        'form': form,
+        'measures': measures,
     }
     
     return render(request, 'shop/product_edit.html', context)
@@ -750,24 +897,51 @@ def dashboard(request):
                           'url': '?' + (query.urlencode() + '&' if query else '') + f'tab={k}'} for k, l, i in es.SECTIONS],
             'tab': tab,
             'data': es.BUILDERS[tab](period) if tab in es.BUILDERS else None,
-            'can_plan': 'sales_plan' in request_menu_keys(request),
+            'can_plan': _can_edit_plan(request),
         })
 
     return render(request, 'shop/dashboard.html', context)
 
 
+def _can_edit_plan(request):
+    """Төлөвлөгөө засах эрх: цэсний эрхтэй, ХТ / борлуулагч биш (тэд зөвхөн өөрийн сувгийнхаа төлөвлөгөөг харна)."""
+    from shop.access import request_menu_keys
+    from shop.services.sales_ht_access import get_channel_scope
+    return 'sales_plan' in request_menu_keys(request) and get_channel_scope(request.user) is None
+
+
+def _plan_box_defaults(items):
+    """{item_id: (хайрцаг дахь тоо, хэмжих нэгж, эх сурвалж)} - нэмэлт мэдээлэл > импортын захиалга > ERP."""
+    from shop.services.imports import product_defaults_bulk
+    extensions = {e.item_id: e for e in ProductExtension.objects.filter(item_id__in=[i.id for i in items],
+                                                                         qty_per_box__isnull=False)}
+    defaults = product_defaults_bulk(items)
+    result = {}
+    for item in items:
+        ext, d = extensions.get(item.id), defaults[item.id]
+        if ext:
+            result[item.id] = (ext.qty_per_box, ext.box_measure or d['box_measure'], 'барааны мэдээлэл')
+        else:
+            result[item.id] = (d['qty_per_box'], d['box_measure'], d['source'].get('qty_per_box', ''))
+    return result
+
+
 @login_required
 def sales_plan(request):
-    """Борлуулалтын сарын төлөвлөгөө: суваг бүрийн дүн ба ХТ тус бүрийн төлөвлөгөөт барааны тоо ширхгийн зорилт.
-    ?q= бол бараа хайх JSON. Удирдлагын нэгтгэлийн (/dashboard/) биелэлтэд ашиглагдана."""
+    """Борлуулалтын сарын төлөвлөгөө: суваг бүрийн дүн ба ХТ тус бүрийн төлөвлөгөөт барааны зорилт.
+    Төлөвлөгөөт барааг жагсаалтаас чеклэж сонгоод ХТ бүрт хайрцгаар оруулна; target_qty = хайрцаг × хайрцаг дахь тоо.
+    Хайрцаг дахь тоо: бүтээгдэхүүний нэмэлт мэдээлэл > импортын захиалга > ERP, байхгүй бол гараар (тэгвэл
+    бүтээгдэхүүний нэмэлт мэдээлэлд мөн хадгална). Удирдлагын нэгтгэлийн (/dashboard/) биелэлтэд ашиглагдана.
+    ХТ / борлуулагч (sales_ht_access) зөвхөн өөрийн хариуцсан сувгийн төлөвлөгөө, зарсан тоог харна - засахгүй."""
     from django.contrib import messages
     from django.db import connection, transaction
     from shop.models import SalesPlan, SalesPlanItem
-    from shop.services.exec_summary import HT_PREFIX, _shift_months
-    from shop.services.product_files import item_names, search_items
+    from shop.services.exec_summary import HT_PREFIX, _shift_months, is_plan_item_channel
+    from shop.services.sales_ht_access import get_channel_scope
 
-    if 'q' in request.GET:
-        return JsonResponse({'results': search_items(request.GET.get('q'))})
+    scope = get_channel_scope(request.user)
+    if scope is not None and request.method == 'POST':
+        return HttpResponseForbidden('Төлөвлөгөөг зөвхөн харах эрхтэй.')
 
     try:
         month = datetime.strptime(request.GET.get('month') or request.POST.get('month', ''), '%Y-%m').date()
@@ -776,8 +950,10 @@ def sales_plan(request):
     with connection.cursor() as cursor:
         cursor.execute('SELECT "Id", "Name" FROM "OpenDataDistributionChannel" ORDER BY "Id"')
         all_channels = cursor.fetchall()
+    if scope is not None:
+        all_channels = [(cid, name) for cid, name in all_channels if cid in scope.channel_ids]
     # Төлөвлөгөөт бараа ХТ-ээр; дүнгийн төлөвлөгөө бүх сувагт
-    ht_channels = [(cid, name) for cid, name in all_channels if (name or '').startswith(HT_PREFIX)]
+    ht_channels = [(cid, name) for cid, name in all_channels if is_plan_item_channel(name)]
 
     def parse_amount(value):
         try:
@@ -785,6 +961,7 @@ def sales_plan(request):
         except InvalidOperation:
             return None
 
+    box_defaults = _plan_box_defaults
     redirect_url = reverse('shop:sales_plan') + f'?month={month:%Y-%m}'
     if request.method == 'POST':
         if request.POST.get('action') == 'copy_prev':
@@ -792,13 +969,18 @@ def sales_plan(request):
             with transaction.atomic():
                 for plan in SalesPlan.objects.filter(month=prev):
                     SalesPlan.objects.get_or_create(month=month, channel_id=plan.channel_id,
-                                                    defaults={'amount': plan.amount, 'updated_by': request.user})
+                                                    defaults={'amount': plan.amount, 'items_excluded': plan.items_excluded,
+                                                              'updated_by': request.user})
                 for item in SalesPlanItem.objects.filter(month=prev):
-                    SalesPlanItem.objects.get_or_create(month=month, item_id=item.item_id, channel_id=item.channel_id,
-                                                        defaults={'target_qty': item.target_qty, 'updated_by': request.user})
+                    SalesPlanItem.objects.get_or_create(
+                        month=month, item_id=item.item_id, channel_id=item.channel_id,
+                        defaults={'target_qty': item.target_qty, 'target_boxes': item.target_boxes,
+                                  'qty_per_box': item.qty_per_box, 'updated_by': request.user})
             messages.success(request, f'{prev:%Y-%m} сарын төлөвлөгөөг хууллаа (байгаа утгыг өөрчлөөгүй).')
             return redirect(redirect_url)
-        bad = []
+        bad, no_pack, entered = [], [], {}
+        ht_ids = {cid for cid, _ in ht_channels}
+        excluded = {cid for cid in ht_ids if request.POST.get(f'exclude_{cid}')}
         with transaction.atomic():
             for cid, name in all_channels:
                 raw = request.POST.get(f'plan_{cid}')
@@ -807,52 +989,398 @@ def sales_plan(request):
                 amount = parse_amount(raw)
                 if amount is None:
                     bad.append(name)
-                elif amount:
+                    continue
+                # Дүнгүй ч "хамруулахгүй" тэмдэглэгээг хадгалахын тулд мөр үлдэнэ
+                if amount or cid in excluded:
                     SalesPlan.objects.update_or_create(month=month, channel_id=cid,
-                                                       defaults={'amount': amount, 'updated_by': request.user})
+                                                       defaults={'amount': amount, 'items_excluded': cid in excluded,
+                                                                 'updated_by': request.user})
                 else:
                     SalesPlan.objects.filter(month=month, channel_id=cid).delete()
-            item_ids = [i for i in request.POST.getlist('items') if i]
-            # Жагсаалтаас хассан бараа устна
+            item_ids = list(dict.fromkeys(i for i in request.POST.getlist('items') if i))
+            # Жагсаалтаас хассан (чекийг авсан) бараа устна
             SalesPlanItem.objects.filter(month=month).exclude(item_id__in=item_ids).delete()
             for item_id in item_ids:
+                per_box = parse_amount(request.POST.get(f'per_box_{item_id}'))
+                if per_box is None:
+                    bad.append(f'{item_id} / хайрцаг дахь')
+                    per_box = Decimal(0)
+                elif per_box:
+                    entered[item_id] = per_box
+                # Сувгийн кодгүй мөр - хайрцаг оруулаагүй ч сонгосон бараа (ба хайрцаг дахь тоо) хадгалагдана
+                SalesPlanItem.objects.update_or_create(
+                    month=month, item_id=item_id, channel_id='',
+                    defaults={'target_qty': 0, 'target_boxes': None, 'qty_per_box': per_box or None,
+                              'updated_by': request.user})
+                # Хайрцгаар эсвэл ширхгээр оруулна; ширхгээр бол target_boxes хоосон (дахин ачаалахад горимыг үүгээр танина)
+                by_pieces = request.POST.get(f'unit_{item_id}') == 'pcs'
                 for cid, name in ht_channels:
-                    qty = parse_amount(request.POST.get(f'qty_{item_id}_{cid}'))
-                    if qty is None:
+                    value = Decimal(0) if cid in excluded else parse_amount(request.POST.get(f'qty_{item_id}_{cid}'))
+                    if value is None:
                         bad.append(f'{item_id} / {name}')
-                    elif qty:
-                        SalesPlanItem.objects.update_or_create(month=month, item_id=item_id, channel_id=cid,
-                                                               defaults={'target_qty': qty, 'updated_by': request.user})
+                    elif value and not by_pieces and not per_box:
+                        # Хайрцаг дахь тоогүй бол ширхэг бодогдохгүй - өмнөх утгыг хэвээр үлдээнэ
+                        no_pack.append(item_id)
+                    elif value:
+                        SalesPlanItem.objects.update_or_create(
+                            month=month, item_id=item_id, channel_id=cid,
+                            defaults={'target_boxes': None if by_pieces else value, 'qty_per_box': per_box or None,
+                                      'target_qty': value if by_pieces else value * per_box, 'updated_by': request.user})
                     else:
                         SalesPlanItem.objects.filter(month=month, item_id=item_id, channel_id=cid).delete()
+            # Гараар оруулсан хайрцаг дахь тоог (өөр эх сурвалжгүй бараанд) бүтээгдэхүүний мэдээлэлд хадгална
+            if entered:
+                known = box_defaults(list(OpenDataItem.objects.filter(id__in=entered)))
+                for item_id, per_box in entered.items():
+                    if item_id in known and not known[item_id][0]:
+                        ext, _ = ProductExtension.objects.get_or_create(item_id=item_id)
+                        ext.qty_per_box, ext.box_measure = per_box, known[item_id][1]
+                        ext.save(update_fields=['qty_per_box', 'box_measure', 'updated_at'])
         if bad:
             messages.warning(request, 'Тоо биш утгыг алгаслаа: ' + ', '.join(bad[:5]))
+        if no_pack:
+            messages.warning(request, 'Хайрцаг дахь тоо оруулаагүй тул хадгалаагүй: ' + ', '.join(dict.fromkeys(no_pack)))
         messages.success(request, f'{month:%Y-%m} сарын төлөвлөгөө хадгалагдлаа.')
         return redirect(redirect_url)
 
-    plans = {p.channel_id: p.amount for p in SalesPlan.objects.filter(month=month)}
-    targets = {}
+    def fmt(value):
+        return f'{Decimal(value).normalize():f}' if value else ''
+
+    plan_rows = list(SalesPlan.objects.filter(month=month, channel_id__in=[cid for cid, _ in all_channels]))
+    plans = {p.channel_id: p.amount for p in plan_rows}
+    excluded = {p.channel_id for p in plan_rows if p.items_excluded}
+    saved = {}
     for t in SalesPlanItem.objects.filter(month=month):
-        targets.setdefault(t.item_id, {})[t.channel_id] = t.target_qty
-    names = item_names(targets)
-    items = [{'id': item_id, 'name': names.get(item_id, item_id),
-              'cells': [targets[item_id].get(cid) for cid, _ in ht_channels]}
-             for item_id in sorted(targets, key=lambda i: names.get(i, i))]
+        row = saved.setdefault(t.item_id, {'per_box': None, 'cells': {}})
+        row['per_box'] = row['per_box'] or t.qty_per_box
+        row['cells'][t.channel_id] = t
+    if scope is not None:
+        # ХТ: зөвхөн өөрийн сувагт зорилттой бараа
+        own = {cid for cid, _ in ht_channels}
+        saved = {i: row for i, row in saved.items()
+                 if any(cid in own and t.target_qty for cid, t in row['cells'].items())}
+    # Сонгох жагсаалт: идэвхтэй бараа ("15" - орцны түүхий эд биш) + энэ сарын төлөвлөгөөнд байгаа бараа
+    catalog_items = list(OpenDataItem.objects
+                         .filter((Q(activestatus='Y') & ~Q(id__istartswith='15')) | Q(id__in=list(saved)))
+                         .only('id', 'name', 'barcode', 'measurename', 'qtyinpackage', 'itemgroupid'))
+    boxes_info = box_defaults(catalog_items)
+    # Тухайн сард төлөвлөгөөт бараа ХТ суваг бүрээр зарагдсан тоо (ширхэг)
+    sold = {}
+    if saved:
+        with connection.cursor() as cursor:
+            cursor.execute('''SELECT "ItemId", "DistributionChannelId", SUM("Qty") FROM "OpenDataSale"
+                              WHERE "DocumentDate" >= %s AND "DocumentDate" < %s AND "ItemId" = ANY(%s)
+                              GROUP BY 1, 2''', [month, _shift_months(month, 1), list(saved)])
+            sold = {(item_id, cid): qty for item_id, cid, qty in cursor.fetchall()}
+    catalog, items = [], []
+    for item in sorted(catalog_items, key=lambda i: ((i.itemgroupid or 'Бусад') == 'Бусад', i.itemgroupid or '', i.name or '')):
+        default_qty, measure, source = boxes_info[item.id]
+        row = saved.get(item.id)
+        per_box = (row and row['per_box']) or default_qty
+        entry = {'id': item.id, 'name': item.name or item.id, 'barcode': item.barcode or '',
+                 'group': item.itemgroupid or 'Бусад',
+                 'per_box': fmt(per_box), 'unit': ProductExtension.MEASURE_SHORT.get(measure, measure),
+                 'source': source if per_box and per_box == default_qty else ('гараар' if per_box else ''),
+                 'selected': row is not None}
+        catalog.append(entry)
+        if row:
+            targets = [row['cells'].get(cid) for cid, _ in ht_channels]
+            # Ширхгээр оруулсан (target_boxes хоосон) мөр эсвэл хайрцаг дахь тоогүй бараа - ширхгийн горим
+            by_pieces = not per_box or any(t and t.target_qty and t.target_boxes is None for t in targets)
+            sold_qty = [sold.get((item.id, cid)) or 0 for cid, _ in ht_channels]
+            cells = [{'value': fmt(round(t.target_qty if by_pieces else t.target_boxes, 2)) if t else '',
+                      'sold': fmt(round(q, 2))} for t, q in zip(targets, sold_qty)]
+            # Хэвлэх / Эксэлд: суваг бүрийн хайрцаг, ширхэг, зарсан (тоогоор); биелэлт зөвхөн зорилттой сувгаар
+            plan_cells = []
+            for t, q in zip(targets, sold_qty):
+                pcs = Decimal(t.target_qty or 0) if t else Decimal(0)
+                boxes = (Decimal(t.target_boxes) if t and t.target_boxes is not None
+                         else (pcs / Decimal(per_box) if pcs and per_box else None))
+                plan_cells.append({'pcs': pcs, 'boxes': boxes if pcs else None, 'sold': Decimal(q or 0)})
+            plan_pcs = sum((c['pcs'] for c in plan_cells), Decimal(0))
+            plan_sold = sum((c['sold'] for c in plan_cells if c['pcs']), Decimal(0))
+            items.append({**entry, 'cells': cells, 'unit_mode': 'pcs' if by_pieces else 'box',
+                          'sold_total': fmt(round(sum(sold_qty), 2)), 'plan_cells': plan_cells,
+                          'plan_boxes': sum((c['boxes'] or 0 for c in plan_cells), Decimal(0)),
+                          'plan_pcs': plan_pcs, 'plan_sold': plan_sold,
+                          # Биелэлт (≤100%): барааны нийт зарсныг нийт төлөвлөсөнд хязгаарлана (дэлгэцийн updateStats-тай ижил)
+                          'plan_capped': min(plan_sold, plan_pcs),
+                          'plan_pct': _pct2(plan_sold, plan_pcs) if plan_pcs else None,
+                          'plan_fulfil': _pct2(min(plan_sold, plan_pcs), plan_pcs) if plan_pcs else None})
+    items.sort(key=lambda i: i['name'])
     context = {
         'active_page': 'sales_plan',
         'month': month,
         'prev_month': _shift_months(month, -1),
         'next_month': _shift_months(month, 1),
-        'channels': [{'id': cid, 'name': name, 'amount': plans.get(cid), 'is_ht': (name or '').startswith(HT_PREFIX)}
+        'channels': [{'id': cid, 'name': name, 'amount': plans.get(cid), 'is_ht': is_plan_item_channel(name)}
                      for cid, name in all_channels],
-        'ht_channels': ht_channels,
+        # (код, нэр, хамруулахгүй, товч нэр - "ХТ " угтваргүй)
+        'ht_channels': [(cid, name, cid in excluded, name[len(HT_PREFIX):].strip() if name.startswith(HT_PREFIX) else name)
+                        for cid, name in ht_channels],
         'items': items,
+        'blank_item': {'cells': [{'value': '', 'sold': ''}] * len(ht_channels)},
+        'readonly': scope is not None,
+        'scope': scope,  # JS-ээр нэмэх мөрийн загвар
+        'catalog': catalog,
         'plan_total': sum(plans.values()),
     }
+    export = request.GET.get('export')
+    if export in ('print', 'xlsx'):
+        # Нийт мөр: суваг бүрийн хайрцаг / ширхэг / зарсан (зорилттой бараагаар), бүх барааны нийлбэр
+        col_totals = []
+        for i in range(len(ht_channels)):
+            cells = [item['plan_cells'][i] for item in items if item['plan_cells'][i]['pcs']]
+            pcs = sum((c['pcs'] for c in cells), Decimal(0))
+            sold = sum((c['sold'] for c in cells), Decimal(0))
+            # Биелэлт (≤100%): нүд бүрийн зарсныг тухайн нүдний төлөвлөсөнд хязгаарлана
+            capped = sum((min(c['sold'], c['pcs']) for c in cells), Decimal(0))
+            col_totals.append({'items': len(cells), 'boxes': sum((c['boxes'] or 0 for c in cells), Decimal(0)),
+                               'pcs': pcs, 'sold': sold, 'pct': _pct2(sold, pcs) if pcs else None,
+                               'fulfil': _pct2(capped, pcs) if pcs and sold else None,
+                               'done': sum(1 for c in cells if c['sold'] >= c['pcs'])})
+        pcs = sum((i['plan_pcs'] for i in items), Decimal(0))
+        sold = sum((i['plan_sold'] for i in items), Decimal(0))
+        capped = sum((i['plan_capped'] for i in items), Decimal(0))
+        context['col_totals'] = col_totals
+        context['grand'] = {'items': sum(1 for i in items if i['plan_pcs']),
+                            'boxes': sum((i['plan_boxes'] for i in items), Decimal(0)), 'pcs': pcs, 'sold': sold,
+                            'pct': _pct2(sold, pcs) if pcs else None,
+                            'fulfil': _pct2(capped, pcs) if pcs and sold else None,
+                            'done': sum(1 for i in items if i['plan_pcs'] and i['plan_sold'] >= i['plan_pcs'])}
+        context['now'] = timezone.localtime()
+        if export == 'print':
+            return render(request, 'shop/sales_plan_print.html', context)
+        return _sales_plan_xlsx(context)
     return render(request, 'shop/sales_plan.html', context)
 
 
-SALES_REPORT_TABS = ['summary', 'product', 'customer', 'channel', 'group', 'seller', 'warehouse', 'daily']
+def _pct2(part, whole):
+    """Хувь 0.01 нарийвчлалтай (хэвлэх / Эксэлд биелэлтийг нарийн харуулна)."""
+    from decimal import ROUND_HALF_UP
+    return (Decimal(part) / Decimal(whole) * 100).quantize(Decimal('0.01'), ROUND_HALF_UP)
+
+
+def _sales_plan_xlsx(ctx):
+    """Борлуулалтын төлөвлөгөө .xlsx: «Сувгийн дүн» ба «Төлөвлөгөөт бараа» хуудас."""
+    import io
+    from urllib.parse import quote
+    from django.http import HttpResponse
+    import openpyxl
+    from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+    from openpyxl.utils import get_column_letter
+
+    month = ctx['month']
+    head_font, head_fill = Font(bold=True), PatternFill('solid', fgColor='E5E7EB')
+    bold, thin = Font(bold=True), Side(style='thin', color='9CA3AF')
+    wb = openpyxl.Workbook()
+
+    ws = wb.active
+    ws.title = 'Сувгийн дүн'
+    ws.append([f'Борлуулалтын төлөвлөгөө {month:%Y-%m} - сувгийн дүн (₮, НӨАТ-тэй)'])
+    ws['A1'].font = Font(bold=True, size=13)
+    ws.append([])
+    ws.append(['Суваг', 'Код', 'Төлөвлөгөө ₮'])
+    for cell in ws[3]:
+        cell.font, cell.fill = head_font, head_fill
+    for c in ctx['channels']:
+        ws.append([c['name'], c['id'], float(c['amount'] or 0)])
+    ws.append(['Нийт', '', float(ctx['plan_total'] or 0)])
+    for cell in ws[ws.max_row]:
+        cell.font, cell.border = bold, Border(top=thin)
+    for row in ws.iter_rows(min_row=4, min_col=3, max_col=3):
+        row[0].number_format = '#,##0'
+    ws.column_dimensions['A'].width, ws.column_dimensions['B'].width, ws.column_dimensions['C'].width = 40, 12, 18
+    ws.freeze_panes = 'A4'
+
+    ws = wb.create_sheet('Төлөвлөгөөт бараа')
+    channels = ctx['ht_channels']
+    ws.append([f'Төлөвлөгөөт бараа {month:%Y-%m}'])
+    ws['A1'].font = Font(bold=True, size=13)
+    fixed = ['№', 'Код', 'Бараа', 'Хайрцаг дахь', 'Нэгж']
+    top = fixed + [label for _, _, _, label in channels for _ in range(3)] + ['Нийт', '', '', '', '']
+    sub = [''] * len(fixed) + ['Хайрцаг', 'Тоо', 'Зарсан'] * len(channels) + ['Хайрцаг', 'Тоо', 'Зарсан', 'Хувь %', 'Биелэлт (≤100%) %']
+    ws.append(top)
+    ws.append(sub)
+    for r in (2, 3):
+        for cell in ws[r]:
+            cell.font, cell.fill = head_font, head_fill
+            cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+    for i in range(len(fixed)):
+        ws.merge_cells(start_row=2, end_row=3, start_column=i + 1, end_column=i + 1)
+    for i, (_, name, excluded, label) in enumerate(channels):
+        col = len(fixed) + 1 + i * 3
+        ws.merge_cells(start_row=2, end_row=2, start_column=col, end_column=col + 2)
+        if excluded:
+            ws.cell(row=2, column=col).value = f'{label} (хамруулахгүй)'
+    total_col = len(fixed) + 1 + len(channels) * 3
+    ws.merge_cells(start_row=2, end_row=2, start_column=total_col, end_column=total_col + 4)
+
+    def n(value):
+        return float(value) if value else None
+
+    def pf(value):  # хувь - 0.00 форматтай тоо
+        return float(value) if value is not None else None
+
+    for no, item in enumerate(ctx['items'], 1):
+        row = [no, item['id'], item['name'], n(Decimal(item['per_box'])) if item['per_box'] else None, item['unit']]
+        for c in item['plan_cells']:
+            row += [n(c['boxes']), n(c['pcs']), float(c['sold']) if c['pcs'] or c['sold'] else None]
+        row += [n(item['plan_boxes']), n(item['plan_pcs']),
+                float(item['plan_sold']) if item['plan_pcs'] else n(item['plan_sold']), pf(item['plan_pct']), pf(item['plan_fulfil'])]
+        ws.append(row)
+    g = ctx['grand']
+    footer = ['', '', f"Нийт {g['items']} бараа", '', '']
+    for t in ctx['col_totals']:
+        footer += [n(t['boxes']), n(t['pcs']), n(t['sold'])]
+    footer += [n(g['boxes']), n(g['pcs']), n(g['sold']), pf(g['pct']), pf(g['fulfil'])]
+    ws.append(footer)
+    for cell in ws[ws.max_row]:
+        cell.font, cell.border = bold, Border(top=thin)
+    # Суваг бүрийн хувь, биелэлт (≤100%), 100% хүрсэн бараа - «Зарсан» баганын доор
+    for label, key in (('Хувь %', 'pct'), ('Биелэлт (≤100%) %', 'fulfil'), ('100% хүрсэн бараа', 'done')):
+        extra = ['', '', label, '', '']
+        for t in ctx['col_totals']:
+            value = (f"{t['done']}/{t['items']}" if key == 'done' else pf(t[key])) if t['items'] else None
+            extra += [None, None, value]
+        if key == 'done':
+            extra += [None, None, f"{g['done']}/{g['items']}", None, None]
+        else:
+            extra += [None, None, None, pf(g['pct']) if key == 'pct' else None, pf(g['fulfil']) if key == 'fulfil' else None]
+        ws.append(extra)
+        ws.cell(row=ws.max_row, column=3).font = bold
+    # Тоо: мянгатын таслалтай; хувь (Нийт хэсгийн 2 багана, «Хувь % / Биелэлт» мөрүүд): 0.00
+    pct_rows = {r for r in range(4, ws.max_row + 1) if ws.cell(row=r, column=3).value in ('Хувь %', 'Биелэлт (≤100%) %')}
+    for row in ws.iter_rows(min_row=4, min_col=4, max_col=ws.max_column):
+        for cell in row:
+            is_pct = cell.row in pct_rows or cell.column in (total_col + 3, total_col + 4)
+            cell.number_format = '0.00' if is_pct else '#,##0.##'
+    ws.column_dimensions['A'].width, ws.column_dimensions['B'].width = 5, 12
+    ws.column_dimensions['C'].width, ws.column_dimensions['D'].width, ws.column_dimensions['E'].width = 42, 11, 7
+    for col in range(len(fixed) + 1, ws.max_column + 1):
+        ws.column_dimensions[get_column_letter(col)].width = 10
+    ws.freeze_panes = ws.cell(row=4, column=len(fixed) + 1)
+    ws.page_setup.orientation = 'landscape'
+    ws.page_setup.fitToWidth, ws.page_setup.fitToHeight = 1, 0
+    ws.sheet_properties.pageSetUpPr.fitToPage = True
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    name = f'Борлуулалтын_төлөвлөгөө_{month:%Y-%m}.xlsx'
+    response = HttpResponse(buf.getvalue(), content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    response['Content-Disposition'] = f"attachment; filename=\"sales_plan_{month:%Y-%m}.xlsx\"; filename*=UTF-8''{quote(name)}"
+    return response
+
+
+@login_required
+def sales_plan_items(request):
+    """Сарын төлөвлөгөөт бараа ба тоо (ХТ тайлангийн "Төлөвлөгөө оруулах" багана).
+    GET ?month=YYYY-MM&channel=.. -> {'items': {item_id: {'target': зорилттой эсэх, 'qty': тоо}}};
+    POST JSON {month, channels, add: [item_id], remove: [item_id], qty: {item_id: тоо}, unit: {item_id: 'box'|'pcs'}}.
+    Нэмсэн бараа сувгийн кодгүй (зорилтгүй) мөрөөр орно; хассан барааны тухайн сарын бүх зорилт устна.
+    Тоо нь тайлангийн шүүлтийн ХТ сувгууд (сонгоогүй бол бүх ХТ, "хамруулахгүй"-г алгасна) тус бүрт ижил орно.
+    Нэгж (хайрцаг/ширхэг) заагаагүй бол барааны төлөвлөгөөн дэх горимоор; хайрцаг дахь тоогүй бараа ширхгээр."""
+    import json
+    from django.db import connection
+    from shop.models import SalesPlan, SalesPlanItem
+    from shop.services.exec_summary import HT_PREFIX, is_plan_item_channel
+    from shop.services.sales_ht_access import get_channel_scope
+
+    is_post = request.method == 'POST'
+    scope = get_channel_scope(request.user)
+    if scope is not None and is_post:
+        return JsonResponse({'error': 'Төлөвлөгөөг зөвхөн харах эрхтэй'}, status=403)
+    payload = json.loads(request.body or '{}') if is_post else request.GET
+    try:
+        month = datetime.strptime(payload.get('month') or '', '%Y-%m').date()
+    except (TypeError, ValueError):
+        return JsonResponse({'error': 'Сар буруу'}, status=400)
+    requested = set(payload.get('channels') or [] if is_post else payload.getlist('channel'))
+    with connection.cursor() as cursor:
+        cursor.execute('SELECT "Id", "Name" FROM "OpenDataDistributionChannel" ORDER BY "Id"')
+        # Суваг сонгоогүй бол ХТ сувгууд; сонгосон бол төлөвлөгөөт барааны (ХТ + борлуулагч) сувгаас
+        plan_channels = [(cid, name) for cid, name in cursor.fetchall() if is_plan_item_channel(name)]
+    ht_ids = [cid for cid, name in plan_channels if (requested or (name or '').startswith(HT_PREFIX))]
+    excluded = set(SalesPlan.objects.filter(month=month, items_excluded=True).values_list('channel_id', flat=True))
+    targets = [cid for cid in ht_ids if (not requested or cid in requested) and cid not in excluded
+               and (scope is None or cid in scope.channel_ids)]
+
+    if is_post:
+        from django.db import transaction
+        add = [i for i in dict.fromkeys(payload.get('add') or []) if isinstance(i, str) and i]
+        remove = [i for i in payload.get('remove') or [] if isinstance(i, str) and i]
+        add = list(OpenDataItem.objects.filter(id__in=add).values_list('id', flat=True))
+        qty = {}
+        for item_id, raw in (payload.get('qty') or {}).items():
+            try:
+                qty[item_id] = max(Decimal(str(raw or '0').replace(',', '').strip() or '0'), Decimal(0))
+            except InvalidOperation:
+                continue
+        units = {i: u for i, u in (payload.get('unit') or {}).items() if u in ('box', 'pcs')}
+        no_box = []  # хайрцгаар сонгосон ч хайрцаг дахь тоо тодорхойгүй -> ширхгээр хадгалсан
+        with transaction.atomic():
+            SalesPlanItem.objects.filter(month=month, item_id__in=remove).delete()
+            for item_id in add:
+                SalesPlanItem.objects.get_or_create(month=month, item_id=item_id, channel_id='',
+                                                    defaults={'updated_by': request.user})
+            rows = {}
+            for t in SalesPlanItem.objects.filter(month=month, item_id__in=list(qty)):
+                rows.setdefault(t.item_id, []).append(t)
+            # Төлөвлөгөөнд байгаа (чеклэсэн) бараанд л тоо оруулна
+            qty = {i: v for i, v in qty.items() if i in rows}
+            defaults = _plan_box_defaults(list(OpenDataItem.objects.filter(id__in=list(qty))))
+            for item_id, value in qty.items():
+                item_rows = rows[item_id]
+                per_box = next((t.qty_per_box for t in item_rows if t.qty_per_box), None) or defaults.get(item_id, (None,))[0]
+                # Горим: сонгосон нэгж; заагаагүй бол өмнө ширхгээр оруулсан эсвэл хайрцаг дахь тоогүй бол ширхэг
+                if item_id in units:
+                    by_pieces = units[item_id] == 'pcs' or not per_box
+                    if units[item_id] == 'box' and not per_box and value:
+                        no_box.append(item_id)
+                else:
+                    by_pieces = not per_box or any(t.channel_id and t.target_qty and t.target_boxes is None for t in item_rows)
+                for cid in targets:
+                    if value:
+                        SalesPlanItem.objects.update_or_create(
+                            month=month, item_id=item_id, channel_id=cid,
+                            defaults={'target_boxes': None if by_pieces else value, 'qty_per_box': per_box or None,
+                                      'target_qty': value if by_pieces else value * per_box, 'updated_by': request.user})
+                    else:
+                        SalesPlanItem.objects.filter(month=month, item_id=item_id, channel_id=cid).delete()
+
+    def fmt(value):
+        return f'{Decimal(value).normalize():f}' if value else ''
+
+    items = {}
+    shown = {}  # item_id -> тайлангийн эхний сувгийн тоо (хайрцаг/ширхэг горимоор)
+    per_boxes, pieces = {}, set()
+    for t in SalesPlanItem.objects.filter(month=month):
+        entry = items.setdefault(t.item_id, {'target': False, 'qty': ''})
+        if t.qty_per_box:
+            per_boxes[t.item_id] = t.qty_per_box
+        if t.channel_id:
+            entry['target'] = True
+            if t.target_qty and t.target_boxes is None:
+                pieces.add(t.item_id)
+            if t.channel_id in targets:
+                rank = targets.index(t.channel_id)
+                if t.item_id not in shown or rank < shown[t.item_id]:
+                    shown[t.item_id] = rank
+                    entry['qty'] = fmt(t.target_qty if t.target_boxes is None else t.target_boxes)
+    missing = [i for i in items if i not in per_boxes]
+    if missing:
+        defaults = _plan_box_defaults(list(OpenDataItem.objects.filter(id__in=missing)))
+        per_boxes.update({i: d[0] for i, d in defaults.items() if d[0]})
+    for item_id, entry in items.items():
+        entry['per_box'] = fmt(per_boxes.get(item_id))
+        entry['unit'] = 'pcs' if item_id in pieces or item_id not in per_boxes else 'box'
+    result = {'month': f'{month:%Y-%m}', 'items': items, 'channels': targets}
+    if is_post:
+        result['no_box'] = no_box
+    return JsonResponse(result)
+
+
+SALES_REPORT_TABS = ['summary','product', 'customer', 'channel', 'group', 'seller', 'warehouse', 'daily']
 
 
 def _sales_report_filters(request):
@@ -1530,6 +2058,14 @@ def sales_report_ht(request):
     context = _sales_ht_filter_context(request, filters, scope)
     from shop.services.report_cache import cached
     context['report'] = cached('ht_report', ['OpenDataSale', 'OpenDataCustomer', 'OpenDataDistributionChannel', 'OpenDataCustomerGroup', 'OpenDataItem'], filters, lambda: sales_ht.build_report(filters))
+    # "Төлөвлөгөө оруулах" багана: тайлангийн бараа нэрээр тул item_id-г нэрээр (идэвхтэйг нь) олно
+    if _can_edit_plan(request):
+        ids = dict(OpenDataItem.objects.filter(name__in=context['report']['items'])
+                   .order_by(F('activestatus').asc(nulls_first=True)).values_list('name', 'id'))
+        context['plan'] = {'item_ids': [ids.get(name, '') for name in context['report']['items']],
+                           'channels': filters['channels'],  # тоо эдгээр ХТ сувагт (хоосон бол бүх ХТ)
+                           'month': f'{timezone.localdate():%Y-%m}', 'url': reverse('shop:sales_plan_items'),
+                           'plan_url': reverse('shop:sales_plan')}
     return render(request, 'shop/sales_report_ht.html', context)
 
 
@@ -2847,6 +3383,7 @@ def my_sales_bonus(request):
     Сараар харахад хүснэгт бүрийн (Нярав, ХТ, Борлуулагч, Түгээгч) задаргааг хадгалсан утгуудаар нь
     (sales_bonus.compute) дахин бодож харуулна; олгох дүн нь хадгалсан SalesBonusEntry.total.
     Шүүлтүүр: ?view=month|year, ?year=&month=, ?scheme= (ажилтан хэд хэдэн хүснэгтэд орсон бол)."""
+    from collections import namedtuple
     from types import SimpleNamespace
     from shop.models import PayrollSetting, SalesBonusEntry, SalesBonusMember
     from shop.services import sales_bonus as sb
@@ -3330,7 +3867,7 @@ def meal_edit(request, pk=None):
 
     from django.contrib import messages
     from django.shortcuts import get_object_or_404
-    from shop.models import Meal, MealNumberAssignment
+    from shop.models import Meal
     from shop.forms import MealForm, MealIngredientFormSet, MealNumberFormSet
 
     meal = get_object_or_404(Meal, pk=pk) if pk else Meal()
@@ -3339,34 +3876,16 @@ def meal_edit(request, pk=None):
         form = MealForm(request.POST, instance=meal)
         formset = MealIngredientFormSet(request.POST, instance=meal)
         number_formset = MealNumberFormSet(request.POST, instance=meal)
+        # Нэг дугаарт ижил төрлийн хэд хэдэн хоол байж болно (давхардлыг зөвшөөрнө)
         if form.is_valid() and formset.is_valid() and number_formset.is_valid():
-            meal_type = form.cleaned_data['meal_type']
-            conflict = False
-            for number_form in number_formset.forms:
-                if not number_form.cleaned_data or number_form.cleaned_data.get('DELETE'):
-                    continue
-                number = number_form.cleaned_data.get('number')
-                if number is None:
-                    continue
-                clash = MealNumberAssignment.objects.filter(
-                    meal__meal_type=meal_type, meal__is_active=True, number=number,
-                )
-                if meal.pk:
-                    clash = clash.exclude(meal=meal)
-                other_meal = clash.select_related('meal').first()
-                if other_meal:
-                    number_form.add_error('number', f'{number} дугаарыг "{other_meal.meal.name}" хоол аль хэдийн эзэлсэн байна.')
-                    conflict = True
+            meal = form.save()
+            formset.instance = meal
+            formset.save()
+            number_formset.instance = meal
+            number_formset.save()
 
-            if not conflict:
-                meal = form.save()
-                formset.instance = meal
-                formset.save()
-                number_formset.instance = meal
-                number_formset.save()
-
-                messages.success(request, 'Хоол амжилттай хадгалагдлаа.')
-                return redirect('shop:meal_list')
+            messages.success(request, 'Хоол амжилттай хадгалагдлаа.')
+            return redirect('shop:meal_list')
     else:
         form = MealForm(instance=meal)
         formset = MealIngredientFormSet(instance=meal)
@@ -3445,6 +3964,50 @@ def meal_toggle_active(request, pk):
     return redirect('shop:meal_list')
 
 
+def _attach_meal_norms(attendances):
+    """Жагсаалтад: attendance.meal_rows = [(төрөл, хоолны нэр, хоолны дугаар)], attendance.norm_exceeded = [{name, meal, norm, qty, unit}].
+    Норм = хоолны бүртгэлийн стандарт жорын нэг хүнд ногдох хэмжээ; тухайн өдрийн бодит орц (MealAttendanceIngredient)
+    түүнээс их, эсвэл жорт байхгүй орц нэмсэн бол норм хэтэрсэн. Нэгж зөрвөл харьцуулахгүй."""
+    from shop.models import MealIngredient, MealNumberAssignment
+    all_slots = {a.pk: a.meal_slots() for a in attendances}
+    meal_ids = {s['meal'].pk for slots in all_slots.values() for s in slots if s['meal']}
+    numbers = {}
+    for meal_id, number in MealNumberAssignment.objects.filter(meal_id__in=meal_ids).values_list('meal_id', 'number'):
+        numbers.setdefault(meal_id, []).append(number)
+    standard = {}
+    for ing in MealIngredient.objects.filter(meal_id__in=meal_ids):
+        standard.setdefault(ing.meal_id, {})[ing.item_id] = ing
+    exceeded_ids, per_attendance = set(), {}
+    for a in attendances:
+        # Хоолны дугаар: тухайн өдрийн цэсний дугаартай бол түүгээр, сольсон хоол бол өөрийн дугаар(ууд)аар
+        a.day_number = a.menu_number
+        a.meal_rows = []
+        for s in all_slots[a.pk]:
+            if not s['meal']:
+                continue
+            own = sorted(numbers.get(s['meal'].pk, []))
+            number = str(a.day_number) if a.day_number in own else ', '.join(str(n) for n in own)
+            a.meal_rows.append((s['type_label'], s['meal'].name, number))
+        day_meals = {s['meal'].pk: s['meal'] for s in all_slots[a.pk] if s['meal']}
+        rows = []
+        for o in a.ingredient_overrides.all():
+            meal = day_meals.get(o.meal_id)
+            if meal is None or not o.quantity:
+                continue
+            base = standard.get(meal.pk, {}).get(o.item_id)
+            unit = (o.unit or (base.unit if base else '') or '').strip()
+            if base is None:
+                rows.append({'item_id': o.item_id, 'meal': meal.name, 'norm': None, 'qty': o.quantity, 'unit': unit})
+            elif base.quantity is not None and o.quantity > base.quantity and (
+                    not o.unit or not base.unit or o.unit.strip().lower() == base.unit.strip().lower()):
+                rows.append({'item_id': o.item_id, 'meal': meal.name, 'norm': base.quantity, 'qty': o.quantity, 'unit': unit})
+        per_attendance[a.pk] = rows
+        exceeded_ids.update(r['item_id'] for r in rows)
+    names = dict(OpenDataItem.objects.filter(id__in=exceeded_ids).values_list('id', 'name'))
+    for a in attendances:
+        a.norm_exceeded = [{**r, 'name': names.get(r['item_id']) or r['item_id']} for r in per_attendance[a.pk]]
+
+
 @login_required
 def meal_attendance_list(request):
     """Хоол идэх нэрсийн бүртгэлийн жагсаалт"""
@@ -3488,8 +4051,9 @@ def meal_attendance_list(request):
         ).distinct()
     attendances = list(
         attendances.annotate(headcount=Count('names', distinct=True))
-        .prefetch_related('swaps__meal', 'swaps__original_meal').order_by('-date')
+        .prefetch_related('swaps__meal', 'swaps__original_meal', 'ingredient_overrides').order_by('-date')
     )
+    _attach_meal_norms(attendances)
 
     context = {
         'attendances': attendances,
@@ -3533,10 +4097,32 @@ def meal_attendance_summary(request):
 
     attendances = list(
         MealAttendance.objects.filter(date__gte=date_from, date__lte=date_to)
-        .prefetch_related('names', 'swaps__meal__ingredients')
+        .prefetch_related('names', 'swaps__meal__ingredients', 'ingredient_overrides', 'cleared_meals')
         .order_by('date')
     )
     dates = [a.date for a in attendances]
+
+    def day_ingredients(attendance):
+        """Тухайн өдрийн бодит орц: хоол тус бүрд хадгалсан орц, орцгүй болгосон хоолд юу ч үгүй,
+        өдрийн бүртгэлд хадгалаагүй хоолд стандарт жор (ingredients_for_meal-тай ижил дүрэм)."""
+        overrides = {}
+        for o in attendance.ingredient_overrides.all():
+            overrides.setdefault(o.meal_id, []).append(o)
+        cleared = {m.pk for m in attendance.cleared_meals.all()}
+        for meal in attendance.meals:
+            recipe_units = {ing.item_id: ing.unit for ing in meal.ingredients.all()}
+            if meal.pk in overrides:
+                for o in overrides[meal.pk]:
+                    yield o.item_id, o.quantity, o.unit or recipe_units.get(o.item_id, '')
+            elif meal.pk not in cleared:
+                for ing in meal.ingredients.all():
+                    yield ing.item_id, ing.quantity, ing.unit
+
+    item_names = {}
+    if view_mode == 'ingredients':
+        item_ids = {o.item_id for a in attendances for o in a.ingredient_overrides.all()}
+        item_ids |= {ing.item_id for a in attendances for m in a.meals for ing in m.ingredients.all()}
+        item_names = dict(OpenDataItem.objects.filter(id__in=item_ids).values_list('id', 'name'))
 
     row_order = []
     row_labels = {}
@@ -3557,17 +4143,14 @@ def meal_attendance_summary(request):
                     cell_values[name] = {}
                 cell_values[name][attendance.date] = cell_values[name].get(attendance.date, 0) + 1
         else:
-            for meal in attendance.meals:
-                for ingredient in meal.ingredients.all():
-                    key = ingredient.item_id
-                    if key not in row_labels:
-                        item = ingredient.item
-                        row_labels[key] = item.name if item else ingredient.item_id
-                        row_units[key] = ingredient.unit
-                        row_order.append(key)
-                        cell_values[key] = {}
-                    qty = float(ingredient.quantity or 0) * headcount
-                    cell_values[key][attendance.date] = cell_values[key].get(attendance.date, 0) + qty
+            for key, quantity, unit in day_ingredients(attendance):
+                if key not in row_labels:
+                    row_labels[key] = item_names.get(key) or key
+                    row_units[key] = unit
+                    row_order.append(key)
+                    cell_values[key] = {}
+                qty = float(quantity or 0) * headcount
+                cell_values[key][attendance.date] = cell_values[key].get(attendance.date, 0) + qty
 
     row_order.sort(key=lambda k: row_labels[k])
 
@@ -3683,6 +4266,9 @@ def meal_attendance_form(request, pk=None):
             day_meals = [slot['meal'] for slot in slots if slot['meal']]
             # Сольж гарсан хоолны (өдрийн хоолонд ороогүй) орцын хувилбар үлдэхгүй
             attendance.ingredient_overrides.exclude(meal_id__in=[m.pk for m in day_meals]).delete()
+            # Хадгалахад орцын мөр бүр илгээгддэг тул мөргүй үлдсэн хоол = орцыг бүгдийг нь хассан
+            with_rows = set(attendance.ingredient_overrides.values_list('meal_id', flat=True))
+            attendance.cleared_meals.set([m for m in day_meals if m.pk not in with_rows])
 
             after_snapshot = {
                 (o.meal_id, o.item_id, o.quantity, o.unit)
@@ -3737,7 +4323,7 @@ def meal_attendance_form(request, pk=None):
         meals = list(attendance.meals) if attendance.date else []
         existing_override_meal_ids = set(
             MealAttendanceIngredient.objects.filter(attendance=attendance).values_list('meal_id', flat=True)
-        ) if attendance.pk else set()
+        ) | set(attendance.cleared_meals.values_list('pk', flat=True)) if attendance.pk else set()
 
         initial_ingredients = []
         for meal in meals:
@@ -4565,6 +5151,16 @@ def timesheet(request):
         return redirect(redirect_url)
 
     days, calendar_summary, rows, totals, setting = build_timesheet(year, month)
+    # Цалингийн тулгалт - насны шүүлтээс өмнө бүх мөрөөр
+    from shop.models import PayrollMonthClose
+    from shop.services.payroll_checks import SHEET_LABELS, check_payroll, summarize
+    checks = summarize(check_payroll(year, month, rows))
+    # Хаагдсан хуудас эцсийнх тул тулгалтад орохгүй
+    closed_sheets = sorted(PayrollMonthClose.objects.filter(year=year, month=month).values_list('sheet', flat=True))
+    for r in rows:
+        if r.get('is_main', True):
+            r['check_level'] = checks['row_levels'].get(r['employee_code'], '')
+            r['check_title'] = checks['row_titles'].get(r['employee_code'], '')
     # Насны шүүлт (регистрээс тооцсон өнөөдрийн нас) - шүүсэн мөрүүдээр нийт дүнг дахин тооцно
     from shop.services.timesheet import timesheet_totals
     rows, age_min, age_max, ages = _filter_timesheet_by_age(request, rows)
@@ -4604,6 +5200,9 @@ def timesheet(request):
         'employee_count': len({r['employee_code'] for r in rows}),
         'totals': totals,
         'setting': setting,
+        'checks': checks,
+        'checks_closed_sheets': [(s, SHEET_LABELS[s]) for s in closed_sheets],
+        'checks_closed_all': len(closed_sheets) == 2,
     }
     return render(request, 'shop/timesheet.html', context)
 
@@ -4673,6 +5272,13 @@ def payroll(request, sheet):
     if request.method == 'POST':
         action = request.POST.get('action')
         if action == 'close_month':
+            # Тулгалтын алдаатай сарыг шууд хаахгүй - хэрэглэгч алдааг мэдсээр байж баталгаажуулсан (force) бол л хаана
+            from shop.services.payroll_checks import check_payroll, summarize
+            checks = summarize(check_payroll(year, month), sheet)
+            if checks['errors'] and request.POST.get('force') != '1':
+                messages.error(request, f'Цалингийн тулгалтад {checks["errors"]} алдаа байгаа тул сарыг хаасангүй. '
+                                        'Алдааг засна уу, эсвэл мэдсээр байж хаахыг баталгаажуулна уу.')
+                return redirect(f"{reverse(url_name)}?year={year}&month={month}")
             count = payroll_snapshot.close_month(year, month, sheet, request.user)
             messages.success(request, f'{year} оны {month}-р сарын {"картын" if is_card else "бэлэн"} цалин хаагдлаа ({count} ажилтан). '
                              'Цалингийн тайлан, хувийн мэдээлэлд энэ бодолтоор харагдана.')
@@ -4719,9 +5325,17 @@ def payroll(request, sheet):
         messages.success(request, f'Цалин бодолт хадгалагдлаа ({saved} ажилтан).')
         return redirect(f"{reverse(url_name)}?year={year}&month={month}")
 
-    rows, totals, setting, close = payroll_snapshot.get_payroll(year, month, sheet)
+    from shop.services.payroll_checks import check_payroll, summarize
+    from shop.services.timesheet import build_timesheet
+    _, _, timesheet_rows, _, _ = build_timesheet(year, month)
+    rows, totals, setting, close = payroll_snapshot.get_payroll(year, month, sheet, timesheet_rows=timesheet_rows)
+    checks = summarize(check_payroll(year, month, timesheet_rows, {sheet: (rows, close)}), sheet)
+    for r in rows:
+        r['check_level'] = checks['row_levels'].get(r['employee_code'], '')
+        r['check_title'] = checks['row_titles'].get(r['employee_code'], '')
     from shop.services.payroll_print import build_print_pages
     context = {
+        'checks': checks,
         'close': close,
         **_month_nav_context(year, month),
         'sheet': sheet,
@@ -4744,6 +5358,60 @@ def payroll(request, sheet):
         ),
     }
     return render(request, 'shop/payroll.html', context)
+
+
+# ERP-д картын цалин бодолт оруулах "Сүүл" хуудасны баганууд: (ERP код, толгой, мөрийн түлхүүр).
+# Түлхүүр None бол 0 (ERP өөрөө ажилтны мэдээллээс бодно - жиш: хуримтлал)
+ERP_PAYROLL_COLUMNS = [
+    ('N1', 'Сарын ажлын фонд цаг', 'required_hours'),
+    ('N3', 'Ажилласан цаг СС', 'worked_hours'),
+    ('M10', 'Бямбад ажилласан цаг ', 'saturday_hours'),
+    ('N47', 'Борлуулалтын нэмэгдэл', 'sales_bonus'),
+    ('N23', 'Унааны мөнгө', 'transport'),
+    ('M1', 'ХХОАТ хөнгөлөлт гараас', 'credit'),
+    ('N35', 'Хуримтлал /хоцролт/ ', None),
+    ('N30', 'Авлага хаах дүн ', 'goods_deduction'),
+    ('N37', 'Бусад суутгал ', 'other_deduction'),
+    ('N32', 'Ярианы төлбөр ', 'phone_fee'),
+    ('N34', 'Торгууль', 'fine'),
+    ('M9', 'Тооллогын дутагдал', 'inventory_shortage'),
+    ('N18', 'Актны мөнгө /байгууллагаас', 'sick_employer'),
+    ('N49', 'Актны мөнгө /НД-аас/', 'sick_fund'),
+]
+
+
+@login_required
+def payroll_card_erp_export(request):
+    """Картын цалин бодолтыг ERP-д оруулах "Сүүл" хуудасны загвараар (1-р мөр ERP-ийн код, 2-р мөр нэр, дараа нь
+    ажилтан бүрийн мөр) Excel файлаар татна. Хаагдсан сард хаасан үеийн бодолтоор."""
+    if not request.user.is_staff:
+        return redirect('shop:home')
+
+    import openpyxl
+    from io import BytesIO
+    from django.http import HttpResponse
+    from shop.services.payroll_snapshot import get_payroll
+
+    year, month = _month_from_request(request.GET)
+    rows, _, _, _ = get_payroll(year, month, 'card')
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = 'Сүүл'
+    ws.append(['EmployeeId'] + [code for code, _, _ in ERP_PAYROLL_COLUMNS])
+    ws.append(['Ажилтны код'] + [label for _, label, _ in ERP_PAYROLL_COLUMNS])
+    for r in rows:
+        code = r['employee_code']
+        ws.append([int(code) if str(code).isdigit() else code]
+                  + [_excel_number(r.get(key)) if key else 0 for _, _, key in ERP_PAYROLL_COLUMNS])
+    for col, width in zip('ABCDEFGHIJKLMNO', [11.6, 9, 11.3, 10.6, 12.3, 15.3, 12, 13.1, 11.6, 15.6, 10.9, 10, 12, 12, 12]):
+        ws.column_dimensions[col].width = width
+
+    out = BytesIO()
+    wb.save(out)
+    response = HttpResponse(out.getvalue(), content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    response['Content-Disposition'] = f'attachment; filename="Payroll_card_{year}_{month:02d}.xlsx"'
+    return response
 
 
 @login_required
@@ -4790,22 +5458,23 @@ def payroll_export(request, sheet):
     text_keys = {'ndsh_code', 'cash_bank_account'}
     no_total = text_keys | {'ndsh_employee_rate', 'ndsh_employer_rate'}
 
-    lead = ['Ажилтны код', 'Регистрийн дугаар', '№', 'Ажилчдын нэрс', 'Албан тушаал']
+    lead = ['Ажилтны код', 'Регистрийн дугаар', '№', 'Ажилчдын нэрс', 'Албан тушаал', 'Нэг гарын мөнгө']
     headers = lead + [label for label, _ in columns]
     data = [
-        [r['employee_code'], registry.get(r['employee_code']), i, r['name'], r['positionname']]
+        [r['employee_code'], registry.get(r['employee_code']), i, r['name'], r['positionname'],
+         _excel_number(r.get('shift_pay')) if r.get('is_shift') and r.get('shift_pay') else None]
         + [(r[key] or None) if key in text_keys else _excel_number(r[key]) for _, key in columns]
         for i, r in enumerate(rows, start=1)
     ]
-    total_row = [None, None, 'Нийт', None, None] + [
+    total_row = [None, None, 'Нийт', None, None, None] + [
         None if key in no_total else _excel_number(totals.get(key, 0)) for _, key in columns
     ]
-    number_cols = tuple(len(lead) + i for i, (_, key) in enumerate(columns, start=1) if key not in text_keys)
+    number_cols = (len(lead),) + tuple(len(lead) + i for i, (_, key) in enumerate(columns, start=1) if key not in text_keys)
     title = 'Картын цалин бодолт' if is_card else 'Бэлэн цалин бодолт'
     return _xlsx_response(
         'Цалин', f'{title}: {year} оны {MONTH_NAMES_MN[month - 1]}', headers, data,
         f'payroll_{sheet}_{year}_{month:02d}.xlsx',
-        widths=[10, 13, 5, 22, 22] + [12] * len(columns),
+        widths=[10, 13, 5, 22, 22, 11] + [12] * len(columns),
         totals=total_row, number_cols=number_cols,
     )
 
@@ -4842,6 +5511,10 @@ def cash_bank_accounts(request):
     year, month = _month_from_request(request.GET)
     cash_rows, _, _, close = get_payroll(year, month, PayrollEntry.SHEET_CASH)
     payouts = {r['employee_code']: r['payout'] for r in cash_rows}
+    # Тухайн сарын бэлэн цалин бодолтын мөр (хаагдсан сард хуулбараас) - тохиргоо хожим өөрчлөгдсөн / хоосорсон
+    # (ажлаас гарсан г.м.) ч тэр сард бэлэн цалин авсан ажилтан харагдана
+    cash_row_by_code = {r['employee_code']: r for r in cash_rows}
+    paid_codes = {code for code, v in payouts.items() if v}
     unloading_amounts = {r['code']: r['amount'] for r in unloading_month_data(year, month)['summary_rows'] if r['amount']}
     meal_amounts = {r['employee_code']: r['amount'] for r in build_meal_allowance(year, month)[0]
                     if r['is_employee'] and r['amount']}
@@ -4849,8 +5522,8 @@ def cash_bank_accounts(request):
     # Бэлэн / хосолсон цалинтай ажилчид + ачааны / хоолны мөнгөтэй бусад (картын) ажилчид
     profiles = {p.employee_code: p for p in EmployeePayProfile.objects.filter(
         Q(pay_type__in=[EmployeePayProfile.PAY_CASH, EmployeePayProfile.PAY_MIXED])
-        | Q(employee_code__in=set(unloading_amounts) | set(meal_amounts)))}
-    codes = set(profiles) | set(unloading_amounts) | set(meal_amounts)
+        | Q(employee_code__in=set(unloading_amounts) | set(meal_amounts) | paid_codes))}
+    codes = set(profiles) | set(unloading_amounts) | set(meal_amounts) | paid_codes
     employees = {e.id: e for e in OpenDataEmployee.objects.filter(id__in=codes)}
     with connection.cursor() as cursor:
         cursor.execute('SELECT "Id", "BankName", "BankAccountId" FROM "OpenDataEmployee" WHERE "Id" = ANY(%s)', [list(codes)])
@@ -4861,7 +5534,8 @@ def cash_bank_accounts(request):
     for code in codes:
         p = profiles.get(code)
         e = employees.get(code)
-        cash_account = p.cash_bank_account if p else ''
+        cash_row = cash_row_by_code.get(code) or {}
+        cash_account = (p.cash_bank_account if p else '') or cash_row.get('cash_bank_account') or ''
         info = account_info(cash_account)
         account_source = 'cash' if info['status'] != 'missing' else ''
         if info['status'] == 'missing':
@@ -4875,7 +5549,7 @@ def cash_bank_accounts(request):
         payout = payouts.get(code)
         unloading_amount = unloading_amounts.get(code)
         meal_amount = meal_amounts.get(code)
-        pay_type = p.pay_type if p else ''
+        pay_type = (p.pay_type if p else '') or cash_row.get('pay_type') or ''
         all_rows.append({
             'code': code,
             'name': e.name if e else code,
@@ -4901,7 +5575,7 @@ def cash_bank_accounts(request):
         'department': request.GET.get('department') or '',
         'pay_type': request.GET.get('pay_type') or '',
         'status': request.GET.get('status') or '',
-        # Анхдагчаар зөвхөн идэвхтэй ажилчид
+        # Анхдагчаар зөвхөн идэвхтэй ажилчид (+ тухайн сард мөнгө олгосон гарсан ажилчид)
         'active': request.GET.get('active') or '1',
     }
 
@@ -4913,7 +5587,8 @@ def cash_bank_accounts(request):
                 and (not f['department'] or r['department'] == f['department'])
                 and (not f['pay_type'] or r['pay_type'] == f['pay_type'])
                 and (not f['status'] or r['status'] == f['status'])
-                and (f['active'] != '1' or r['active']))
+                # Тухайн сард мөнгө олгосон (бэлэн цалин / ачааны / хоолны) ажилтан ажлаас гарсан ч харагдана
+                and (f['active'] != '1' or r['active'] or bool(r['total'])))
 
     from shop.services.timesheet import position_sort_key
 
@@ -5006,6 +5681,223 @@ def cash_bank_accounts(request):
         'export_url': '?' + urlencode({**params, 'export': 'xlsx', 'year': year, 'month': month}),
     }
     return render(request, 'shop/cash_bank_accounts.html', context)
+
+
+BULK_HEADERS = ['Гүйлгээний төрөл', 'Хүлээн авах банк/салбар', 'Хүлээн авах данс', 'Хүлээн авагчийн нэр',
+                'Хүлээн авах дансны валют', 'Гүйлгээний утга', 'Чухал дүн', 'Гүйлгээний дүн']
+
+
+def _card_bulk_xlsx(rows, filename, sheet_title='Sheet1'):
+    """Худалдаа хөгжлийн банкны цалингийн багц гүйлгээний загвар (SalaryBulkTranTemplate): 1-р мөрөнд толгой,
+    2-р мөрөөс гүйлгээ, төгсгөлд Гүйлгээний дүнгийн нийлбэр. Төрөл, салбарыг текстээр (@)."""
+    import openpyxl
+    from io import BytesIO
+    from django.http import HttpResponse
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = sheet_title
+    ws.append(BULK_HEADERS)
+    money_format = '_(* #,##0.00_);_(* \\(#,##0.00\\);_(* "-"??_);_(@_)'
+    for i, r in enumerate(rows, start=2):
+        ws.append(['10', r['branch'], r['account'], r['bulk_name'], 'MNT', r['note'], 1, _excel_number(r['amount'])])
+        ws.cell(row=i, column=1).number_format = '@'
+        ws.cell(row=i, column=2).number_format = '@'
+        ws.cell(row=i, column=8).number_format = money_format
+    if rows:
+        total = ws.cell(row=len(rows) + 2, column=8, value=f'=SUM(H2:H{len(rows) + 1})')
+        total.number_format = money_format
+    for col, width in zip('ABCDEFGH', [10.57, 13, 28.43, 19.43, 13.43, 11.14, 10.14, 17.57]):
+        ws.column_dimensions[col].width = width
+    out = BytesIO()
+    wb.save(out)
+    response = HttpResponse(out.getvalue(), content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    response['Content-Disposition'] = f'attachment; filename="{filename}"'
+    return response
+
+
+NDSH_HEADERS = ['Регистрийн дугаар', 'Ургийн овог', 'Эцэг/эхийн нэр', 'Нэр', 'Даатгуулагчийн төрөл',
+                'Ажил мэргэжлийн ангилал', 'Цалин хөлс, түүнтэй адилтгах орлого', 'Үндсэн цалин', 'Шагнал урамшуулал',
+                'Нэмэгдэл, нэмэгдэл хөлс', 'Хоол, унааны үнийн хөнгөлөлт',
+                'Түлээ, нүүрсний үнийн хөнгөлөлт, адилтгах орлого', 'Иргэншил', 'Харилцах утасны дугаар',
+                'Цахим шуудангийн хаяг']
+
+
+def _ndsh_report_xlsx(pay_rows, filename):
+    """Нийгмийн даатгалын сарын тайлан (НД-ын системд оруулах "data" хуудас): картын цалин бодолтын ажилтан бүрээр
+    регистр, ургийн овог (EmployeePayProfile.family_name), эцэг/эхийн нэр, нэр (томоор), даатгуулагчийн төрөл,
+    ажил мэргэжлийн ангилал, "Үндсэн цалин" баганад бодогдсон нийт цалин (gross), G = H+I+J+K+L."""
+    import re
+    import openpyxl
+    from io import BytesIO
+    from django.http import HttpResponse
+    from django.db import connection
+    from shop.models import EmployeePayProfile
+    from shop.services.bank_accounts import bulk_name
+
+    codes = [r['employee_code'] for r in pay_rows]
+    employees = {e.id: e for e in OpenDataEmployee.objects.filter(id__in=codes)}
+    with connection.cursor() as cursor:
+        cursor.execute('SELECT "Id", "OccupationCategoryId", "ParentName" FROM "OpenDataEmployee" WHERE "Id" = ANY(%s)', [codes])
+        extra = {code: (occupation or '', parent or '') for code, occupation, parent in cursor.fetchall()}
+    families = dict(EmployeePayProfile.objects.filter(employee_code__in=codes).values_list('employee_code', 'family_name'))
+
+    def phone(value):
+        digits = re.sub(r'\D', '', value or '')
+        if len(digits) == 11 and digits.startswith('976'):
+            digits = digits[3:]
+        return f'+976{digits}' if len(digits) == 8 else '0'
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = 'data'
+    ws.append(NDSH_HEADERS)
+    i = 1
+    for r in pay_rows:
+        gross = Decimal(r.get('gross') or 0)
+        if gross <= 0:
+            continue
+        i += 1
+        e = employees.get(r['employee_code'])
+        ws.append([
+            ((e.registrynumber if e else '') or '').strip().upper(),
+            (families.get(r['employee_code']) or '').upper() or None,
+            extra.get(r['employee_code'], ('', ''))[1].strip().upper(),
+            bulk_name(e.name if e else r['name']).upper(),
+            r.get('ndsh_code') or (e.insuredtypeid if e else '') or '',
+            extra.get(r['employee_code'], ('', ''))[0],
+            f'=H{i}+I{i}+J{i}+K{i}+L{i}',
+            _excel_number(gross), 0, 0, 0, 0,
+            'МОНГОЛ',
+            phone(e.mobilenumber if e else ''),
+            ((e.email if e else '') or '').strip().upper() or 'EMPTY',
+        ])
+    for col, width in zip('ABCDEFGHIJKLMNO', [14, 18, 16, 16, 12, 14, 16, 14, 12, 12, 12, 14, 10, 16, 28]):
+        ws.column_dimensions[col].width = width
+    out = BytesIO()
+    wb.save(out)
+    response = HttpResponse(out.getvalue(), content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    response['Content-Disposition'] = f'attachment; filename="{filename}"'
+    return response
+
+
+@login_required
+def card_bank_accounts(request):
+    """Картын цалингийн данс: сонгосон сарын картын цалингийн олгох дүн (Картанд орох) эсвэл урьдчилгааг ажилтны
+    мэдээлэл дэх картын дансаар Худалдаа хөгжлийн банкны цалингийн багц гүйлгээний загвараар Excel-д гаргана.
+    Хуучин дансны дугаарыг (зөвхөн тоо) IBAN болгож, салбарыг IBAN-аас (MNkk 0004 000 ССС...) авна - салбарыг
+    ажилтан бүрээр гараар засаж хадгалж болно (EmployeePayProfile.card_bank_branch)."""
+    import re
+    from urllib.parse import urlencode
+    from django.contrib import messages
+    from django.db import connection
+    from shop.models import EmployeePayProfile, PayrollEntry
+    from shop.services.bank_accounts import bulk_name, card_account, tdb_branch
+    from shop.services.payroll_snapshot import get_payroll
+
+    source = request.POST if request.method == 'POST' else request.GET
+    year, month = _month_from_request(source)
+    kind = 'advance' if source.get('kind') == 'advance' else 'final'
+    note = (source.get('note') or '').strip()[:100] or 'цалин'
+
+    if request.method == 'POST':
+        # Салбарын гар засвар: хоосон бол дансны дугаараас
+        codes = request.POST.getlist('employee_code')
+        branches = request.POST.getlist('branch')
+        family_names = request.POST.getlist('family_name')
+        profiles = {p.employee_code: p for p in EmployeePayProfile.objects.filter(employee_code__in=codes)}
+        changed = 0
+        for code, branch, family in zip(codes, branches, family_names):
+            branch = re.sub(r'\s+', '', branch)[:10]
+            family = ' '.join(family.split())[:100]
+            p = profiles.get(code)
+            if p is None:
+                if not branch and not family:
+                    continue
+                p = EmployeePayProfile(employee_code=code)
+            if p.card_bank_branch != branch or p.family_name != family:
+                p.card_bank_branch = branch
+                p.family_name = family
+                p.updated_by = request.user
+                p.save()
+                changed += 1
+        messages.success(request, f'Хадгалагдлаа ({changed} ажилтан).' if changed else 'Өөрчлөлт алга.')
+        return redirect(f"{reverse('shop:card_bank_accounts')}?{urlencode({'year': year, 'month': month, 'kind': kind, 'note': note})}")
+
+    pay_rows, _, _, close = get_payroll(year, month, PayrollEntry.SHEET_CARD)
+    amount_key = 'advance' if kind == 'advance' else 'payout'
+    codes = [r['employee_code'] for r in pay_rows]
+    with connection.cursor() as cursor:
+        cursor.execute('SELECT "Id", "BankId", "BankName", "BankAccountId" FROM "OpenDataEmployee" WHERE "Id" = ANY(%s)', [codes])
+        system = {code: (bank_id or '', bank or '', account or '') for code, bank_id, bank, account in cursor.fetchall()}
+    branch_overrides = dict(EmployeePayProfile.objects.filter(employee_code__in=codes).exclude(card_bank_branch='')
+                            .values_list('employee_code', 'card_bank_branch'))
+    family_names = dict(EmployeePayProfile.objects.filter(employee_code__in=codes).exclude(family_name='')
+                        .values_list('employee_code', 'family_name'))
+
+    rows, skipped = [], 0
+    for r in pay_rows:
+        amount = Decimal(r.get(amount_key) or 0)
+        if amount <= 0:
+            skipped += 1
+            continue
+        code = r['employee_code']
+        bank_id, bank, raw = system.get(code, ('', '', ''))
+        # Зөвхөн тоогоор бичсэн хуучин дугаарыг ХХБ-ны (BankId 04) гэж үзээд IBAN болгоно
+        acc = card_account(raw, '0004' if bank_id.lstrip('0') in ('', '4') else '')
+        auto_branch = tdb_branch(acc['account'])
+        rows.append({
+            'code': code,
+            'name': r['name'],
+            'bulk_name': bulk_name(r['name']),
+            'position': r.get('positionname') or '',
+            'bank': bank,
+            'raw': raw,
+            'account': acc['account'],
+            'status': acc['status'],
+            'converted': acc['converted'],
+            'auto_branch': auto_branch,
+            'branch_override': branch_overrides.get(code, ''),
+            'branch': branch_overrides.get(code) or auto_branch,
+            'family_name': family_names.get(code, ''),
+            'note': note,
+            'amount': amount,
+        })
+    for i, r in enumerate(rows, start=1):
+        r['no'] = i
+        r['ready'] = r['status'] == 'ok' and bool(r['branch'])
+    ready = [r for r in rows if r['ready']]
+
+    kind_label = 'урьдчилгаа' if kind == 'advance' else 'сүүл'
+    if request.GET.get('export') == 'ndsh':
+        # Нийгмийн даатгалын сарын тайлан - картын цалин бодолтын бүх ажилтан (бодогдсон цалинтай)
+        return _ndsh_report_xlsx(pay_rows, f'NDSH_{year}_{month:02d}.xlsx')
+    if request.GET.get('export') == 'xlsx':
+        return _card_bulk_xlsx(ready, f'SalaryBulkTran_{year}_{month:02d}_{"advance" if kind == "advance" else "final"}.xlsx',
+                               sheet_title=f'{month:02d} сар {kind_label}')
+
+    context = {
+        **_month_nav_context(year, month),
+        'active_page': 'card_bank_accounts',
+        'rows': rows,
+        'kind': kind,
+        'kind_label': kind_label,
+        'note': note,
+        'close': close,
+        'skipped': skipped,
+        'summary': {
+            'count': len(rows),
+            'ready': len(ready),
+            'problems': [r for r in rows if not r['ready']],
+            'converted': sum(1 for r in rows if r['converted']),
+            'total': sum((r['amount'] for r in rows), Decimal(0)),
+            'ready_total': sum((r['amount'] for r in ready), Decimal(0)),
+        },
+        'export_url': '?' + urlencode({'year': year, 'month': month, 'kind': kind, 'note': note, 'export': 'xlsx'}),
+        'ndsh_url': '?' + urlencode({'year': year, 'month': month, 'export': 'ndsh'}),
+        'missing_family': sum(1 for r in rows if not r['family_name']),
+    }
+    return render(request, 'shop/card_bank_accounts.html', context)
 
 
 @login_required
@@ -5499,6 +6391,46 @@ def meal_allowance_export(request):
 
 
 @login_required
+def _payroll_profile_followup(request):
+    """Цалингийн тохиргоо хадгалсны дараа олгох хэлбэрт шаардлагатай үндсэн цалин / нэг гарын мөнгө 0 бол анхааруулна.
+    Олгох хэлбэр өөрчлөгдвөл хаагдаагүй сарын хуудсанд автоматаар орно - хаагдсан сар огт өөрчлөгдөхгүй."""
+    from django.contrib import messages
+    from shop.models import AttendancePositionRule, EmployeePayProfile
+    from shop.services.payroll_checks import expected_sheets
+    from shop.services.timesheet import ordered_active_employees
+
+    profiles = {p.employee_code: p for p in EmployeePayProfile.objects.all()}
+    active_codes = {e.id for e in ordered_active_employees()}
+    employees = {e['id']: e for e in OpenDataEmployee.objects.filter(id__in=active_codes & profiles.keys())
+                 .values('id', 'name', 'positionname', 'basesalary')}
+    shift_positions = set(AttendancePositionRule.objects.filter(schedule_type=AttendancePositionRule.SCHEDULE_SHIFT)
+                          .values_list('position_name', flat=True))
+
+    missing = []
+    for code, p in profiles.items():
+        e = employees.get(code)
+        if not e or not p.pay_type:
+            continue
+        is_shift = e['positionname'] in shift_positions
+        lacks = []
+        for sheet in expected_sheets(p.pay_type):
+            # Хосолсон ажилтан бэлэн хуудсаар зөвхөн нэмэгдэл авч болох тул бэлэн цалин 0 байж болно
+            # (сарын бодолтод бэлэн хуудсанд юу ч олгогдохгүй бол тулгалт анхааруулна)
+            if sheet == 'cash' and p.pay_type == EmployeePayProfile.PAY_MIXED:
+                continue
+            if is_shift:
+                if not (p.card_shift_pay if sheet == 'card' else p.cash_shift_pay):
+                    lacks.append('картын нэг гарын мөнгө' if sheet == 'card' else 'бэлэн нэг гарын мөнгө')
+            elif sheet == 'card' and not e['basesalary']:
+                lacks.append('картын үндсэн цалин (ажилтны мэдээлэл)')
+            elif sheet == 'cash' and not p.cash_base_salary:
+                lacks.append('бэлэн үндсэн цалин')
+        if lacks:
+            missing.append(f"{e['name']} ({p.get_pay_type_display().lower()}): {', '.join(lacks)}")
+    if missing:
+        messages.warning(request, 'Олгох хэлбэрт шаардлагатай утга 0 байна - цалин бодогдохгүй: ' + '; '.join(missing))
+
+
 def payroll_settings(request):
     """Цалин бодолтын тохиргоо: татварын хувь хэмжээ, ХХОАТ-ын хөнгөлөлтийн шатлал, ажилтан бүрийн
     олгох хэлбэр (карт/бэлэн/хосолсон) болон үндсэн цалин, удаан жилийн нэмэгдэл, НДШ-ийн код/хувь."""
@@ -5566,6 +6498,8 @@ def payroll_settings(request):
             lists = {f: request.POST.getlist(f) for f in fields}
             # "Хоолны мөнгө олгох" - чеклэсэн ажилчдын код ирнэ (анхдагч нь олгоно)
             eats_meals = set(request.POST.getlist('eats_meals'))
+            # "Шатахууны мөнгө олгох" - чеклэсэн ажилчдын код (анхдагч нь олгохгүй)
+            fuel_allowance = set(request.POST.getlist('fuel_allowance'))
             # Хоолны мөнгөний хуудаснаас оруулсан ажилтны дүнг энэ маягт засахгүй тул устгахаас хамгаална
             meal_rate_codes = set(EmployeePayProfile.objects.exclude(meal_allowance_per_day__isnull=True)
                                   .values_list('employee_code', flat=True))
@@ -5594,6 +6528,7 @@ def payroll_settings(request):
                         else code in saturday_included
                     ),
                     'eats_meals': code in eats_meals,
+                    'fuel_allowance': code in fuel_allowance,
                 }
                 # Анхдагч утгууд (Бямбын нэмэгдлийн анхдагч хувь, горимоор Бямба, хоолны мөнгө олгох) нь "тохиргоо хийсэн" гэж
                 # тооцогдохгүй
@@ -5609,6 +6544,7 @@ def payroll_settings(request):
                 )
                 saved += 1
             messages.success(request, f'Ажилчдын цалингийн мэдээлэл хадгалагдлаа ({saved} ажилтан).')
+            _payroll_profile_followup(request)
 
         elif action in ('print_columns', 'print_columns_reset'):
             from shop.services.payroll_print import SLOT_KEYS, clean_columns
@@ -6226,6 +7162,20 @@ def _recpay_filters(request, kind):
     }
 
 
+def _recpay_scope(request, kind, filters):
+    """ХТ / борлуулагчийн хязгаарлалт (shop.services.sales_ht_access): авлагыг зөвхөн өөрийн хариуцсан сувгийн
+    харилцагчдаар (суваггүй бол хоосон) харна; өглөг огт харахгүй (False). Хязгаарлалтгүй бол None."""
+    from shop.services.sales_ht_access import NO_ACCESS_CHANNEL, get_channel_scope
+
+    scope = get_channel_scope(request.user)
+    if scope is None:
+        return None
+    if kind != 'receivable':
+        return False
+    filters['channels'] = scope.channel_ids or [NO_ACCESS_CHANNEL]
+    return scope
+
+
 @login_required
 def recpay_report(request, kind):
     """Авлагын (kind='receivable') / өглөгийн (kind='payable') тайлан: үзүүлэлт, насжилт, динамик, харилцагчийн
@@ -6241,12 +7191,26 @@ def recpay_report(request, kind):
 
     from shop.services.report_cache import cached
     filters = _recpay_filters(request, kind)
+    scope = _recpay_scope(request, kind, filters)
+    if scope is False:
+        from django.contrib import messages
+        messages.warning(request, 'Танд энэ тайланг харах эрх байхгүй.')
+        return redirect('shop:home')
+    channels = filters.get('channels')
     report = cached('recpay', ['OpenDataRecPay'] + ['OpenDataCustomer'], filters, lambda: build_report(kind, filters))
-    options = cached('recpay_options', ['OpenDataRecPay'], {'kind': kind}, lambda: filter_options(kind))
+    options = cached('recpay_options', ['OpenDataRecPay', 'OpenDataCustomer'], {'kind': kind, 'channels': channels},
+                     lambda: filter_options(kind, channels))
+    # Борлуулагч (ХТ) өөрийн авлагын кредит талыг юугаар хаасныг (касс, харилцах, буцаалт г.м.) дансаар харна
+    credits = None
+    if scope:
+        from shop.services.recpay_report import credit_breakdown
+        credits = cached('recpay_credits', ['OpenDataRecPay', 'OpenDataCustomer', 'OpenDataGeneralLedger'], filters,
+                         lambda: credit_breakdown(kind, filters))
     query = request.GET.copy()
     context = {
         'kind': kind,
         'cfg': KINDS[kind],
+        'credits': credits,
         'active_page': f'{kind}_report',
         'filters': filters,
         'report': report,
@@ -6256,6 +7220,7 @@ def recpay_report(request, kind):
         'aging_basis_choices': {k: v['label'] for k, v in AGING_BASES.items()},
         'query_string': query.urlencode(),
         'is_filtered': any([filters['accounts'], filters['groups'], filters['currency'], filters['q']]),
+        'ht_scope': scope,
     }
     return render(request, 'shop/recpay_report.html', context)
 
@@ -6270,6 +7235,8 @@ def recpay_ledger(request, kind):
     from shop.services.recpay_report import ledger
 
     filters = _recpay_filters(request, kind)
+    if _recpay_scope(request, kind, filters) is False:
+        return JsonResponse({'error': 'forbidden'}, status=403)
     customer = request.GET.get('customer', '')
     if not customer:
         return JsonResponse({'error': 'customer required'}, status=400)
@@ -6292,6 +7259,10 @@ def recpay_export(request, kind):
     from shop.services.recpay_report import AGING_BASES, GROUP_BY, KINDS, build_report
 
     filters = _recpay_filters(request, kind)
+    if _recpay_scope(request, kind, filters) is False:
+        from django.contrib import messages
+        messages.warning(request, 'Танд энэ тайланг харах эрх байхгүй.')
+        return redirect('shop:home')
     cfg = KINDS[kind]
     report = build_report(kind, filters)
     basis = AGING_BASES[filters['aging_basis']]
@@ -6347,6 +7318,314 @@ def recpay_export(request, kind):
 
 
 # ---------------------------------------------------------------------------
+# Нэхэмжлэх - авлагын үлдэгдлээр харилцагчид PDF нэхэмжлэх илгээх (shop.services.invoices-ийг үз)
+# ---------------------------------------------------------------------------
+
+def _parse_date(value, default):
+    try:
+        return datetime.strptime(value or '', '%Y-%m-%d').date()
+    except ValueError:
+        return default
+
+
+def _invoice_scope(request):
+    """ХТ / борлуулагч (shop.services.sales_ht_access) бол түүний ChannelScope - зөвхөн өөрийн сувгийн харилцагчдын
+    нэхэмжлэхийг үүсгэж, харж, засна; тохиргоо, данс засахгүй. Хязгаарлалтгүй бол None."""
+    from shop.services.sales_ht_access import get_channel_scope
+    return get_channel_scope(request.user)
+
+
+def _scope_customers(scope):
+    """Хамрах харилцагчдын кодын дэд асуулга (customer_id__in-д)."""
+    from django.db.models.expressions import RawSQL
+    from shop.services.sales_ht_access import NO_ACCESS_CHANNEL
+    return RawSQL('SELECT "Id" FROM "OpenDataCustomer" WHERE "DistributionChannelId" = ANY(%s)',
+                  [scope.channel_ids or [NO_ACCESS_CHANNEL]])
+
+
+def _invoice_qs(scope):
+    from shop.models import Invoice
+    qs = Invoice.objects.select_related('created_by')
+    return qs.filter(customer_id__in=_scope_customers(scope)) if scope else qs
+
+
+def _customer_allowed(scope, customer_id):
+    from shop.services.invoices import customer_channel
+    return scope is None or customer_channel(customer_id) in scope.channel_ids
+
+
+@login_required
+def invoices(request):
+    """Илгээсэн / үүсгэсэн нэхэмжлэхийн жагсаалт."""
+    from shop.models import Invoice
+    from shop.services.invoices import sender
+
+    scope = _invoice_scope(request)
+    q = request.GET.get('q', '').strip()
+    qs = _invoice_qs(scope)
+    if q:
+        qs = qs.filter(Q(number__icontains=q) | Q(customer_name__icontains=q) | Q(customer_id__icontains=q) | Q(email__icontains=q))
+    status = request.GET.get('status', '')
+    if status:
+        qs = qs.filter(status=status)
+    page = Paginator(qs, 50).get_page(request.GET.get('page'))
+    return render(request, 'shop/invoices.html', {
+        'active_page': 'invoices',
+        'page': page,
+        'q': q,
+        'status': status,
+        'status_choices': Invoice.STATUS_CHOICES,
+        'sender': sender(),
+        'ht_scope': scope,
+    })
+
+
+@login_required
+def invoice_new(request, pk=None):
+    """Харилцагчийн авлагын үлдэгдлээр нэхэмжлэх үүсгэх (pk өгвөл засах): PDF харах эсвэл имэйлээр илгээх."""
+    from django.contrib import messages
+    from django.shortcuts import get_object_or_404
+    from shop.models import CompanyBankAccount, CustomerContact, Invoice, InvoiceSetting
+    from shop.services import invoices as inv
+
+    scope = _invoice_scope(request)
+    invoice = get_object_or_404(_invoice_qs(scope), pk=pk) if pk else None
+    setting = InvoiceSetting.get()
+    banks = list(CompanyBankAccount.objects.filter(is_active=True))
+    today = timezone.localdate()
+
+    if request.method == 'POST':
+        p = request.POST
+        customer_id = p.get('customer_id', '').strip()
+        try:
+            amount = Decimal(p.get('amount', '').replace(',', '').replace(' ', ''))
+        except InvalidOperation:
+            amount = None
+        errors = []
+        if invoice:
+            customer_id = invoice.customer_id  # засахад харилцагч солигдохгүй
+        if not customer_id or not p.get('customer_name', '').strip():
+            errors.append('Харилцагч сонгоогүй байна.')
+        elif not _customer_allowed(scope, customer_id):
+            errors.append('Энэ харилцагч таны хариуцсан сувагт хамаарахгүй.')
+            customer_id = ''
+        if amount is None or amount <= 0:
+            errors.append('Дүн 0-ээс их байх ёстой.')
+        action = p.get('action', 'pdf')
+        if action == 'send' and not inv.recipients(p.get('email')):
+            errors.append('Илгээх имэйл хаягаа оруулна уу.')
+        selected_banks = [b for b in banks if str(b.pk) in p.getlist('bank')]
+        if errors:
+            for e in errors:
+                messages.error(request, e)
+            if invoice:
+                return redirect('shop:invoice_edit', pk=invoice.pk)
+            return redirect(f"{reverse('shop:invoice_new')}?customer={customer_id}")
+
+        invoice_date = _parse_date(p.get('invoice_date'), today)
+        if invoice is None:
+            invoice = Invoice(number=inv.take_number(), customer_id=customer_id, vat_rate=setting.vat_rate,
+                              created_by=request.user)
+        invoice.customer_name = p.get('customer_name', '').strip()[:255]
+        invoice.registry_number = p.get('registry_number', '').strip()[:50]
+        invoice.address = p.get('address', '').strip()[:255]
+        invoice.email = p.get('email', '').strip()[:500]
+        invoice.invoice_date = invoice_date
+        invoice.due_date = _parse_date(p.get('due_date'), invoice_date)
+        invoice.description = (p.get('description', '').strip() or 'Авлагын үлдэгдэл')[:255]
+        invoice.amount = amount
+        invoice.bank_text = inv.bank_text(selected_banks)
+        invoice.save()
+        # Дараагийн удаа автоматаар бөглөгдөнө
+        CustomerContact.objects.update_or_create(customer_id=customer_id, defaults={
+            'customer_name': invoice.customer_name, 'email': invoice.email, 'address': invoice.address,
+        })
+        if action == 'send':
+            if inv.send_invoice(invoice, setting, p.get('email_subject'), p.get('email_body'), user=request.user):
+                messages.success(request, f'Нэхэмжлэх {invoice.number}-ийг {invoice.email} хаяг руу илгээлээ.')
+            else:
+                messages.error(request, f'Нэхэмжлэх {invoice.number} үүссэн боловч илгээж чадсангүй: {invoice.error}')
+            return redirect('shop:invoices')
+        if action == 'save':
+            messages.success(request, f'Нэхэмжлэх {invoice.number} хадгалагдлаа.')
+            return redirect('shop:invoices')
+        return redirect('shop:invoice_pdf', pk=invoice.pk)
+
+    date_to = _parse_date(request.GET.get('date_to'), today)
+    if invoice:
+        customer = invoice.customer_id
+        initial = invoice
+        bank_lines = set(invoice.bank_text.splitlines())
+        selected_bank_ids = {b.pk for b in banks if inv.bank_text([b]) in bank_lines}
+    else:
+        customer = request.GET.get('customer', '').strip()
+        if customer and not _customer_allowed(scope, customer):
+            messages.warning(request, 'Энэ харилцагч таны хариуцсан сувагт хамаарахгүй.')
+            return redirect('shop:invoice_new')
+        initial = inv.customer_defaults(customer, date_to) if customer else None
+        selected_bank_ids = inv.default_bank_ids(banks, customer)
+    return render(request, 'shop/invoice_form.html', {
+        'active_page': 'invoices',
+        'invoice': invoice,
+        'selected_bank_ids': selected_bank_ids,
+        'initial': initial,
+        'date_to': date_to,
+        'banks': banks,
+        'setting': setting,
+        'sender': inv.sender(),
+        'ht_scope': scope,
+        'history': Invoice.objects.filter(customer_id=customer).exclude(pk=pk)[:10] if customer else [],
+    })
+
+
+@login_required
+def invoice_delete(request, pk):
+    from django.contrib import messages
+    from shop.models import Invoice
+
+    if request.method == 'POST':
+        invoice = _invoice_qs(_invoice_scope(request)).filter(pk=pk).first()
+        if invoice:
+            invoice.delete()
+            messages.success(request, f'Нэхэмжлэх {invoice.number} устгагдлаа.')
+    return redirect('shop:invoices')
+
+
+@login_required
+def invoice_customers(request):
+    """Харилцагч сонгох жагсаалт (JSON): анхдагчаар date_to-ны байдлаар авлагын үлдэгдэлтэй харилцагчид
+    (q-ээр шүүнэ), all=1 бол бүх харилцагчаас нэр/кодоор хайна. ХТ-д зөвхөн өөрийн сувгийнх."""
+    from shop.services.invoices import receivable_customers
+    from shop.services.sales_ht_access import NO_ACCESS_CHANNEL
+
+    q = request.GET.get('q', '').strip()
+    scope = _invoice_scope(request)
+    if request.GET.get('all') != '1':
+        date_to = _parse_date(request.GET.get('date_to'), timezone.localdate())
+        channels = (scope.channel_ids or [NO_ACCESS_CHANNEL]) if scope else None
+        return JsonResponse({'items': _with_emails(receivable_customers(date_to, q, channels))})
+    if len(q) < 2:
+        return JsonResponse({'items': []})
+    customers = OpenDataCustomer.objects.filter(Q(name__icontains=q) | Q(id__icontains=q))
+    if scope:
+        customers = customers.filter(id__in=_scope_customers(scope))
+    customers = customers.order_by('name')[:30]
+    return JsonResponse({'items': _with_emails([{'id': c.id, 'name': c.name or c.id} for c in customers])})
+
+
+def _with_emails(items):
+    """Харилцагчийн хадгалсан имэйлийг (CustomerContact) жагсаалтын мөр бүрт нэмнэ."""
+    from shop.models import CustomerContact
+    emails = dict(CustomerContact.objects.filter(customer_id__in=[i['id'] for i in items])
+                  .exclude(email='').values_list('customer_id', 'email'))
+    for item in items:
+        item['email'] = emails.get(item['id'], '')
+    return items
+
+
+@login_required
+def invoice_pdf(request, pk):
+    from django.http import HttpResponse
+    from django.shortcuts import get_object_or_404
+    from shop.models import Invoice, InvoiceSetting
+    from shop.services.invoices import render_pdf
+
+    invoice = get_object_or_404(_invoice_qs(_invoice_scope(request)), pk=pk)
+    response = HttpResponse(render_pdf(invoice, InvoiceSetting.get()), content_type='application/pdf')
+    from django.utils.http import content_disposition_header
+    response['Content-Disposition'] = content_disposition_header(
+        bool(request.GET.get('download')), f'Nehemjleh_{invoice.number}.pdf',
+    )
+    return response
+
+
+@login_required
+def invoice_send(request, pk):
+    """Үүсгэсэн нэхэмжлэхийг (дахин) илгээнэ - имэйл хаягийг засаж болно."""
+    from django.contrib import messages
+    from django.shortcuts import get_object_or_404
+    from shop.models import Invoice, InvoiceSetting
+    from shop.services.invoices import send_invoice
+
+    if request.method != 'POST':
+        return redirect('shop:invoices')
+    invoice = get_object_or_404(_invoice_qs(_invoice_scope(request)), pk=pk)
+    email = request.POST.get('email', '').strip()
+    if email:
+        invoice.email = email[:500]
+        invoice.save(update_fields=['email'])
+    if send_invoice(invoice, InvoiceSetting.get(), user=request.user):
+        messages.success(request, f'Нэхэмжлэх {invoice.number}-ийг {invoice.email} хаяг руу илгээлээ.')
+    else:
+        messages.error(request, f'Нэхэмжлэх {invoice.number}-ийг илгээж чадсангүй: {invoice.error}')
+    return redirect(request.POST.get('next') or 'shop:invoices')
+
+
+@login_required
+def invoice_settings(request):
+    """Нэхэмжлэхийн тохиргоо: нэхэмжлэгчийн мэдээлэл, дугаарлалт, лого/тамга, имэйлийн загвар, банкны данс."""
+    from django.conf import settings
+    from django.contrib import messages
+    from shop.models import CompanyBankAccount, InvoiceSetting
+    from shop.services.invoices import sender
+    from shop.services.sales_ht import get_channels
+
+    if _invoice_scope(request):
+        messages.warning(request, 'Нэхэмжлэхийн тохиргоог зөвхөн санхүүгийн ажилтан засна.')
+        return redirect('shop:invoices')
+    setting = InvoiceSetting.get()
+    if request.method == 'POST':
+        p = request.POST
+        action = p.get('action')
+        if action == 'settings':
+            for name in ('company_name', 'address', 'phone', 'email', 'prepared_by', 'number_prefix', 'email_subject', 'email_body'):
+                setattr(setting, name, p.get(name, '').strip())
+            for name in ('next_number', 'due_days'):
+                if p.get(name, '').isdigit():
+                    setattr(setting, name, int(p[name]))
+            try:
+                setting.vat_rate = Decimal(p.get('vat_rate', '10'))
+            except InvalidOperation:
+                pass
+            for name in ('logo', 'stamp'):
+                if request.FILES.get(name):
+                    setattr(setting, name, request.FILES[name])
+            setting.save()
+            messages.success(request, 'Тохиргоо хадгалагдлаа.')
+        elif action == 'bank_save':
+            bank = CompanyBankAccount.objects.filter(pk=p.get('id')).first() or CompanyBankAccount()
+            bank.bank_name = p.get('bank_name', '').strip()
+            bank.account_number = p.get('account_number', '').strip()
+            bank.account_name = p.get('account_name', '').strip()
+            bank.currency = p.get('currency', 'MNT').strip() or 'MNT'
+            bank.is_default = bool(p.get('is_default'))
+            bank.is_active = bool(p.get('is_active')) or not bank.pk
+            bank.channels = sorted(c for c in p.getlist('channels') if c)
+            if p.get('sort_order', '').isdigit():
+                bank.sort_order = int(p['sort_order'])
+            if bank.bank_name and bank.account_number:
+                bank.save()
+                if bank.is_default:
+                    CompanyBankAccount.objects.exclude(pk=bank.pk).update(is_default=False)
+                messages.success(request, f'{bank} данс хадгалагдлаа.')
+            else:
+                messages.error(request, 'Банк болон дансны дугаараа оруулна уу.')
+        elif action == 'bank_delete':
+            CompanyBankAccount.objects.filter(pk=p.get('id')).delete()
+            messages.success(request, 'Данс устгагдлаа.')
+        return redirect('shop:invoice_settings')
+
+    return render(request, 'shop/invoice_settings.html', {
+        'active_page': 'invoices',
+        'setting': setting,
+        'banks': CompanyBankAccount.objects.all(),
+        'channels': get_channels(),
+        'sender': sender(),
+        'sender_configured': bool(getattr(settings, 'INVOICE_EMAIL_HOST_USER', '')),
+    })
+
+
+# ---------------------------------------------------------------------------
 # Борлуулалтын нэмэгдэл бодох - shop.services.sales_bonus-ийг үз
 # ---------------------------------------------------------------------------
 
@@ -6390,8 +7669,9 @@ def _sb_clean_inputs(raw, scheme):
         if scheme == 'storekeeper':
             inputs['inventory'] = num(raw.get('inventory'))
         else:
-            inputs['deduction_pct'] = num(raw.get('deduction_pct'))
-            inputs['plan_pct'] = num(raw.get('plan_pct'))
+            # Төлөвлөгөөт барааны биелэлтийг сувгаар гараар засах {суваг: хувь}; хоосон бол төлөвлөгөөнөөс
+            inputs['plan_pcts'] = {str(k)[:200]: num(v) for k, v in (raw.get('plan_pcts') or {}).items()
+                                   if num(v) is not None}
             # Өөр ажилтны сувгаас шилжүүлж авсан дүн
             inputs['transfers'] = [
                 {'channel': str(t.get('channel') or '')[:200], 'amount': num(t.get('amount')), 'rate': num(t.get('rate')) or '0'}
@@ -6739,6 +8019,9 @@ def sales_bonus(request):
             'is_substitute': getattr(m, 'is_substitute', False),
             'is_month_extra': getattr(m, 'is_month_extra', False),
             'saved': bool(entry),
+            # Хадгалсан бодолт - хадгалсны дараа өгөгдөл нэмэгдэж одоогийн бодолтоос зөрвөл хуудас үүнийг
+            # хуучирсан гэж үзээд дахин хадгалах жагсаалтад оруулна
+            'saved_total': entry.total if entry else None,
             'cash_amount': entry.cash_amount if entry else prev_cash.get((m.employee_code, m.scheme), 0),
             'cash_from_prev': not entry and bool(prev_cash.get((m.employee_code, m.scheme))),
             'member_channels': m.channels or [],
@@ -6769,8 +8052,16 @@ def sales_bonus(request):
     start, end = sb.month_range(year, month)
     days = [{'iso': d, 'day': int(d[-2:]), 'dow': datetime.fromisoformat(d).isoweekday()} for d in sb.month_days(year, month)]
     main_names = [names.get(m.employee_code, m.employee_code) for m, _ in storekeepers if not getattr(m, 'is_substitute', False)]
+    # Борлуулалтын нэмэгдлийн тулгалт (нэмэгдлийн хуудас ↔ цалин) - хаагдсан хуудас эцсийнх тул орохгүй
+    from shop.models import PayrollMonthClose
+    from shop.services.payroll_checks import SHEET_LABELS, check_payroll, summarize
+    bonus_closed = sorted(PayrollMonthClose.objects.filter(year=year, month=month).values_list('sheet', flat=True))
+    bonus_checks = summarize(check_payroll(year, month), group='bonus')
     context = {
         **_month_nav_context(year, month),
+        'bonus_checks': bonus_checks,
+        'bonus_closed_sheets': [(s, SHEET_LABELS[s]) for s in bonus_closed],
+        'bonus_closed_all': len(bonus_closed) == 2,
         'active_page': 'sales_bonus',
         'tabs': tabs,
         'settings': settings,
@@ -6789,7 +8080,7 @@ def sales_bonus(request):
         'period_label': f'{year} он {start:%m.%d}-{end:%m.%d}',
         'state_json': _sb_json({
             'tabs': [{'key': t['key'], 'people': [
-                {k: p[k] for k in ('code', 'name', 'pay_type', 'cash_amount', 'cash_from_prev', 'inputs', 'is_substitute', 'is_month_extra', 'saved')}
+                {k: p[k] for k in ('code', 'name', 'pay_type', 'cash_amount', 'cash_from_prev', 'inputs', 'is_substitute', 'is_month_extra', 'saved', 'saved_total')}
                 | {'result': p['result']} for p in t['people']
             ]} for t in tabs],
             'channels': {
@@ -6803,6 +8094,8 @@ def sales_bonus(request):
                        'accounts': cs_data['channel_accounts'].get(name, [])}
                 for name in sb.channel_names()
             },
+            # Төлөвлөгөөт барааны биелэлт (≤100%) сувгаар: {нэр: {pcs, capped}} - суваг нэмэх/хасахад JS дахин бодно
+            'plan_fulfil': data['plan_fulfil'],
             'periods': {scheme: sb.period_label(*(cs_range if scheme == 'cash_seller' else sb.month_range(year, month)))
                         for scheme, _ in SalesBonusMember.SCHEME_CHOICES},
             'settings': settings,
@@ -7215,13 +8508,34 @@ def import_orders(request):
         messages.success(request, f'{shipment.code} захиалга үүслээ. Нийлүүлэгчээ нэмнэ үү.')
         return redirect('shop:import_shipment', pk=shipment.pk)
 
+    # Ирээгүй (active - хуучин холбоос хэвээр ажиллана) / Ирсэн / Бүгд
     show = request.GET.get('show', 'active')
-    shipments = svc.prefetched_shipments()
+    if show not in ('active', 'arrived', 'all'):
+        show = 'active'
+    # Ирсэн огнооны хугацаагаар шүүвэл - тэр хугацаанд ирсэн захиалгууд ("Ирсэн" таб)
+    arrived_from, arrived_to = svc.arrival_filter(request.GET)
+    if arrived_from or arrived_to:
+        show = 'arrived'
+    supplier = request.GET.get('supplier', '').strip()
+    shipments = svc.filter_supplier(svc.prefetched_shipments(), supplier)
     if show == 'active':
         shipments = shipments.filter(arrival_actual__isnull=True)
+    elif show == 'arrived':
+        shipments = shipments.filter(arrival_actual__isnull=False)
+        if arrived_from:
+            shipments = shipments.filter(arrival_actual__gte=arrived_from)
+        if arrived_to:
+            shipments = shipments.filter(arrival_actual__lte=arrived_to)
     shipments = [svc.decorate(s) for s in shipments]
     for shipment in shipments:
         shipment.timeline = svc.tracking_timeline(shipment, full=False)  # ачигдсанаас хойшх зам, хоног
+    # Эрэмбэ (?sort=) - сонгоогүй бол табын анхдагч (Ирсэн: сүүлд ирсэн нь дээрээ)
+    sort_param = request.GET.get('sort', '')
+    sort_param = sort_param if sort_param in svc.ORDER_SORT_KEYS else ''
+    sort = sort_param or svc.order_sort_default(show)
+    shipments = svc.sort_orders(shipments, sort)
+    from urllib.parse import urlencode
+    keep = urlencode({k: v for k, v in (('supplier', supplier), ('sort', sort_param)) if v})  # таб/түргэн сонголтын холбоост
     paid_totals = {}  # жагсаалтын нийт шилжүүлсэн дүн валютаар
     tax_total = sum(shipment.tax['total'] for shipment in shipments)  # гааль + НӨАТ, төгрөгөөр
     for shipment in shipments:
@@ -7230,6 +8544,12 @@ def import_orders(request):
     return render(request, 'shop/import_orders.html', {
         'active_page': 'import_orders', 'shipments': shipments, 'show': show, 'paid_totals': sorted(paid_totals.items()), 'tax_total': tax_total,
         'editable': svc.can_edit(request), 'step_labels': svc.STEP_LABELS,
+        'stats': svc.shipment_stats(shipments), 'arrived_from': arrived_from, 'arrived_to': arrived_to,
+        'filtered': bool(arrived_from or arrived_to),
+        'presets': [{'label': label, 'from': f, 'to': t, 'on': (f, t) == (arrived_from, arrived_to)}
+                    for label, f, t in svc.arrival_presets()],
+        'supplier': supplier, 'supplier_choices': svc.shipment_suppliers(),
+        'sort': sort, 'sort_choices': svc.ORDER_SORTS, 'keep': keep,
     })
 
 
@@ -7261,13 +8581,14 @@ def import_shipment(request, pk):
         return redirect(f"{reverse('shop:import_shipment', args=[shipment.pk])}{request.POST.get('anchor', '')}")
 
     shipment = svc.decorate(svc.prefetched_shipments().get(pk=pk))
+    svc.attach_base_prices([shipment])  # зарах үнийн нүдэнд ERP-ийн 001 үнэ / гараар оруулсан эсэх
     orders = list(shipment.supplier_orders.all())
     catalog = svc.item_catalog() if editable else {}
     supplier_items = svc.supplier_items([o.supplier_name for o in orders]) if editable else {}
     for order in orders:
         order.suggested = supplier_items.get(order.supplier_name, [])
-        preferred = set(order.suggested)
-        order.other_items = [n for n in catalog if n not in preferred]
+        # Нийлүүлэгчээс авч байсан түүхтэй бол зөвхөн тэр бараанууд санал болгоно; түүхгүй (шинэ) нийлүүлэгчид бүх каталог
+        order.other_items = [] if order.suggested else list(catalog)
     return render(request, 'shop/import_shipment.html', {
         'active_page': 'import_orders' if editable else 'import_tracking',
         'shipment': shipment, 'orders': orders, 'editable': editable,
@@ -7279,10 +8600,12 @@ def import_shipment(request, pk):
         'suppliers': svc.suppliers() if editable else [], 'carriers': svc.carriers() if editable else [],
         'transport_modes': svc.transport_modes() if editable else [],
         'catalog': catalog,
+        # ERP-д байхгүй (гараар бичсэн) барааны сүүлд хадгалсан гаалийн хувь
+        'last_duty': {n: float(r) for n, r in svc.last_duty_rates().items() if n not in catalog} if editable else {},
         'default_duty': svc.DEFAULT_DUTY_RATE, 'default_vat': svc.DEFAULT_VAT_RATE,
         'freight_json': {'total': float(shipment.freight_total), 'currency': shipment.freight_currency},
         'kind_initial': ImportFreightCost.KIND_INITIAL,
-        'max_attachment_mb': svc.MAX_ATTACHMENT_MB, 'max_attachments': svc.MAX_ATTACHMENTS,
+        'max_attachment_mb': svc.MAX_ATTACHMENT_MB, 'max_attachments': svc.MAX_ATTACHMENTS, 'max_receipts': svc.MAX_RECEIPTS,
         'today': timezone.localdate(),
     })
 
@@ -7293,15 +8616,86 @@ def import_tracking(request):
     from shop.services import imports as svc
 
     full = svc.can_view_full(request)
-    shipments = svc.tracking_shipments(full=full)
+    arrived_from, arrived_to = svc.arrival_filter(request.GET)
+    filtered = bool(arrived_from or arrived_to)
+    show = svc.tracking_show(request.GET, filtered)
+    supplier = request.GET.get('supplier', '').strip()
+    shipments = svc.tracking_shipments(full=full, arrived_from=arrived_from, arrived_to=arrived_to, show=show, supplier=supplier)
     paid_totals = {}  # харагдаж буй чингэлгүүдийн нийт шилжүүлсэн дүн валютаар
     tax_total = sum(shipment.tax['total'] for shipment in shipments)  # гааль + НӨАТ, төгрөгөөр
     for shipment in shipments:
         for currency, amount in shipment.paid_totals:
             paid_totals[currency] = paid_totals.get(currency, 0) + amount
+    today = timezone.localdate()
+    stats = svc.shipment_stats(shipments, today)
     return render(request, 'shop/import_tracking.html', {
         'active_page': 'import_tracking', 'shipments': shipments, 'paid_totals': sorted(paid_totals.items()), 'tax_total': tax_total,
+        'stats': stats, 'arrived_from': arrived_from, 'arrived_to': arrived_to,
+        'filtered': filtered, 'show': show,
+        'presets': [{'label': label, 'from': f, 'to': t, 'on': (f, t) == (arrived_from, arrived_to)}
+                    for label, f, t in svc.arrival_presets(today)],
+        'supplier': supplier, 'supplier_choices': svc.shipment_suppliers(),
+        'filter_query': request.GET.urlencode() if filtered or supplier or show != 'recent' else '',
         'full': full, 'recent_days': svc.RECENT_ARRIVED_DAYS,
+    })
+
+
+@login_required
+def import_tracking_print(request):
+    """Замын мэдээ - хэвлэх хуудас: чингэлэг бүр нэг мөр, барааны задаргаа / мөнгөн дүнг сонгож хэвлэнэ.
+    ?id=<pk> бол зөвхөн тэр нэг захиалга. Мөнгөн дүн зөвхөн дэлгэрэнгүй үзэх эрхтэй хүнд (import_tracking-тэй ижил)."""
+    from django.http import Http404
+    from shop.services import imports as svc
+
+    full = svc.can_view_full(request)
+    pk = request.GET.get('id')
+    if pk is not None and not pk.isdigit():
+        raise Http404
+    arrived_from, arrived_to = svc.arrival_filter(request.GET)
+    shipments = svc.tracking_shipments(full=full, pk=int(pk) if pk else None, arrived_from=arrived_from, arrived_to=arrived_to,
+                                       show=svc.tracking_show(request.GET, bool(arrived_from or arrived_to)),
+                                       supplier=request.GET.get('supplier', '').strip())
+    if pk and not shipments:
+        raise Http404
+    for shipment in shipments:
+        shipment.suppliers = ', '.join(o.supplier_name for o in shipment.supplier_orders.all()) or '—'
+        shipment.timeline = svc.tracking_timeline(shipment, full=False)  # хэвлэхэд зөвхөн биет зам (ачигдсанаас)
+        # Өртгийн задаргаа: ашигласан ханш, мөр бүрийн нийт / нэгжийн өртөг (гаалийн үнэ + гааль + НӨАТ + бусад, ₮)
+        rates = svc.customs_rates(shipment, shipment.tax_currencies)
+        shipment.print_rates = [(c, rates[c]) for c in shipment.tax_currencies if c in rates]
+        shipment.cost_total = shipment.tax['customs_value'] + shipment.tax['duty'] + shipment.tax['vat'] + shipment.other_total
+        currencies = {o.currency for o in shipment.supplier_orders.all()}
+        shipment.print_currency = currencies.pop() if len(currencies) == 1 else None  # нэг валют бол толгойд
+        shipment.has_manual_price = False
+        number = 0
+        # Хөл дүн: тоо хэмжээ нэгжээр, дүн (ба гадаад дахь нэмэлт зардал) валютаар - холилдохгүй
+        qty_totals, amount_totals, extra_totals = {}, {}, {}
+        for order in shipment.supplier_orders.all():
+            if order.lines.all() and order.extra_total:
+                extra_totals[order.currency] = extra_totals.get(order.currency, 0) + order.extra_total
+            for line in order.lines.all():
+                unit = {'Клограм': 'кг', 'Ширхэг': 'ш'}.get(line.measure, line.measure)
+                qty_totals[unit] = qty_totals.get(unit, 0) + line.total_qty
+                amount_totals[order.currency] = amount_totals.get(order.currency, 0) + line.total_amount
+                number += 1
+                line.print_no = number
+                line.unit_price_text = f'{line.unit_price.normalize():,f}'  # 8.8000 -> 8.8
+                shipment.has_manual_price |= bool(getattr(line, 'price_manual', False))
+                line.cost_total = line.customs_value + line.duty_amount + line.vat_amount + line.other_cost
+                line.unit_cost = line.cost_total / line.total_qty if line.total_qty else None
+        shipment.qty_totals = sorted(qty_totals.items())
+        shipment.amount_totals = sorted(amount_totals.items())
+        shipment.extra_totals = sorted(extra_totals.items())
+        if shipment.load_actual:
+            shipment.transit_days = ((shipment.arrival_actual or timezone.localdate()) - shipment.load_actual).days
+        else:
+            shipment.transit_days = None
+    return render(request, 'shop/import_tracking_print.html', {
+        'shipments': shipments, 'full': full, 'recent_days': svc.RECENT_ARRIVED_DAYS, 'now': timezone.localtime(),
+        'single': shipments[0] if pk else None,
+        'counts': {'transit': sum(1 for s in shipments if s.load_actual and not s.arrived),
+                   'wait': sum(1 for s in shipments if not s.load_actual and not s.arrived),
+                   'arrived': sum(1 for s in shipments if s.arrived)},
     })
 
 
@@ -7320,6 +8714,21 @@ def import_receipt(request, pk):
     if not payment.receipt:
         raise Http404
     return FileResponse(payment.receipt.open('rb'))
+
+
+@login_required
+def import_payment_receipt(request, pk):
+    """Шилжүүлгийн нэмэлт баримт (ImportPaymentReceipt) - эрх шалгаж, анхны нэрээр нь үзүүлнэ."""
+    from django.http import FileResponse
+    from django.shortcuts import get_object_or_404
+    from shop.access import forbidden_response
+    from shop.models import ImportPaymentReceipt
+    from shop.services import imports as svc
+
+    if not svc.can_view_full(request):
+        return forbidden_response(request)
+    receipt = get_object_or_404(ImportPaymentReceipt, pk=pk)
+    return FileResponse(receipt.file.open('rb'), filename=receipt.original_name or None)
 
 
 @login_required
@@ -7452,6 +8861,9 @@ def delivery_trips_save(request):
     trip.remainder_note = request.POST.get('remainder_note', '').strip()[:300]
     trip.save()
     messages.success(request, f'{plate} · {driver} хадгалагдлаа.')
+    same_driver = DeliveryTrip.objects.filter(date=day, driver_name=driver).exclude(pk=trip.pk).count()
+    if same_driver:
+        messages.warning(request, f'Анхаар: {driver} энэ өдөр {same_driver + 1} удаа бүртгэгдсэн байна. Давхар бүртгэл бол илүүдлийг устгана уу.')
     return redirect(back)
 
 
@@ -7486,8 +8898,30 @@ def delivery_trips_list(request):
                      'on': f == filters['date_from'] and t == filters['date_to']} for label, f, t in periods],
         'export_query': query.urlencode(),
         'printed_at': timezone.localtime(),
+        'can_delete': svc.can_delete(request.user),
     }
     return render(request, 'shop/delivery_trips_list.html', context)
+
+
+@login_required
+def delivery_trips_delete(request):
+    """Жагсаалтаас бүртгэл устгах (POST) - зөвхөн Ерөнхий нягтлан, superuser. Шүүлтээ хадгалан буцна."""
+    from django.contrib import messages
+    from shop.models import DeliveryTrip
+    from shop.services import delivery_trips as svc
+
+    query = request.POST.get('query', '')
+    back = reverse('shop:delivery_trips_list') + (f'?{query}' if query else '')
+    if request.method != 'POST':
+        return redirect(back)
+    if not svc.can_delete(request.user):
+        messages.error(request, 'Бүртгэл устгах эрх зөвхөн Ерөнхий нягтланд байна.')
+        return redirect(back)
+    trip = DeliveryTrip.objects.filter(pk=_small_int(request.POST.get('id')) or 0).first()
+    if trip:
+        trip.delete()
+        messages.success(request, f'{trip.date:%Y.%m.%d} · {trip.vehicle_plate} · {trip.driver_name} бүртгэлийг устгалаа.')
+    return redirect(back)
 
 
 @login_required
@@ -7503,7 +8937,7 @@ def delivery_trips_export(request):
     ws.title = 'Түгээлт'
     ws.cell(row=1, column=1, value=f"Түгээлтийн машины бүртгэл {filters['date_from']:%Y.%m.%d} - {filters['date_to']:%Y.%m.%d}").font = Font(bold=True, size=13)
     head = ['№', 'Огноо', 'Гараг', 'Жолооч', 'Туслах', 'Машины дугаар', 'Гарсан цаг', 'Харилцагч', 'Ирсэн цаг',
-            'Явсан хугацаа', 'Буцаж ирсэн айл', 'Шалтгаан']
+            'Явсан хугацаа', 'Буцаж ирсэн айл', 'Шалтгаан', 'Бүртгэсэн']
     side = Side(style='thin', color='999999')
     border = Border(left=side, right=side, top=side, bottom=side)
     fill = PatternFill('solid', fgColor='E5E7EB')
@@ -7516,7 +8950,7 @@ def delivery_trips_export(request):
         r += 1
         values = [i, t.date, _WEEKDAYS_MN[t.date.weekday()], t.driver_name, t.helper_name or 'Туслахгүй', t.vehicle_plate,
                   t.depart_time.strftime('%H:%M') if t.depart_time else '', t.customer_count,
-                  t.return_time.strftime('%H:%M') if t.return_time else '', row['duration'], t.returned_count, t.remainder_note]
+                  t.return_time.strftime('%H:%M') if t.return_time else '', row['duration'], t.returned_count, t.remainder_note, row['created_by']]
         for col, v in enumerate(values, 1):
             c = ws.cell(row=r, column=col, value=v)
             c.border = border
@@ -7527,7 +8961,7 @@ def delivery_trips_export(request):
     for col, v in ((4, 'Нийт'), (6, f"{totals['trips']} удаа"), (8, totals['customers']), (11, totals['returned'])):
         c = ws.cell(row=r, column=col, value=v)
         c.font, c.border = Font(bold=True), border
-    for col, width in enumerate([5, 12, 9, 18, 18, 14, 11, 11, 11, 12, 15, 40], 1):
+    for col, width in enumerate([5, 12, 9, 18, 18, 14, 11, 11, 11, 12, 15, 40, 16], 1):
         ws.column_dimensions[openpyxl.utils.get_column_letter(col)].width = width
 
     ws2 = wb.create_sheet('Жолоочоор')
@@ -7591,6 +9025,8 @@ def vehicles(request):
     from shop.models import FuelTransaction, VehiclePartRecord
     from shop.services import fuel, vehicle_parts as parts, vehicles as vh
 
+    if (request.POST or request.GET).get('tab') == 'fuel_allowance':
+        return _vehicles_fuel_allowance(request)
     tab = request.GET.get('tab') if request.GET.get('tab') in _VEHICLE_TABS else 'fuel'
     f, report = _vehicle_tab_data(request, tab)
     query = request.GET.copy()
@@ -7635,6 +9071,98 @@ def vehicles(request):
     else:
         context.update({'report': vh.render_report(report), 'reports': vh.REPORTS, 'metrics': vh.MONTHLY_METRICS})
     return render(request, 'shop/vehicles.html', context)
+
+
+def _vehicles_fuel_allowance(request):
+    """Тээврийн хэрэгсэл > Шатахууны мөнгө олгох тооцоо (shop.services.fuel_allowance): Цалингийн тохиргоонд
+    "Шатахууны мөнгө олгох" чеклэсэн ажилчид. Ажиллах / ажилласан хоног - Хоног бүртгэлээс (гараар засна),
+    олговол зохих дүн - гараас (өмнөх сарын дүн дамжина), олгох дүн = олговол зохих x ажилласан / ажиллах. Excel."""
+    from django.contrib import messages
+    from shop.models import FuelAllowanceEntry
+    from shop.services import fuel_allowance as service
+
+    if request.method == 'POST':
+        year, month = _month_from_request(request.POST)
+        auto = {r['employee_code']: r for r in service.build_fuel_allowance(year, month)}
+        codes = request.POST.getlist('employee_code')
+        lists = {f: request.POST.getlist(f) for f in ('required_days', 'worked_days', 'due_amount')}
+        saved = 0
+        for i, code in enumerate(codes):
+            row = auto.get(code)
+            if row is None:
+                continue
+            raw = {f: (lists[f][i] if i < len(lists[f]) else '').strip() for f in lists}
+            values = {}
+            for f in ('required_days', 'worked_days'):
+                value = _parse_decimal(raw[f], default=None) if raw[f] else None
+                # Хоног бүртгэлийн утгатай тэнцүү бол хадгалахгүй - хоног бүртгэл өөрчлөгдвөл дагана
+                values[f] = None if value == row[f'auto_{f}'] else value
+            values['due_amount'] = _parse_money(raw['due_amount'], default=None) if raw['due_amount'] else None
+            if all(v is None for v in values.values()):
+                FuelAllowanceEntry.objects.filter(employee_code=code, year=year, month=month).delete()
+                continue
+            FuelAllowanceEntry.objects.update_or_create(
+                employee_code=code, year=year, month=month, defaults={**values, 'updated_by': request.user})
+            saved += 1
+        messages.success(request, f'Шатахууны мөнгө хадгалагдлаа ({saved} ажилтан).')
+        return redirect(f"{reverse('shop:vehicles')}?tab=fuel_allowance&year={year}&month={month}")
+
+    year, month = _month_from_request(request.GET)
+    rows = service.build_fuel_allowance(year, month)
+    q = (request.GET.get('q') or '').strip().lower()
+    if q:
+        rows = [r for r in rows if q in f"{r['name']} {r['employee_code']} {r['positionname']}".lower()]
+    totals = service.totals_of(rows)
+
+    if request.GET.get('export') == 'xlsx':
+        headers = ['№', 'Ажилтны код', 'Нэр', 'Албан тушаал', 'Ажиллах хоног', 'Ажилласан хоног',
+                   'Олговол зохих дүн', 'Олгох дүн']
+        data = [[i, r['employee_code'], r['name'], r['positionname'] or None, _excel_number(r['required_days']),
+                 _excel_number(r['worked_days']),
+                 _excel_number(r['due_amount']) if r['due_amount'] is not None else None,
+                 _excel_number(r['amount'])]
+                for i, r in enumerate(rows, start=1)]
+        return _xlsx_response(
+            'Шатахууны мөнгө', f'Шатахууны мөнгө олгох тооцоо - {year} оны {MONTH_NAMES_MN[month - 1]}', headers, data,
+            f'fuel_allowance_{year}_{month:02d}.xlsx', widths=[5, 10, 24, 22, 11, 11, 16, 16],
+            totals=[None, None, 'Нийт', None, None, None, _excel_number(totals['due_amount']),
+                    _excel_number(totals['amount'])],
+            number_cols=(5, 6, 7, 8),
+        )
+
+    if request.GET.get('format') == 'print':
+        # Бусад табын хэвлэх хуудастай ижил загвар (vehicles_print.html) - зөвхөн хүснэгт
+        def days(v):
+            return f'{v.normalize():f}' if v is not None else ''
+
+        def mnt(v):
+            return f'{v:,.0f}' if v is not None else ''
+
+        cells = [[{'v': i}, {'v': r['name']}, {'v': r['positionname']},
+                  {'v': days(r['required_days']), 'num': True}, {'v': days(r['worked_days']), 'num': True},
+                  {'v': mnt(r['due_amount']), 'num': True}, {'v': mnt(r['amount']), 'num': True}]
+                 for i, r in enumerate(rows, start=1)]
+        report = {
+            'title': 'Шатахууны мөнгө олгох тооцоо',
+            'portrait': True,
+            'meta': [('Сар', f'{year} оны {MONTH_NAMES_MN[month - 1]}')],
+            'tables': [{
+                'columns': [{'label': label} for label in (
+                    '№', 'Нэр', 'Албан тушаал', 'Ажиллах хоног', 'Ажилласан хоног', 'Олговол зохих дүн', 'Олгох дүн')],
+                'cells': cells,
+                'total_cells': [{'v': ''}, {'v': 'Нийт'}, {'v': ''}, {'v': ''}, {'v': ''},
+                                {'v': mnt(totals['due_amount']), 'num': True}, {'v': mnt(totals['amount']), 'num': True}],
+            }],
+        }
+        return render(request, 'shop/vehicles_print.html', {
+            'report': report, 'printed_at': timezone.localtime(),
+            'printed_by': request.user.get_full_name() or request.user.username})
+
+    return render(request, 'shop/vehicles_fuel_allowance.html', {
+        **_month_nav_context(year, month),
+        'active_page': 'vehicles', 'tab': 'fuel_allowance',
+        'rows': rows, 'totals': totals, 'q': request.GET.get('q') or '',
+    })
 
 
 @login_required

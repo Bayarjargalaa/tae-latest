@@ -340,6 +340,7 @@
                             </tr>
                         </thead>
                         <tbody>
+                            {% spaceless %}
                             {% for row in table_rows %}
                             {% if row.is_missing %}
                             <tr class="border-t missing-row" data-filter-text="{{ row.name }} {{ row.employee_code }}" data-age="{{ row.age|default_if_none:'' }}" data-dow="{{ row.date|date:'w' }}">
@@ -388,9 +389,9 @@
                                 <td class="print-hide px-2 py-1.5">
                                     <select name="position_name" data-default="{{ row.default_position }}" title="{% if row.default_position %}Үндсэн албан тушаал: {{ row.default_position }}{% endif %}"
                                             class="attendance-input position-input{% if row.position_name != row.default_position %} position-changed{% endif %}">
+                                        {# Хурдны үүднээс зөвхөн сонгосон утгыг гаргана - бүх албан тушаалын жагсаалтыг дарах үед JS нөхнө (fillPositionOptions) #}
                                         {% if not row.default_position %}<option value="">-</option>{% endif %}
-                                        {% if row.position_name and row.position_name not in positions %}<option value="{{ row.position_name }}" selected>{{ row.position_name }}</option>{% endif %}
-                                        {% for p in positions %}<option value="{{ p }}" {% if p == row.position_name %}selected{% endif %}>{{ p }}</option>{% endfor %}
+                                        {% if row.position_name %}<option value="{{ row.position_name }}" selected>{{ row.position_name }}</option>{% endif %}
                                     </select>
                                 </td>
                                 <td class="px-2 py-1.5 whitespace-nowrap">
@@ -420,6 +421,7 @@
                             </tr>
                             {% endif %}
                             {% endfor %}
+                            {% endspaceless %}
                         </tbody>
                     </table>
                 </div>
@@ -463,6 +465,7 @@
 </div>
 
 {{ position_start_times|json_script:"position-start-times" }}
+{{ positions|json_script:"position-choices" }}
 <script>
 // Хадгалсан (AttendanceRecord) мөрийг устгаж, дахин төхөөрөмж/мерчандайзерийн түүхий өгөгдөл дээр
 // суурилсан автомат тооцоолол руу буцаана
@@ -643,7 +646,23 @@ function calcLateBuckets(ruleStart, arrivedStr, leftStr, ruleEnd) {
     return bucketDelay(9 * 60 - worked);
 }
 
+// Мөр бүрийн албан тушаалын select-д серверээс зөвхөн сонгосон утга ирдэг (мөр бүрт ~20 option
+// давтвал хуудас хэдэн MB болж удаашруулдаг) - хэрэглэгч дарах үед л бүтэн жагсаалтаар нөхнө
+const POSITION_CHOICES = JSON.parse(document.getElementById('position-choices').textContent);
+function fillPositionOptions(select) {
+    if (select.dataset.filled) return;
+    select.dataset.filled = '1';
+    const current = select.value;
+    const hasBlank = !select.dataset.default;
+    select.innerHTML = '';
+    if (hasBlank) select.add(new Option('-', ''));
+    if (current && POSITION_CHOICES.indexOf(current) === -1) select.add(new Option(current, current));
+    POSITION_CHOICES.forEach(function (p) { select.add(new Option(p, p)); });
+    if (current || hasBlank) select.value = current;
+}
+
 document.addEventListener('DOMContentLoaded', function () {
+    const autosizeQueue = [];
     document.querySelectorAll('.attendance-row').forEach(function (row) {
         const lateInputs = row.querySelectorAll('.late-input');
         const totalCell = row.querySelector('.total-late-cell');
@@ -680,6 +699,11 @@ document.addEventListener('DOMContentLoaded', function () {
         // Өөр албан тушаалд шилжин ажилласан бол хоцролтыг тэр албан тушаалын дүрмээр дахин тооцно
         const positionInput = row.querySelector('.position-input');
         if (positionInput) {
+            // Сонголтгүй (албан тушаалгүй мөр, үндсэнтэй) бол хуучны адил жагсаалтын эхнийх сонгогдоно
+            if (!positionInput.options.length) fillPositionOptions(positionInput);
+            ['mousedown', 'focus', 'keydown', 'touchstart'].forEach(function (ev) {
+                positionInput.addEventListener(ev, function () { fillPositionOptions(positionInput); });
+            });
             positionInput.addEventListener('change', function () {
                 const weekday = row.querySelector('input[name=weekday]').value;
                 const rule = positionRule(positionInput.value, weekday);
@@ -732,9 +756,15 @@ document.addEventListener('DOMContentLoaded', function () {
                 }
                 autosize();
             });
-            autosize();
+            // Ачаалахад мөр бүрт тусад нь хэмжвэл браузер мөр бүрт хуудсыг дахин зохион байгуулж (reflow)
+            // маш удаан болдог - хоосон биш textarea-уудыг цуглуулаад доор нэг дор хэмжинэ
+            if (customerInput.value) autosizeQueue.push(customerInput);
         }
     });
+    // Эхлээд бүгдийн өндрийг бичиж, дараа нь бүгдийг уншиж, сүүлд нь бичнэ - ганц reflow
+    autosizeQueue.forEach(function (t) { t.style.height = 'auto'; });
+    const autosizeHeights = autosizeQueue.map(function (t) { return t.scrollHeight; });
+    autosizeQueue.forEach(function (t, i) { t.style.height = autosizeHeights[i] + 'px'; });
 
     // Хоцролтын минутыг скрипт өөрөө бөглөдөг тул хэвлэх бүрийн өмнө бүх утгыг дахин авна.
     // Харилцагчийн нэрийг нарийн баганад багтаахаар эхний 50 тэмдэгтээр таслана
@@ -797,6 +827,16 @@ document.addEventListener('DOMContentLoaded', function () {
             return isNaN(n) ? null : n;
         }
 
+        // Мөрүүд болон тэдгээрийн шүүх текстийг нэг удаа бэлдэнэ (товч дарах бүрт DOM-оос дахин хайхгүй)
+        function prepRows(selector) {
+            return Array.from(document.querySelectorAll(selector)).map(function (row) {
+                return { el: row, text: (row.dataset.filterText || '').toLowerCase(), dow: row.dataset.dow, age: parseInt(row.dataset.age, 10) };
+            });
+        }
+        const attendanceRows = prepRows('.attendance-row');
+        const deletedRows = prepRows('.deleted-row');
+        const missingRows = prepRows('.missing-row');
+
         function applyNameFilter() {
             const needle = filterInput.value.trim().toLowerCase();
             const ageMin = readAge(ageMinInput);
@@ -804,30 +844,31 @@ document.addEventListener('DOMContentLoaded', function () {
             const dows = dowInputs.filter(function (i) { return i.checked; }).map(function (i) { return i.value; });
             const active = !!needle || ageMin !== null || ageMax !== null || dows.length > 0;
 
-            function matches(row) {
-                if (needle && !row.dataset.filterText.toLowerCase().includes(needle)) return false;
-                if (dows.length && !dows.includes(row.dataset.dow)) return false;
+            function matches(r) {
+                if (needle && !r.text.includes(needle)) return false;
+                if (dows.length && !dows.includes(r.dow)) return false;
                 if (ageMin === null && ageMax === null) return true;
-                const age = parseInt(row.dataset.age, 10);
-                if (isNaN(age)) return false;
-                return (ageMin === null || age >= ageMin) && (ageMax === null || age <= ageMax);
+                if (isNaN(r.age)) return false;
+                return (ageMin === null || r.age >= ageMin) && (ageMax === null || r.age <= ageMax);
             }
 
+            // Өөрчлөгдөх мөрийг л хөндөнө - ижил утга дахин онооход ч браузер reflow хийж магадгүй
             let shown = 0;
-            const rows = document.querySelectorAll('.attendance-row');
-            rows.forEach(function (row) {
-                const match = matches(row);
-                row.hidden = !match;
+            const rows = attendanceRows;
+            rows.forEach(function (r) {
+                const match = matches(r);
+                if (r.el.hidden === match) r.el.hidden = !match;
                 if (match) shown += 1;
             });
-            document.querySelectorAll('.deleted-row').forEach(function (row) {
-                row.hidden = !matches(row);
+            deletedRows.forEach(function (r) {
+                const match = matches(r);
+                if (r.el.hidden === match) r.el.hidden = !match;
             });
             // Ажиллаагүй өдрийн мөрүүд CSS-ээр (display: table-row) харагддаг тул hidden биш класс ашиглана
             let missingShown = 0;
-            document.querySelectorAll('.missing-row').forEach(function (row) {
-                const match = matches(row);
-                row.classList.toggle('filtered-out', !match);
+            missingRows.forEach(function (r) {
+                const match = matches(r);
+                if (r.el.classList.contains('filtered-out') === match) r.el.classList.toggle('filtered-out', !match);
                 if (match) missingShown += 1;
             });
             const missingTotal = document.getElementById('missing-total');
@@ -846,8 +887,11 @@ document.addEventListener('DOMContentLoaded', function () {
             }
         }
 
+        // Бичих бүрт биш, түр зогсоход (150мс) шүүнэ - хурдан бичихэд үсэг бүрт хүснэгт дахин зурагдахгүй
+        let filterTimer = null;
         function onFilterInput() {
-            applyNameFilter();
+            clearTimeout(filterTimer);
+            filterTimer = setTimeout(applyNameFilter, 150);
             clearTimeout(saveTimer);
             saveTimer = setTimeout(function () {
                 const params = new URLSearchParams({

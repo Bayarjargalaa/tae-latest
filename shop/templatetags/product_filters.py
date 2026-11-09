@@ -1,9 +1,7 @@
 """
 Custom template filters for product images
 """
-import os
 from django import template
-from django.conf import settings
 
 register = template.Library()
 
@@ -11,41 +9,20 @@ register = template.Library()
 @register.filter
 def product_image_url(product, image_type='main'):
     """
-    Бүтээгдэхүүний зураг авах (ProductExtension байхгүй ч ажиллана)
-    
+    Бүтээгдэхүүний эх зураг (ProductExtension байхгүй ч ажиллана) - services.product_images
+
     Usage: {{ product|product_image_url }}
            {{ product|product_image_url:'2' }}
     """
-    # Lazy import to avoid circular dependency
-    from shop.models import ProductExtension
-    
-    # ProductExtension шалгах - view аль хэдийн product.extension хавсаргасан бол
-    # дахин query хийхгүй (жагсаалтад бараа бүрт N+1 query гарахаас сэргийлнэ)
-    if hasattr(product, 'extension'):
-        extension = product.extension
-    else:
-        extension = ProductExtension.objects.filter(item_id=product.id).first()
+    from shop.services.product_images import image_url
+    return image_url(product, image_type)
 
-    if extension:
-        # Database дээр байгаа зураг
-        if image_type == 'main' and extension.image_main:
-            return extension.image_main.url
-        elif image_type == '2' and extension.image_2:
-            return extension.image_2.url
-        elif image_type == '3' and extension.image_3:
-            return extension.image_3.url
-    
-    # Fallback: {item_id}.ext хайх
-    extensions = ['jpg', 'jpeg', 'png', 'webp', 'JPG', 'JPEG', 'PNG', 'WEBP']
-    for ext in extensions:
-        filename = f'{product.id}.{ext}'
-        filepath = os.path.join(settings.MEDIA_ROOT, 'products', filename)
-        
-        if os.path.exists(filepath):
-            return f'{settings.MEDIA_URL}products/{filename}'
-    
-    # Placeholder зураг
-    return f'{settings.MEDIA_URL}placeholder.svg'
+
+@register.filter
+def product_thumb_url(product, image_type='main'):
+    """Картанд зориулсан жижиг зураг (thumbnail) - {{ product|product_thumb_url }}"""
+    from shop.services.product_images import thumb_url
+    return thumb_url(product, image_type)
 
 
 @register.filter

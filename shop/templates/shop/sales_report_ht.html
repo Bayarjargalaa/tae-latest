@@ -13,6 +13,7 @@
     .ht-table thead th.sticky-col { z-index: 3; }
     .ht-table tfoot td { position: sticky; bottom: 0; z-index: 2; }
     .ht-table tfoot td.sticky-col { z-index: 3; }
+    .ht-table .plan-col { width: 160px; min-width: 160px; max-width: 160px; }
     /* Утсан дээр тогтмол нэрийн багана дэлгэцийг бүхэлд нь эзлэхгүй */
     @media (max-width: 639px) {
         .ht-table { font-size: .75rem; }
@@ -58,6 +59,16 @@
                     <input type="checkbox" id="numbering" {% if filters.numbering %}checked{% endif %} class="w-4 h-4 accent-primary">
                     Мөр дугаарлах
                 </label>
+                {% if plan %}
+                <label class="flex items-center gap-2 text-sm ml-2 font-medium text-blue-700">
+                    <input type="checkbox" id="plan-mode" class="w-4 h-4 accent-primary"> 🎯 Төлөвлөгөө оруулах
+                </label>
+                <span id="plan-tools" class="hidden items-center gap-1">
+                    <input type="month" id="plan-new-month" class="text-sm border border-gray-300 rounded-lg px-2 py-0.5">
+                    <button type="button" id="plan-add-month" class="text-sm border border-blue-300 text-blue-700 bg-blue-50 rounded-lg px-3 py-1 hover:bg-blue-100">+ Сар нэмэх</button>
+                    <a href="{{ plan.plan_url }}" target="_blank" class="text-xs text-blue-600 hover:underline ml-1">Төлөвлөгөө →</a>
+                </span>
+                {% endif %}
                 <span id="idle-note" class="hidden text-xs text-amber-700"></span>
                 <span class="text-xs text-gray-500 ml-auto">Баганын толгой дээр дарж эрэмбэлнэ • Мөрөн дээр дарж задална</span>
             </div>
@@ -73,6 +84,7 @@
 </div>
 
 {{ report|json_script:"ht-data" }}
+{% if plan %}{{ plan|json_script:"ht-plan" }}<input type="hidden" id="plan-csrf" value="{{ csrf_token }}">{% endif %}
 {% endblock %}
 
 {% block extra_js %}
@@ -94,7 +106,12 @@ document.addEventListener('DOMContentLoaded', function () {
         sortDir: 1,
         expanded: new Set(),
         numbering: numberingCheckbox.checked,
+        planMode: false,
+        planCols: [],
     };
+    const planEl = document.getElementById('ht-plan');
+    const plan = planEl ? JSON.parse(planEl.textContent) : null;
+    const reportIds = new Set(plan ? plan.item_ids.filter(Boolean) : []);
 
     const amountFmt = new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 });
     const qtyFmt = new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 });
@@ -135,7 +152,7 @@ document.addEventListener('DOMContentLoaded', function () {
             const g = getGroup(top);
             let c = g.children.get(sub);
             if (!c) {
-                c = { name: subNames[sub], values: new Array(monthCount).fill(0), total: 0,
+                c = { id: sub, name: subNames[sub], values: new Array(monthCount).fill(0), total: 0,
                       group: topIsItem ? data.customer_groups[sub] : '',
                       inactive: topIsItem && data.customer_inactive[sub],
                       stock: topIsItem ? null : stockOf(subNames[sub]) };
@@ -174,7 +191,61 @@ document.addEventListener('DOMContentLoaded', function () {
         data.months.forEach((m, i) => { html += th(i, m, 'text-right'); });
         html += th('total', 'Нийт', 'text-right');
         stockCols.forEach((s) => { html += th(s.key, s.label, 'text-right'); });
+        planCols().forEach((col, i) => {
+            const dirty = isDirty(col);
+            html += `<th class="plan-col px-1 py-2 font-semibold border-b whitespace-nowrap bg-blue-50 text-blue-800 text-center">
+                <div>🎯 ${col.month}${!col.loading && !col.channels.length
+                    ? ' <span class="text-amber-600" title="Шүүлтэд ХТ суваг алга (эсвэл бүгд хамруулахгүй) - тоо хадгалагдахгүй">⚠</span>' : ''}</div>
+                <div class="text-xs font-normal">${col.loading ? '...' : planCount(col)}
+                    <button type="button" data-plan-save="${i}" title="Хадгалах" class="ml-1 rounded px-1.5 ${dirty ? 'bg-green-600 text-white' : 'text-gray-400'}" ${dirty ? '' : 'disabled'}>💾</button>
+                    <button type="button" data-plan-close="${i}" title="Баганыг хаах" class="text-gray-400 hover:text-red-600 px-1">✕</button></div></th>`;
+        });
+        // Хоосон зай: хамгийн баруун тийш гүйлгэхэд сүүлийн багана нэрийн хажууд ирнэ. Дахин зурахад хуучин өргөнийг
+        // үлдээнэ - эс тэгвэл хүснэгт түр нарийсч хөтөч гүйлгэлтийг зүүн тийш буцаана
+        const box = head.closest('.overflow-auto');
+        const scroll = box.scrollLeft;
+        const old = document.getElementById('ht-spacer');
+        const width = old ? old.style.width : '';
+        html += `<th id="ht-spacer" class="bg-gray-100 border-b p-0" style="${width ? `width:${width};min-width:${width}` : ''}"></th>`;
         head.innerHTML = html + '</tr>';
+        sizeSpacer();
+        box.scrollLeft = scroll;
+    }
+
+    // Хүснэгтийн ард зай нэмж аль ч баганыг (сүүлийнхийг ч) тогтмол нэрийн баганын хажууд гүйлгэж авчирна
+    function sizeSpacer() {
+        const spacer = document.getElementById('ht-spacer');
+        const name = head.querySelector('th.sticky-col');
+        const last = spacer && spacer.previousElementSibling;
+        if (!spacer || !name || !last || last === name) return;
+        const box = spacer.closest('.overflow-auto');
+        // Хүснэгт дэлгэцээс нарийн үед баганууд сунадаг тул зай нэмэгдэхэд өргөн өөрчлөгдөнө - тогтвортой болтол дахин хэмжинэ.
+        // Зайг 0 болгохгүй (тэгвэл хөтөч гүйлгэлтийг буцааж зүүн тийш шахна).
+        for (let i = 0; i < 4; i++) {
+            const width = Math.max(0, Math.round(box.clientWidth - name.offsetWidth - (spacer.offsetLeft - last.offsetLeft)));
+            if (Math.abs(width - spacer.offsetWidth) <= 1) break;
+            spacer.style.minWidth = spacer.style.width = width + 'px';
+        }
+    }
+    function unitSelect(col, i, id) {
+        const unit = col.unit[id] || 'box', perBox = col.perBox[id];
+        const title = perBox ? `Хайрцаг дахь тоо: ${perBox}` : 'Хайрцаг дахь тоо тодорхойгүй - хайрцгаар сонговол ширхгээр хадгална';
+        return `<select data-plan-unit="${i}" data-item-id="${esc(id)}" title="${esc(title)}"
+                        class="ml-0.5 border border-gray-300 rounded py-0.5 text-xs align-middle bg-white">
+                    <option value="box" ${unit === 'box' ? 'selected' : ''}>хайрц</option>
+                    <option value="pcs" ${unit === 'pcs' ? 'selected' : ''}>ш</option></select>`;
+    }
+    function planCells(itemIdx, bg) {
+        let html = '';
+        planCols().forEach((col, i) => {
+            const id = itemIdx === null ? '' : plan.item_ids[itemIdx];
+            html += `<td class="plan-col ${bg} px-1 py-1 text-center whitespace-nowrap">` + (id && !col.loading
+                ? `<input type="checkbox" data-plan-col="${i}" data-item-id="${esc(id)}" class="w-4 h-4 accent-primary cursor-pointer align-middle" ${col.checked.has(id) ? 'checked' : ''}>
+                   <input type="text" inputmode="decimal" data-plan-qty="${i}" data-item-id="${esc(id)}" value="${esc(col.qty[id] || '')}" placeholder="тоо"
+                          title="Төлөвлөгөөт тоо (ХТ суваг бүрт)" class="w-14 ml-1 text-right tabular-nums border border-gray-300 rounded px-1 py-0.5 text-xs align-middle">${unitSelect(col, i, id)}`
+                : '') + '</td>';
+        });
+        return html;
     }
 
     function rowCells(row) {
@@ -189,9 +260,11 @@ document.addEventListener('DOMContentLoaded', function () {
 
     function render() {
         const groups = buildGroups().sort(compare);
+        const scroll = head.closest('.overflow-auto').scrollLeft;
         renderHead();
 
-        const colCount = 2 + monthCount + stockCols.length;
+        const colCount = 3 + monthCount + stockCols.length + planCols().length;  // + хоосон зай
+        const topIsItem = state.groupBy === 'item';
         const groupTag = (name) => (name ? ` <span class="text-xs font-normal text-gray-400">[${esc(name)}]</span>` : '');
         const inactiveTag = (row) => (row.inactive
             ? ' <span class="text-xs font-normal text-red-600 bg-red-50 rounded px-1">идэвхгүй</span>' : '');
@@ -219,16 +292,16 @@ document.addEventListener('DOMContentLoaded', function () {
                     // Борлуулалтгүй харилцагч / бараа - задрах мөргүй, улбар шараар ялгана
                     parts.push(`<tr class="bg-amber-50 font-medium border-t">
                         <td class="sticky-col bg-amber-50 px-3 py-1.5">${numberCell(gi + 1)}<span class="inline-block w-4"></span>${esc(g.name || '(хоосон)')}${groupTag(g.group)}${inactiveTag(g)}
-                        <span class="text-xs font-normal text-amber-700">борлуулалтгүй</span></td>${rowCells(g)}</tr>`);
+                        <span class="text-xs font-normal text-amber-700">борлуулалтгүй</span></td>${rowCells(g)}${planCells(topIsItem ? g.id : null, 'bg-amber-100')}</tr>`);
                     return;
                 }
                 parts.push(`<tr class="group-row bg-green-50 hover:bg-green-100 cursor-pointer font-medium border-t" data-id="${g.id}">
                     <td class="sticky-col bg-green-50 px-3 py-1.5">${numberCell(gi + 1)}<span class="inline-block w-4 text-gray-500">${open ? '▼' : '►'}</span>${esc(g.name || '(хоосон)')}${groupTag(g.group)}${inactiveTag(g)}
-                    <span class="text-xs text-gray-400">(${g.children.length})</span></td>${rowCells(g)}</tr>`);
+                    <span class="text-xs text-gray-400">(${g.children.length})</span></td>${rowCells(g)}${planCells(topIsItem ? g.id : null, 'bg-blue-50')}</tr>`);
                 if (open) {
                     g.children.sort(compare).forEach((c, ci) => {
                         parts.push(`<tr class="hover:bg-gray-50 text-gray-700 border-t border-gray-100">
-                            <td class="sticky-col bg-white px-3 py-1.5">${numberCell(`${gi + 1}.${ci + 1}`)}<span class="inline-block w-4"></span><span class="pl-4">${esc(c.name || '(хоосон)')}</span>${groupTag(c.group)}${inactiveTag(c)}</td>${rowCells(c)}</tr>`);
+                            <td class="sticky-col bg-white px-3 py-1.5">${numberCell(`${gi + 1}.${ci + 1}`)}<span class="inline-block w-4"></span><span class="pl-4">${esc(c.name || '(хоосон)')}</span>${groupTag(c.group)}${inactiveTag(c)}</td>${rowCells(c)}${planCells(topIsItem ? null : c.id, 'bg-blue-50/50')}</tr>`);
                     });
                 }
             });
@@ -240,9 +313,13 @@ document.addEventListener('DOMContentLoaded', function () {
             grand.forEach((v) => { footHtml += `<td class="bg-gray-200 px-3 py-2 text-right whitespace-nowrap">${fmt(v)}</td>`; });
             footHtml += `<td class="bg-gray-200 px-3 py-2 text-right whitespace-nowrap">${fmt(grand.reduce((a, b) => a + b, 0))}</td>`;
             stockCols.forEach(() => { footHtml += '<td class="bg-gray-200"></td>'; });
+            planCols().forEach(() => { footHtml += '<td class="bg-gray-200"></td>'; });
+            footHtml += '<td class="bg-gray-200"></td>';
             foot.innerHTML = footHtml + '</tr>';
         }
 
+        sizeSpacer();
+        head.closest('.overflow-auto').scrollLeft = scroll;
         renderStats();
         updateExportLink();
     }
@@ -289,6 +366,7 @@ document.addEventListener('DOMContentLoaded', function () {
     });
 
     body.addEventListener('click', (e) => {
+        if (e.target.closest('[data-plan-col], [data-plan-qty], [data-plan-unit]')) return;  // төлөвлөгөөний чек/тоо мөрийг задлахгүй
         const tr = e.target.closest('tr.group-row');
         if (!tr) return;
         const id = Number(tr.dataset.id);
@@ -318,6 +396,154 @@ document.addEventListener('DOMContentLoaded', function () {
         state.metric = metricSelect.value;
         render();
     });
+
+    // --- Төлөвлөгөө оруулах: сар бүр нэг багана; чеклэсэн бараа 💾 дарахад тухайн сарын төлөвлөгөөнд орно ---
+    function planCols() { return plan && state.planMode ? state.planCols : []; }
+    function planCount(col) { return [...col.checked].filter((id) => reportIds.has(id)).length; }
+    function changedQty(col) {
+        // Тоо эсвэл (тоотой үед) нэгж өөрчлөгдсөн бараа
+        return [...col.checked].filter((id) => (col.qty[id] || '') !== (col.savedQty[id] || '')
+            || (col.qty[id] && col.unit[id] !== col.savedUnit[id]));
+    }
+    function isDirty(col) {
+        if (col.checked.size !== col.saved.size) return true;
+        for (const id of col.checked) if (!col.saved.has(id)) return true;
+        return changedQty(col).length > 0;
+    }
+    async function planRequest(month, payload) {
+        const query = new URLSearchParams({ month });
+        plan.channels.forEach((c) => query.append('channel', c));
+        const res = await fetch(payload ? plan.url : plan.url + '?' + query, payload ? {
+            method: 'POST', body: JSON.stringify(payload),
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': document.getElementById('plan-csrf').value },
+        } : {});
+        if (!res.ok) throw new Error(res.status);
+        return res.json();
+    }
+    function applyResponse(col, d) {
+        col.saved = new Set(Object.keys(d.items));
+        col.checked = new Set(col.saved);
+        col.hasTarget = {};
+        col.savedQty = {};
+        col.savedUnit = {};
+        col.perBox = {};
+        Object.entries(d.items).forEach(([id, item]) => {
+            col.hasTarget[id] = item.target; col.savedQty[id] = item.qty;
+            col.savedUnit[id] = item.unit; col.perBox[id] = item.per_box;
+        });
+        col.qty = { ...col.savedQty };
+        col.unit = { ...col.savedUnit };
+        col.channels = d.channels;
+        col.loading = false;
+    }
+    async function addPlanMonth(month) {
+        if (!month || state.planCols.some((c) => c.month === month)) return;
+        const col = { month, saved: new Set(), checked: new Set(), hasTarget: {}, qty: {}, savedQty: {}, unit: {}, savedUnit: {}, perBox: {}, channels: [], loading: true };
+        state.planCols.push(col);
+        render();
+        try {
+            applyResponse(col, await planRequest(month));
+        } catch (err) {
+            alert(month + ' сарын төлөвлөгөөг уншиж чадсангүй.');
+            state.planCols.splice(state.planCols.indexOf(col), 1);
+        }
+        render();
+    }
+    async function savePlan(col) {
+        // Тайланд харагдаж буй бараанаас л хасна - бусад төлөвлөгөөт бараа хэвээр
+        const add = [...col.checked].filter((id) => !col.saved.has(id));
+        const remove = [...col.saved].filter((id) => !col.checked.has(id) && reportIds.has(id));
+        const withTarget = remove.filter((id) => col.hasTarget[id]);
+        if (withTarget.length && !confirm(`${withTarget.length} бараанд ${col.month} сард хайрцгийн зорилт оруулсан байна. Хасвал зорилт нь устна. Үргэлжлүүлэх үү?`)) return;
+        const qty = {}, unit = {};
+        changedQty(col).forEach((id) => { qty[id] = col.qty[id] || ''; unit[id] = col.unit[id] || 'box'; });
+        col.loading = true;
+        render();
+        try {
+            const d = await planRequest(col.month, { month: col.month, channels: plan.channels, add, remove, qty, unit });
+            applyResponse(col, d);
+            if (d.no_box && d.no_box.length) {
+                const names = d.no_box.map((id) => data.items[plan.item_ids.indexOf(id)] || id);
+                alert('Хайрцаг дахь тоо тодорхойгүй тул ширхгээр хадгаллаа:\n' + names.join('\n')
+                      + '\n\nХайрцаг дахь тоог төлөвлөгөөний хуудаснаас оруулж болно.');
+            }
+        } catch (err) {
+            col.loading = false;
+            alert('Хадгалж чадсангүй.');
+        }
+        render();
+    }
+    if (plan) {
+        const modeBox = document.getElementById('plan-mode');
+        const tools = document.getElementById('plan-tools');
+        const newMonth = document.getElementById('plan-new-month');
+        newMonth.value = plan.month;
+        modeBox.addEventListener('change', () => {
+            if (!modeBox.checked && state.planCols.some(isDirty) && !confirm('Хадгалаагүй өөрчлөлт байна. Хаах уу?')) {
+                modeBox.checked = true;
+                return;
+            }
+            state.planMode = modeBox.checked;
+            tools.classList.toggle('hidden', !state.planMode);
+            tools.classList.toggle('flex', state.planMode);
+            if (!state.planMode) state.planCols = [];
+            if (state.planMode && !state.planCols.length) addPlanMonth(plan.month); else render();
+        });
+        document.getElementById('plan-add-month').addEventListener('click', () => addPlanMonth(newMonth.value));
+        // Нэг бараа (харилцагчаар бүлэглэхэд) олон мөрөнд байж болно - бүгдийг нь ижил байлгана
+        const sameItem = (sel, i, id) => body.querySelectorAll(`[${sel}="${i}"][data-item-id="${CSS.escape(id)}"]`);
+        function setChecked(i, id, on) {
+            const col = state.planCols[i];
+            if (on) col.checked.add(id); else col.checked.delete(id);
+            if (!on) col.qty[id] = '';
+            sameItem('data-plan-col', i, id).forEach((cb) => { cb.checked = on; });
+            if (!on) sameItem('data-plan-qty', i, id).forEach((input) => { input.value = ''; });
+        }
+        body.addEventListener('change', (e) => {
+            const sel = e.target.closest('[data-plan-unit]');
+            if (sel) {
+                const i = Number(sel.dataset.planUnit), id = sel.dataset.itemId;
+                state.planCols[i].unit[id] = sel.value;
+                sameItem('data-plan-unit', i, id).forEach((other) => { other.value = sel.value; });
+                renderHead();
+                return;
+            }
+            const cb = e.target.closest('[data-plan-col]');
+            if (!cb) return;
+            setChecked(Number(cb.dataset.planCol), cb.dataset.itemId, cb.checked);
+            renderHead();
+        });
+        // Тоо оруулахад бараа автоматаар чеклэгдэнэ
+        body.addEventListener('input', (e) => {
+            const input = e.target.closest('[data-plan-qty]');
+            if (!input) return;
+            const i = Number(input.dataset.planQty), id = input.dataset.itemId;
+            const col = state.planCols[i];
+            col.qty[id] = input.value.trim();
+            sameItem('data-plan-qty', i, id).forEach((other) => { if (other !== input) other.value = input.value; });
+            if (col.qty[id] && !col.checked.has(id)) setChecked(i, id, true);
+            renderHead();
+        });
+        // Эрэмбэлэх click-ээс өмнө (capture) барина
+        head.addEventListener('click', (e) => {
+            const save = e.target.closest('[data-plan-save]');
+            const close = e.target.closest('[data-plan-close]');
+            if (!save && !close) return;
+            e.stopPropagation();
+            if (save) savePlan(state.planCols[Number(save.dataset.planSave)]);
+            if (close) {
+                const col = state.planCols[Number(close.dataset.planClose)];
+                if (isDirty(col) && !confirm(col.month + ' - хадгалаагүй өөрчлөлт байна. Хаах уу?')) return;
+                state.planCols.splice(state.planCols.indexOf(col), 1);
+                render();
+            }
+        }, true);
+        window.addEventListener('beforeunload', (e) => {
+            if (planCols().some(isDirty)) { e.preventDefault(); e.returnValue = ''; }
+        });
+    }
+
+    window.addEventListener('resize', sizeSpacer);
 
     render();
 });

@@ -1,0 +1,10 @@
+{% load l10n %}{# Шинэ шилжүүлгийн мөр: prefix (нийлүүлэгчийн захиалгын id), key (мөрийн түлхүүр), currency #}
+<div class="pay-new grid grid-cols-2 md:grid-cols-12 gap-2 items-end bg-gray-50 rounded-lg p-2" data-pay-row>
+    <input type="hidden" name="so{{ prefix|unlocalize }}_pay_row" value="{{ key }}">
+    <label class="md:col-span-2"><span class="lbl">Шилжүүлсэн огноо</span><input class="field" type="date" name="so{{ prefix|unlocalize }}_pay{{ key }}_date" value="{{ today|date:'Y-m-d' }}"></label>
+    <label class="md:col-span-2"><span class="lbl">Дүн, {{ currency }}</span><input class="field text-right" type="number" step="any" name="so{{ prefix|unlocalize }}_pay{{ key }}_amount"></label>
+    <div class="col-span-2 md:col-span-4"><span class="lbl">Баримтууд (олныг сонгож болно)</span>
+        <div class="att"><label class="att-add" title="SWIFT, банкны хуулга, нэхэмжлэх г.м. - {{ max_receipts }} хүртэл"><span>📎 Сонгох</span><input type="file" multiple accept="image/*,application/pdf" name="so{{ prefix|unlocalize }}_pay{{ key }}_files" data-pay-files></label><span class="att-picked" data-att-picked></span></div></div>
+    <label class="md:col-span-3"><span class="lbl">Тайлбар</span><input class="field" name="so{{ prefix|unlocalize }}_pay{{ key }}_note" placeholder="Урьдчилгаа 30%"></label>
+    <div class="md:col-span-1 text-right"><button type="button" class="x text-base" data-pay-remove title="Мөр хасах">✕</button></div>
+</div>

@@ -18,6 +18,9 @@
     .ps-table .ps-sticky-name { max-width: 8.5rem; white-space: normal; }
     .ps-scroll { max-height: calc(100vh - 9rem); }
 }
+/* Цалингийн тулгалтаас холбоосоор ирсэн ажилтны мөр */
+.ps-emp-row:target td { background: #fef3c7 !important; }
+.ps-emp-row { scroll-margin-top: 6rem; }
 </style>
 {% endblock %}
 
@@ -149,7 +152,8 @@
                         Анхдагчаар албан тушаалын ажлын горимоор; ✎ - тусгайлан өөрөөр тохируулсан.
                         Бямбын нэмэгдэл % - бодогдсон Бямбад ажилласан нэмэгдлийн (үндсэн цалин / зохих цаг x Бямбад ажилласан цаг) хэдэн хувийг олгох: 100 бүтэн, 50 тал.
                         НДШ-ийн % зөвхөн тухайн ажилтанд өөр хувь хэрэглэх бол бөглөнө - хоосон бол НДШ-ийн кодын хувь, тэр нь хоосон бол анхдагч хувь.
-                        "Хоолны мөнгө олгох" - чеклээгүй ажилтанд <a href="{% url 'shop:meal_allowance' %}" class="text-primary underline">Хоолны мөнгө</a> олгохгүй (хоол идэх нэрсэд бичигдэж, идсэн тоонд нь орно).</p>
+                        "Хоолны мөнгө олгох" - чеклээгүй ажилтанд <a href="{% url 'shop:meal_allowance' %}" class="text-primary underline">Хоолны мөнгө</a> олгохгүй (хоол идэх нэрсэд бичигдэж, идсэн тоонд нь орно).
+                        "Шатахууны мөнгө олгох" - чеклэсэн ажилтан <a href="{% url 'shop:vehicles' %}?tab=fuel_allowance" class="text-primary underline">Шатахууны мөнгө олгох тооцоо</a>-нд харагдана.</p>
                 </div>
                 <button type="submit" class="bg-primary text-white px-6 py-2 rounded-lg hover:bg-green-700 transition whitespace-nowrap">💾 Хадгалах</button>
             </div>
@@ -170,12 +174,13 @@
                             <th class="px-2 py-2 font-semibold text-gray-700">НДШ байгууллага %</th>
                             <th class="px-2 py-2 font-semibold text-gray-700" title="Бэлэн цалин хэвлэхэд Гарын үсэг баганад гарна">Бэлэн цалингийн данс</th>
                             <th class="px-2 py-2 font-semibold text-gray-700" title="Чеклээгүй бол хоолны мөнгө олгохгүй (хоолны нэрсэд бичиж болно)">Хоолны мөнгө олгох</th>
+                            <th class="px-2 py-2 font-semibold text-gray-700" title="Чеклэсэн бол Тээврийн хэрэгсэл > Шатахууны мөнгө олгох тооцоонд харагдана">Шатахууны мөнгө олгох</th>
                         </tr>
                     </thead>
                     <tbody>
                         {% for e in employees %}
                         {% with p=e.profile %}
-                        <tr class="border-t">
+                        <tr class="border-t ps-emp-row" id="emp-{{ e.employee_code }}">
                             <td class="ps-sticky-name px-2 py-1.5 font-medium text-gray-900 whitespace-nowrap">
                                 {{ e.name }}
                                 <input type="hidden" name="employee_code" value="{{ e.employee_code }}">
@@ -226,6 +231,10 @@
                             <td class="px-2 py-1.5 text-center">
                                 <input type="checkbox" name="eats_meals" value="{{ e.employee_code }}" {% if not p or p.eats_meals %}checked{% endif %}
                                        title="Чеклээгүй бол хоолны мөнгө олгохгүй">
+                            </td>
+                            <td class="px-2 py-1.5 text-center">
+                                <input type="checkbox" name="fuel_allowance" value="{{ e.employee_code }}" {% if p and p.fuel_allowance %}checked{% endif %}
+                                       title="Чеклэсэн бол шатахууны мөнгө олгох тооцоонд харагдана">
                             </td>
                         </tr>
                         {% endwith %}

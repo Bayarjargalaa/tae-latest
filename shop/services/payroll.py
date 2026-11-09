@@ -79,9 +79,10 @@ def tax_credit_for(income, credits):
     return ZERO
 
 
-def build_payroll(year, month, sheet, employee_code=None):
+def build_payroll(year, month, sheet, employee_code=None, timesheet_rows=None):
     """Сарын цалин бодолтын хүснэгтийг буцаана: (rows, totals, setting). sheet: 'card' эсвэл 'cash'.
-    employee_code өгвөл зөвхөн тэр ажилтныг (хувийн мэдээлэл дэх "Цалингийн мэдээлэл") бодно."""
+    employee_code өгвөл зөвхөн тэр ажилтныг (хувийн мэдээлэл дэх "Цалингийн мэдээлэл") бодно.
+    timesheet_rows - аль хэдийн бодсон хоног бүртгэлийн мөрүүд (build_timesheet-ийг дахин дуудахгүй)."""
     from datamigration.models import OpenDataEmployee
     from shop.models import (
         AttendancePositionRule, EmployeePayProfile, NdshCodeRate, PayrollEntry, PayrollSetting, PayrollTaxCredit,
@@ -103,7 +104,10 @@ def build_payroll(year, month, sheet, employee_code=None):
         AttendancePositionRule.objects.filter(no_transport=True).values_list('position_name', flat=True)
     )
 
-    _, _, timesheet_rows, _, _ = build_timesheet(year, month, employee_code)
+    if timesheet_rows is None:
+        _, _, timesheet_rows, _, _ = build_timesheet(year, month, employee_code)
+    elif employee_code is not None:
+        timesheet_rows = [t for t in timesheet_rows if t['employee_code'] == employee_code]
     employee_extras = {
         e['id']: e for e in OpenDataEmployee.objects.filter(id__in=profiles.keys()).values(
             'id', 'basesalary', 'insuredtypeid', 'd4', 'd5', 'd6', 'd7',

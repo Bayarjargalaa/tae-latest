@@ -6,6 +6,11 @@
 
 {% block extra_css %}
 <style>
+/* Цалингийн тулгалтын алдаа / анхааруулгатай мөр (хэвлэхэд харагдахгүй) */
+@media screen {
+    tr.pc-row-error > td:nth-child(-n+3) { background: #fee2e2 !important; }
+    tr.pc-row-warning > td:nth-child(-n+3) { background: #fef3c7 !important; }
+}
 @media print {
     @page { size: A4 landscape; margin: 8mm; }
     #sidebar, #sidebar-open-button, #sidebar-overlay, header, footer, .no-print { display: none !important; }
@@ -143,6 +148,8 @@
         </div>
         {% endif %}
 
+        {% include 'shop/_payroll_checks.html' with checks=checks sheet='' closed_sheets=checks_closed_sheets closed_all=checks_closed_all %}
+
         <div class="grid grid-cols-1 xl:grid-cols-3 gap-6 mb-6 no-print">
             <form method="post" class="bg-white rounded-lg shadow p-4 xl:col-span-2">
                 {% csrf_token %}
@@ -237,7 +244,7 @@
                     </thead>
                     <tbody>
                         {% for row in rows %}
-                        <tr class="text-right ts-row {% if row.day_gap %}ts-row-gap{% endif %}{% if not row.is_main %} ts-row-moved{% endif %}"
+                        <tr class="text-right ts-row {% if row.day_gap %}ts-row-gap{% endif %}{% if not row.is_main %} ts-row-moved{% endif %}{% if row.check_level %} pc-row-{{ row.check_level }}{% endif %}"{% if row.check_title %} title="{{ row.check_title }}"{% endif %}
                             data-required="{{ row.required_days|floatformat:'-1' }}" data-worked="{{ row.worked_days|floatformat:'-1' }}"
                             data-hours-per-day="{% if row.is_shift %}1{% else %}8{% endif %}" data-shift="{% if row.is_shift %}1{% endif %}">
                             <td class="px-2 py-1.5 text-center">{{ forloop.counter }}</td>

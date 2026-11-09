@@ -131,6 +131,8 @@
         </div>
         {% endif %}
 
+        {% include 'shop/_payroll_checks.html' with checks=bonus_checks sheet='' bonus_only=True closed_sheets=bonus_closed_sheets closed_all=bonus_closed_all %}
+
         {# Нэгтгэл #}
         <section class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3" aria-label="Нэгтгэл">
             {% for t in tabs %}
@@ -377,6 +379,7 @@
         const r = p.result, inp = p.inputs || {};
         const st = { code: p.code, key: `${p.code}|${t.key}`, name: p.name, scheme: t.key, pay_type: p.pay_type || '', dirty: false,
                      is_substitute: !!p.is_substitute, is_month_extra: !!p.is_month_extra, saved: !!p.saved,
+                     saved_total: p.saved ? Number(p.saved_total) || 0 : null,
                      cash_amount: p.cash_amount || 0, cash_from_prev: !!p.cash_from_prev, adjustment: num(inp.adjustment), note: inp.note || '', result: r };
         if (t.key === 'altjin_seller') {
             Object.assign(st, { sales: num(inp.sales), returns: num(inp.returns),
@@ -392,7 +395,7 @@
                 st.sk_auto = { sales: r.lines[0]?.auto_sales || 0, returns: r.lines[0]?.auto_returns || 0 };
             }
             else {
-                st.deduction_pct = num(inp.deduction_pct); st.plan_pct = num(inp.plan_pct);
+                st.plan_pcts = Object.fromEntries(Object.entries(inp.plan_pcts || {}).map(([k, v]) => [k, num(v)]).filter(([, v]) => v !== null));
                 st.transfers = (inp.transfers || []).map((x) => ({ channel: x.channel, amount: num(x.amount), rate: Number(x.rate) || 0 }));
             }
         }
@@ -410,6 +413,14 @@
         const chs = new Set([...(p.transfers || []).map((x) => x.channel), ...(extra ? [extra] : [])]);
         people.filter((q) => q !== p && q.scheme === p.scheme && (q.lines || []).some((l) => chs.has(l.channel))).forEach(rerender);
     }
+    // Сувгийн төлөвлөгөөт барааны биелэлт (≤100%) - sales_bonus.plan_auto_pct-тай ижил; бараагүй бол null
+    function planAuto(channel) {
+        const f = (STATE.plan_fulfil || {})[channel];
+        const pcs = f ? Number(f.pcs) || 0 : 0;
+        return pcs ? round2((Number(f.capped) || 0) / pcs * 100) : null;
+    }
+    const pctText = (v) => (Math.round(v * 100) / 100).toLocaleString('en-US', { maximumFractionDigits: 2 }) + '%';
+
     function autoOf(p, channel) {
         if (p.scheme === 'storekeeper') return p.sk_auto;  // ажилласан өдрүүдээр серверт бодсон
         return channelsOf(p.scheme)[channel] || { sales: 0, returns: 0 };
@@ -488,14 +499,23 @@
                 out.inventory = p.inventory ?? 0;
                 total += out.inventory;
             } else {
-                const base = sub * S.deduction_base_pct / 100;
-                out.deduction_pct = p.deduction_pct ?? 0;
-                out.plan_pct = p.plan_pct ?? 100;
-                out.base = base;
-                out.deduction = base * out.deduction_pct / 100;
-                out.plan_part = base * out.plan_pct / 100;
-                out.plan_loss = base - out.plan_part;
-                total = sub - out.deduction - out.plan_loss;
+                // Суурь% (10%)-ийг 100% гэж үзээд биелэлтээр олгож, биелээгүй үлдсэн хувиар (тасралт) хасна
+                // Суваг тус бүрээр: мөр бүр ба шилжүүлж авсан дүн бүр (шилжүүлсэн сувгийнхаа биелэлтээр)
+                const rows = [...out.lines.map((l) => ({ channel: l.channel, bonus: l.bonus, transfer: false })),
+                              ...out.transfers.map((x) => ({ channel: x.channel, bonus: x.bonus, transfer: true, owner: x.owner }))];
+                out.plan_rows = rows.map((r) => {
+                    const auto = planAuto(r.channel), manual = (p.plan_pcts || {})[r.channel];
+                    const pctV = Math.min(Math.max(manual ?? auto ?? 100, 0), 100);
+                    const base = r.bonus * S.deduction_base_pct / 100, part = base * pctV / 100;
+                    return { ...r, base, plan_auto: auto, plan_override: manual !== undefined && manual !== null,
+                             plan_pct: pctV, plan_part: part, deduction_pct: 100 - pctV, deduction: base - part };
+                });
+                out.base = out.plan_rows.reduce((s, r) => s + r.base, 0);
+                out.plan_part = out.plan_rows.reduce((s, r) => s + r.plan_part, 0);
+                out.deduction = out.base - out.plan_part;
+                out.plan_pct = out.base ? round2(out.plan_part / out.base * 100) : 100;
+                out.deduction_pct = 100 - out.plan_pct;
+                total = sub - out.deduction;
             }
         }
         out.adjustment = p.adjustment ?? 0;
@@ -512,7 +532,7 @@
         if (p.scheme === 'altjin_seller') return { ...base, sales: p.sales, returns: p.returns };
         if (p.scheme === 'distributor') return { ...base, delivery_amount: p.delivery_amount, criteria: p.criteria, solo_days: p.solo_days, helper_days: p.helper_days };
         const extra = p.scheme === 'storekeeper' ? { inventory: p.inventory }
-            : { deduction_pct: p.deduction_pct, plan_pct: p.plan_pct, transfers: (p.transfers || []).map((x) => ({ channel: x.channel, amount: x.amount, rate: x.rate })) };
+            : { plan_pcts: p.plan_pcts || {}, transfers: (p.transfers || []).map((x) => ({ channel: x.channel, amount: x.amount, rate: x.rate })) };
         return { ...base, ...extra, lines: p.lines.map((l) => ({ channel: l.channel, rate: l.rate, sales: l.sales, returns: l.returns })) };
     }
 
@@ -606,10 +626,16 @@
                     ${transferOptions(p) ? `<select class="text-xs border border-dashed border-gray-300 rounded-lg px-2 py-1 bg-white text-gray-600" data-add-transfer aria-label="Өөр ажилтны сувгаас шилжүүлэх"><option value="">⇄ Өөр ${p.scheme === 'cash_seller' ? 'борлуулагчийн' : 'ХТ-ийн'} сувгаас дүн шилжүүлэх...</option>${transferOptions(p)}</select>` : ''}
                 </div></td></tr>`}
                 <tr class="sum"><td class="l" colspan="5">Нийт нэмэгдэл</td><td data-o="subtotal">${money(c.subtotal)}</td><td></td></tr>
-                ${`<tr class="minus"><td class="l" colspan="3">Хасагдах дүн <span class="sb-sub">(нийт × ${S.deduction_base_pct}% × тасралтын хувь)</span></td>
-                        <td colspan="2"><span class="inline-flex items-center gap-1">${input('data-f="deduction_pct" step="0.01" min="0" max="100"', p.deduction_pct, '0', 'in-rate')}<span class="text-gray-400">%</span></span></td><td class="amt" data-o="deduction">${c.deduction ? '−' + money(c.deduction) : '—'}</td><td></td></tr>
-                   <tr class="minus"><td class="l" colspan="3">Төлөвлөгөөт барааны биелэлт <span class="sb-sub">(${S.deduction_base_pct}% хэсэг: <span data-o="plan_part">${money(c.plan_part)}</span>)</span></td>
-                        <td colspan="2"><span class="inline-flex items-center gap-1">${input('data-f="plan_pct" step="0.01" min="0" max="100"', p.plan_pct, '100', 'in-rate')}<span class="text-gray-400">%</span></span></td><td class="amt" data-o="plan_loss">${c.plan_loss > 0.5 ? '−' + money(c.plan_loss) : '—'}</td><td></td></tr>`}
+                ${c.plan_rows.map((r, i) => {
+                    // Нэг мөртэй бол сувгийн нэргүй (хуучин шиг); шилжүүлэг / олон суваг бол сувгийг нь тусад нь
+                    const label = c.plan_rows.length > 1 ? ` · ${r.transfer ? '⇄ ' : ''}${esc(accountLabel(r.channel, p.scheme))}` : '';
+                    return `<tr class="minus"><td class="l" colspan="3">Төлөвлөгөөт барааны биелэлт${label} <span class="sb-sub">(${S.deduction_base_pct}% хэсэг: <span data-o="pbase-${i}">${money(r.base)}</span>)</span></td>
+                        <td colspan="2"><span class="inline-flex items-center gap-1">${input(`data-pf="${esc(r.channel)}" step="0.01" min="0" max="100"`, (p.plan_pcts || {})[r.channel], r.plan_auto ?? 100, 'in-rate')}<span class="text-gray-400">%</span></span></td>
+                        <td class="amt" data-o="ppart-${i}">${money(r.plan_part)}</td><td></td></tr>
+                    <tr class="minus"><td class="l" colspan="3">Хасагдах дүн${label} <span class="sb-sub">(нийт × ${S.deduction_base_pct}% × тасралтын хувь)</span></td>
+                        <td colspan="2" class="text-gray-700" data-o="pdedpct-${i}">${pctText(r.deduction_pct)}</td>
+                        <td class="amt" data-o="pded-${i}">${r.deduction > 0.005 ? '−' + money(r.deduction) : '—'}</td><td></td></tr>`;
+                }).join('')}
                 ${adjRows(p, c, 7, true)}
                 </tbody></table></div>`;
         }
@@ -673,7 +699,12 @@
                 <td style="min-width:9.5rem">${input('data-f="adjustment" step="0.01"', p.adjustment, '0', 'in-money')}</td>${inTable ? '<td></td>' : ''}</tr>
             <tr class="final"><td class="l" colspan="${cols}">${p.scheme === 'distributor' ? 'Дүн' : 'Борлуулалтын нэмэгдэл'}</td><td data-o="total">${money(c.total)}</td>${inTable ? '<td></td>' : ''}</tr>`;
     }
-    const statusOf = (p) => (p.dirty ? ['dirty', 'Хадгалаагүй'] : p.saved ? ['saved', 'Хадгалсан'] : ['', 'Хадгалаагүй (автомат)']);
+    // Хуучирсан: хадгалсан бодолт нь одоогийн өгөгдлөөр бодсон дүнгээс зөрсөн (хадгалсны дараа борлуулалт /
+    // түгээлт нэмэгдсэн) - хуудас шинэ дүнг харуулж байгаа ч өгөгдлийн санд хуучин нь байгаа тул дахин хадгална
+    const isStale = (p) => p.saved && !p.dirty && Math.abs(compute(p).total - p.saved_total) >= 1;
+    const statusOf = (p) => (p.dirty ? ['dirty', 'Хадгалаагүй']
+        : isStale(p) ? ['dirty', `Хадгалсан ${money(p.saved_total)}₮ хуучирсан - дахин хадгална уу`]
+        : p.saved ? ['saved', 'Хадгалсан'] : ['', 'Хадгалаагүй (автомат)']);
 
     function renderAll() {
         STATE.tabs.forEach((t) => {
@@ -713,8 +744,8 @@
         document.getElementById('save-form').classList.toggle('show', pending > 0);
     }
     // Хадгалах мөрүүд: өөрчилсөн + огт хадгалаагүй автомат бодолт (0-ээс өөр) - эс бөгөөс автомат нэмэгдэл
-    // цалин бодолтод орохгүй үлддэг
-    function pendingPeople() { return people.filter((p) => p.dirty || (!p.saved && compute(p).total !== 0)); }
+    // цалин бодолтод орохгүй үлддэг. Мөн хадгалсан ч хуучирсан бодолт (isStale)
+    function pendingPeople() { return people.filter((p) => p.dirty || isStale(p) || (!p.saved && compute(p).total !== 0)); }
     function touch(p) {
         p.dirty = JSON.stringify(payloadOf(p)) !== p.initial;
         rerender(p);
@@ -737,9 +768,14 @@
             (c.transfers || []).forEach((x, i) => { set(`tnet-${i}`, money(x.amount || 0)); set(`tbonus-${i}`, money(x.bonus)); });
             set('subtotal', money(c.subtotal));
             if (p.scheme !== 'storekeeper') {
-                set('deduction', c.deduction ? '−' + money(c.deduction) : '—');
+                set('deduction', c.deduction > 0.005 ? '−' + money(c.deduction) : '—');
+                set('deduction_pct', pctText(c.deduction_pct));
+                set('base', money(c.base));
                 set('plan_part', money(c.plan_part));
-                set('plan_loss', c.plan_loss > 0.5 ? '−' + money(c.plan_loss) : '—');
+                c.plan_rows.forEach((r, i) => {
+                    set(`pbase-${i}`, money(r.base)); set(`ppart-${i}`, money(r.plan_part));
+                    set(`pdedpct-${i}`, pctText(r.deduction_pct)); set(`pded-${i}`, r.deduction > 0.005 ? '−' + money(r.deduction) : '—');
+                });
             }
         }
         el.classList.toggle('dirty', p.dirty);
@@ -761,6 +797,12 @@
         } else if (t.dataset.lf) {
             const line = p.lines[Number(t.closest('tr').dataset.line)];
             line[t.dataset.lf] = t.dataset.lf === 'rate' ? (t.value === '' ? 0 : Number(t.value)) : num(t.value);
+        } else if (t.dataset.pf !== undefined) {
+            // Сувгийн биелэлтийг гараар (хоосон бол төлөвлөгөөнөөс)
+            p.plan_pcts = { ...(p.plan_pcts || {}) };
+            if (t.value === '') delete p.plan_pcts[t.dataset.pf]; else p.plan_pcts[t.dataset.pf] = num(t.value);
+            refresh(p);
+            return;
         } else if (t.dataset.tf) {
             const x = p.transfers[Number(t.closest('tr').dataset.tr)];
             x[t.dataset.tf] = t.dataset.tf === 'rate' ? (t.value === '' ? 0 : Number(t.value)) : num(t.value);
@@ -902,8 +944,11 @@
             if (p.scheme === 'storekeeper') rows += r('Тооллого', '', c.inventory ? nf2.format(c.inventory) : '-', 'b');
             else {
                 rows += r('НИЙТ НЭМЭГДЭЛ', '', nf2.format(c.subtotal), 'b');
-                rows += r(`ХАСАГДАХ ДҮН /Нийт нэмэгдэл *${S.deduction_base_pct}%*тасралтын хувь/`, pct(c.deduction_pct), c.deduction ? nf2.format(c.deduction) : '-', 'b');
-                rows += r('Төлөвлөгөөт барааны биелэлтийн хувь', pct(c.plan_pct), nf2.format(c.plan_part));
+                c.plan_rows.forEach((x) => {
+                    const label = c.plan_rows.length > 1 ? `: ${x.transfer ? '⇄ ' : ''}${esc(accountLabel(x.channel, p.scheme))}` : '';
+                    rows += r(`ХАСАГДАХ ДҮН /Нийт нэмэгдэл *${S.deduction_base_pct}%*тасралтын хувь/${label}`, pct(x.deduction_pct), x.deduction > 0.005 ? nf2.format(x.deduction) : '-', 'b');
+                    rows += r(`Төлөвлөгөөт барааны биелэлтийн хувь${label}`, pct(x.plan_pct), nf2.format(x.plan_part));
+                });
             }
         }
         if (c.adjustment) rows += r(esc(p.note || 'Нэмэх / хасах'), '', nf2.format(c.adjustment));

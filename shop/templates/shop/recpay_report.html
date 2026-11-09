@@ -63,6 +63,19 @@
     .delta.up { color: var(--bad-text); background: var(--bad-bg); }
     .delta.down { color: var(--good-text); background: var(--good-bg); }
     .delta.flat { color: var(--ink-2); background: #f3f4f6; }
+    /* Төлөгдсөн дүнгийн задаргаа */
+    .cr-stack { display: flex; height: 14px; border-radius: 999px; overflow: hidden; background: #efefec; gap: 2px; }
+    .cr-dot { width: .7rem; height: .7rem; border-radius: 999px; flex-shrink: 0; }
+    .cr-cash { background: #2f9e5b !important; }
+    .cr-bank { background: var(--series-1) !important; }
+    .cr-refund { background: var(--series-2) !important; }
+    .cr-discount { background: #a855f7 !important; }
+    .cr-other { background: #9ca3af !important; }
+    .cr-acc summary { list-style: none; cursor: pointer; }
+    .cr-acc summary::-webkit-details-marker { display: none; }
+    .cr-acc summary:hover { background: #f7f7f5; }
+    .cr-caret { display: inline-block; color: var(--muted); transition: transform .15s; }
+    .cr-acc[open] .cr-caret { transform: rotate(90deg); }
     .meter { height: 8px; border-radius: 999px; background: #efefec; overflow: hidden; }
     .meter > div { height: 100%; border-radius: 999px; background: var(--age-3); }
 
@@ -147,7 +160,7 @@
 {% endblock %}
 
 {% block content %}
-{% load product_filters %}
+{% load product_filters humanize %}
 <div class="flex min-h-screen bg-gray-50">
     {% include 'shop/_sidebar.html' with active_page=active_page %}
 
@@ -164,10 +177,12 @@
                 </p>
             </div>
             <div class="flex flex-wrap items-center gap-2 no-print">
+                {% if not ht_scope %}
                 <div class="seg" role="group" aria-label="Тайлан">
                     <a href="{% url 'shop:receivable_report' %}?{{ query_string }}" {% if kind == 'receivable' %}aria-current="page"{% endif %}>Авлага</a>
                     <a href="{% url 'shop:payable_report' %}?{{ query_string }}" {% if kind == 'payable' %}aria-current="page"{% endif %}>Өглөг</a>
                 </div>
+                {% endif %}
                 <a href="{% if kind == 'receivable' %}{% url 'shop:receivable_export' %}{% else %}{% url 'shop:payable_export' %}{% endif %}?{{ query_string }}"
                    class="inline-flex items-center gap-1.5 text-sm font-medium px-3.5 py-2 rounded-lg border border-gray-200 bg-white hover:bg-gray-50">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 3v12m0 0l-4-4m4 4l4-4M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>
@@ -176,6 +191,21 @@
                 <button type="button" onclick="window.print()" class="inline-flex items-center gap-1.5 text-sm font-medium px-3.5 py-2 rounded-lg border border-gray-200 bg-white hover:bg-gray-50">🖨 Хэвлэх</button>
             </div>
         </div>
+
+        {% if ht_scope %}
+        {# ХТ / борлуулагч зөвхөн өөрийн хариуцсан (сүүлийн 90 хоногт хамгийн олон борлуулалт хийсэн) сувгийн харилцагчдыг харна #}
+        {% if ht_scope.channels %}
+        <div class="flex flex-wrap items-center gap-2 px-4 py-2.5 rounded-xl bg-blue-50 border border-blue-200 text-sm text-blue-900">
+            <span>🔒 {{ ht_scope.employee_name }}, та зөвхөн өөрийн хариуцсан сувгийн харилцагчдын авлагыг харж байна:</span>
+            {% for code, name in ht_scope.channels %}<strong>{{ code }} {{ name }}</strong>{% if not forloop.last %},{% endif %}{% endfor %}
+        </div>
+        {% else %}
+        <div class="px-4 py-2.5 rounded-xl bg-amber-50 border border-amber-200 text-sm text-amber-900">
+            ⚠️ Таны ажилтны код (<strong>{{ ht_scope.employee_code }}</strong>)-той борлуулагчийн кодоор сүүлийн 90 хоногт
+            борлуулалт хийгдсэн суваг олдсонгүй тул тайлан хоосон харагдана. Системийн администраторт хандана уу.
+        </div>
+        {% endif %}
+        {% endif %}
 
         {# Шүүлт #}
         <form id="rp-form" method="get" class="rp-card p-4 lg:p-5 space-y-4 no-print">
@@ -381,6 +411,78 @@
                 <div class="flex gap-1" id="pager"></div>
             </div>
         </section>
+
+        {% if credits %}
+        {# Төлөгдсөн (кредит) талын задаргаа - борлуулагчид #}
+        <section class="rp-card p-5" aria-labelledby="credits-title">
+            <div class="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                    <h3 id="credits-title">Төлөгдсөн дүн юугаар орсон бэ?</h3>
+                    <p class="rp-sub">{{ filters.date_from|date:'Y.m.d' }} – {{ filters.date_to|date:'Y.m.d' }} · авлагын кредит талыг харьцсан дансаар задалсан · данс дээр дарахад гүйлгээнүүд харагдана</p>
+                </div>
+                <div class="text-right">
+                    <div class="kpi-label">Нийт төлөгдсөн</div>
+                    <div class="text-xl font-bold rp-num">{{ credits.total|floatformat:0|intcomma }}₮</div>
+                    <div class="rp-sub">{{ credits.count }} гүйлгээ</div>
+                </div>
+            </div>
+            {% if credits.groups %}
+            <div class="cr-stack mt-4" role="img" aria-label="Төлөгдсөн дүнгийн бүтэц">
+                {% for g in credits.groups %}<div class="cr-{{ g.key }}" style="width: {{ g.share|stringformat:'.2f' }}%" title="{{ g.label }} {{ g.share|floatformat:1 }}%"></div>{% endfor %}
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mt-4">
+                {% for g in credits.groups %}
+                <div class="rounded-xl border border-gray-100 p-4">
+                    <div class="flex items-center justify-between gap-3">
+                        <div class="flex items-center gap-2 min-w-0">
+                            <span class="cr-dot cr-{{ g.key }}"></span>
+                            <span class="font-semibold">{{ g.icon }} {{ g.label }}</span>
+                        </div>
+                        <div class="text-right shrink-0">
+                            <div class="font-bold rp-num">{{ g.amount|floatformat:0|intcomma }}₮</div>
+                            <div class="rp-sub rp-num">{{ g.share|floatformat:1 }}% · {{ g.count }} гүйлгээ</div>
+                        </div>
+                    </div>
+                    <ul class="mt-3 space-y-1">
+                        {% for a in g.accounts %}
+                        <li>
+                            {# Дарахад тухайн дансаар орсон гүйлгээнүүд задарна #}
+                            <details class="cr-acc">
+                                <summary class="rounded-lg px-2 py-1.5 -mx-2">
+                                    <div class="flex items-baseline justify-between gap-3 text-sm">
+                                        <span class="min-w-0 truncate" title="{{ a.code }} {{ a.name }}"><span class="cr-caret">▸</span> <span class="text-gray-400 rp-num">{{ a.code }}</span> {{ a.name }}{% if g.key == 'other' and a.doc_type and a.doc_type != a.name %} <span class="rp-sub">· {{ a.doc_type }}</span>{% endif %}</span>
+                                        <span class="rp-num shrink-0">{{ a.amount|floatformat:0|intcomma }}₮ <span class="rp-sub">({{ a.count }})</span></span>
+                                    </div>
+                                    {% if g.accounts|length > 1 %}<div class="meter mt-1" style="height:4px"><div class="cr-{{ g.key }}" style="width: {{ a.share|stringformat:'.1f' }}%"></div></div>{% endif %}
+                                </summary>
+                                <div class="mt-1 mb-2 max-h-80 overflow-auto rounded-lg border border-gray-100">
+                                    <table class="w-full text-xs">
+                                        <thead class="bg-gray-50 text-gray-500 sticky top-0">
+                                            <tr><th class="px-2 py-1.5 text-left">Огноо</th><th class="px-2 py-1.5 text-left">Харилцагч / гүйлгээний утга</th><th class="px-2 py-1.5 text-right">Дүн</th></tr>
+                                        </thead>
+                                        <tbody class="divide-y divide-gray-100">
+                                            {% for t in a.items %}
+                                            <tr class="align-top">
+                                                <td class="px-2 py-1.5 whitespace-nowrap rp-num">{{ t.date }}<div class="text-gray-400">{{ t.number }}</div></td>
+                                                <td class="px-2 py-1.5"><div class="font-medium text-gray-800">{{ t.customer }}</div><div class="text-gray-500">{{ t.desc }}</div></td>
+                                                <td class="px-2 py-1.5 text-right whitespace-nowrap rp-num font-semibold">{{ t.amount|floatformat:0|intcomma }}₮</td>
+                                            </tr>
+                                            {% endfor %}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </details>
+                        </li>
+                        {% endfor %}
+                    </ul>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <p class="rp-sub mt-4">Энэ хугацаанд төлөгдсөн дүн алга.</p>
+            {% endif %}
+        </section>
+        {% endif %}
     </main>
 </div>
 
@@ -393,6 +495,9 @@
             <h2 id="drawer-title" class="text-lg font-bold truncate"></h2>
             <div id="drawer-meta" class="rp-sub"></div>
         </div>
+        {% if kind == 'receivable' and 'invoices' in visible_menu_keys %}
+        <a id="drawer-invoice" href="#" class="ml-auto shrink-0 inline-flex items-center gap-1.5 text-sm font-medium px-3.5 py-2 rounded-lg bg-primary text-white hover:bg-green-700">🧾 Нэхэмжлэх</a>
+        {% endif %}
         <button type="button" id="drawer-close" class="p-2 rounded-lg hover:bg-gray-100" aria-label="Хаах">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
         </button>
@@ -415,6 +520,7 @@
                   increase: {{ report.kpis.increase|stringformat:'f' }}, decrease: {{ report.kpis.decrease|stringformat:'f' }} };
     const LEDGER_URL = '{% if kind == "receivable" %}{% url "shop:receivable_ledger" %}{% else %}{% url "shop:payable_ledger" %}{% endif %}';
     const QUERY = new URLSearchParams('{{ query_string|escapejs }}');
+    const INVOICE_URL = '{% url "shop:invoice_new" %}';
     const AGE_COLORS = ['var(--age-0)', 'var(--age-1)', 'var(--age-2)', 'var(--age-3)', 'var(--age-4)'];
     const BUCKETS = ['b0', 'b1', 'b2', 'b3', 'b4'];
     const INC_LABEL = '{{ cfg.increase_label|escapejs }}', DEC_LABEL = '{{ cfg.decrease_label|escapejs }}';
@@ -787,6 +893,11 @@
         lastFocus = document.activeElement;
         document.getElementById('drawer-title').textContent = r.name;
         document.getElementById('drawer-meta').textContent = `${r.code} · ${r.group} · ${r.account}`;
+        const invoiceLink = document.getElementById('drawer-invoice');
+        if (invoiceLink) {
+            invoiceLink.style.display = GROUP_BY === 'customer' ? '' : 'none';
+            invoiceLink.href = `${INVOICE_URL}?customer=${encodeURIComponent(r.key)}&date_to=${QUERY.get('date_to') || '{{ filters.date_to|date:"Y-m-d" }}'}`;
+        }
         const kpi = (label, v, strong) => `<div><div class="rp-sub">${label}</div><div class="rp-num ${strong ? 'font-bold text-base' : 'font-semibold'} ${v < -0.5 ? 'neg' : ''}">${money(v)}</div></div>`;
         document.getElementById('drawer-kpis').innerHTML = kpi('Эхний үлдэгдэл', r.opening) + kpi('Нэмэгдсэн', r.increase) + kpi('Төлөгдсөн', r.decrease) + kpi('Эцсийн үлдэгдэл', r.closing, true);
         const body = document.getElementById('drawer-body');

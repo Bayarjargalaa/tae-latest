@@ -12,6 +12,8 @@
     * doc - баримтын огнооноос дуусах огноо хүртэл хэд хоног болсноор (анхдагч; ихэнх гүйлгээнд төлөх огноо
       баримтын огноотой ижил тул)
     * due - төлөх огнооноос (DueDate; хоосон эсвэл баримтын огнооноос өмнө бол баримтын огноо) хэд хоног хэтэрснээр
+- ХТ / борлуулагч (shop.services.sales_ht_access) зөвхөн өөрийн хариуцсан сувгийн харилцагчдыг
+  (OpenDataCustomer.DistributionChannelId) харна - filters['channels'].
 """
 from datetime import date, timedelta
 
@@ -79,6 +81,8 @@ BALANCE_FILTERS = {
 
 EPS = 0.5  # бөөрөнхийлөлтийн үлдэгдлийг 0 гэж үзэх
 
+CHANNEL_WHERE = '"CustomerId" IN (SELECT "Id" FROM "OpenDataCustomer" WHERE "DistributionChannelId" = ANY(%s))'
+
 
 def _fetch(sql, params):
     with connection.cursor() as cursor:
@@ -111,22 +115,28 @@ def _where(kind, filters, date_to=True):
     if filters.get('customer'):
         parts.append('"CustomerId" = %s')
         params.append(filters['customer'])
+    if filters.get('channels') is not None:
+        parts.append(CHANNEL_WHERE)
+        params.append(list(filters['channels']))
     return ' AND '.join(parts), params
 
 
-def filter_options(kind):
-    """Шүүлтийн сонголтууд: данс, харилцагчийн бүлэг, валют."""
+def filter_options(kind, channels=None):
+    """Шүүлтийн сонголтууд: данс, харилцагчийн бүлэг, валют (channels өгвөл зөвхөн тэр сувгуудын харилцагчдаас)."""
     cfg = KINDS[kind]
+    where, params = cfg['account_where'], list(cfg['account_params'])
+    if channels is not None:
+        where, params = f'{where} AND {CHANNEL_WHERE}', params + [list(channels)]
     accounts = _fetch(
         f'SELECT "AccountId" AS id, MAX("AccountName") AS name, COUNT(*) AS n FROM {TABLE} '
-        f'WHERE {cfg["account_where"]} GROUP BY 1 ORDER BY 1', cfg['account_params'],
+        f'WHERE {where} GROUP BY 1 ORDER BY 1', params,
     )
     groups = _fetch(
         f'SELECT COALESCE(NULLIF("CustomerGroupId", \'\'), \'(бүлэггүй)\') AS id, COUNT(DISTINCT "CustomerId") AS n '
-        f'FROM {TABLE} WHERE {cfg["account_where"]} GROUP BY 1 ORDER BY 1', cfg['account_params'],
+        f'FROM {TABLE} WHERE {where} GROUP BY 1 ORDER BY 1', params,
     )
     currencies = [r['id'] for r in _fetch(
-        f'SELECT DISTINCT "CurrencyId" AS id FROM {TABLE} WHERE {cfg["account_where"]} ORDER BY 1', cfg['account_params'],
+        f'SELECT DISTINCT "CurrencyId" AS id FROM {TABLE} WHERE {where} ORDER BY 1', params,
     )]
     return {'accounts': accounts, 'groups': groups, 'currencies': currencies}
 
@@ -338,3 +348,97 @@ def ledger(kind, filters, customer, account=None, limit=1000):
             'balance': round(running, 2),
         })
     return {'opening': float(opening or 0), 'items': items, 'truncated': len(rows) > limit, 'closing': running}
+
+
+# ---------------------------------------------------------------------------
+# Төлөгдсөн (кредит) талын задаргаа - авлагыг юугаар хаасан бэ (касс, харилцах, буцаалт г.м.)
+# ---------------------------------------------------------------------------
+# OpenDataRecPay-д харьцсан данс байхгүй тул баримтын (DocumentPkId) ерөнхий журналын (OpenDataGeneralLedger)
+# дебит мөрөөс авна. Бараа материал, өртөг, НӨАТ-ын мөр (буцаалтын хажуугийн бичилт) харьцсан данс биш тул
+# алгасна. Нэг баримтад олон дебит мөр байвал: тухайн харилцагчийн мөр -> касс/харилцах -> хамгийн их дүнтэй.
+CONTRA_SKIP = ('15', '61', '3106', '1202')
+
+# (данс эхлэх, бүлгийн түлхүүр, нэр, тэмдэг) - эхний таарсан нь
+CREDIT_CATEGORIES = [
+    ('10', 'cash', 'Касс (бэлэн мөнгө)', '💵'),
+    ('11', 'bank', 'Харилцах (банк)', '🏦'),
+    ('5202', 'refund', 'Борлуулалтын буцаалт', '↩️'),
+    ('5201', 'discount', 'Борлуулалтын хөнгөлөлт', '🏷️'),
+]
+OTHER_CATEGORY = ('other', 'Бусад', '📄')
+
+
+def _credit_category(account_id):
+    for prefix, key, label, icon in CREDIT_CATEGORIES:
+        if account_id and account_id.startswith(prefix):
+            return key, label, icon
+    return OTHER_CATEGORY
+
+
+def credit_breakdown(kind, filters):
+    """Хугацааны кредит (төлөгдсөн) дүнг харьцсан дансаар: [{key, label, icon, amount, count, share, accounts: [...]}].
+    Данс бүр гүйлгээнийхээ жагсаалттай (items, шинэ нь эхэнд) - дарахад задарна."""
+    cfg = KINDS[kind]
+    where, params = _where(kind, filters)
+    skip = ' AND '.join('g."AccountId" NOT LIKE %s' for _ in CONTRA_SKIP)
+    sql = f'''
+        WITH cr AS (
+            SELECT "RowNumber" AS rn, "DocumentPkId", "CustomerId", "AccountId", {cfg['decrease']} AS amt,
+                   "DocumentDate", "DocumentNumber", "DocumentDesc", "CustomerName"
+            FROM {TABLE} WHERE {where} AND "DocumentDate" >= %s AND {cfg['decrease']} > 0
+        ),
+        contra AS (
+            SELECT DISTINCT ON (cr.rn) cr.rn, g."AccountId" AS account, g."AccountName" AS account_name
+            FROM cr JOIN "OpenDataGeneralLedger" g ON g."DocumentPkId" = cr."DocumentPkId"
+            WHERE g."DebitAmt" > 0 AND g."AccountId" <> cr."AccountId" AND {skip}
+            ORDER BY cr.rn, (g."CustomerId" = cr."CustomerId") DESC NULLS LAST,
+                     (g."AccountId" LIKE '10%%' OR g."AccountId" LIKE '11%%') DESC, g."DebitAmt" DESC
+        ),
+        doc_type AS (
+            SELECT DISTINCT ON (g."DocumentPkId") g."DocumentPkId", g."DocumentTypeName" AS doc_type
+            FROM "OpenDataGeneralLedger" g WHERE g."DocumentPkId" IN (SELECT "DocumentPkId" FROM cr)
+        )
+        SELECT contra.account, contra.account_name, doc_type.doc_type, cr.amt, cr."DocumentDate" AS d,
+               cr."DocumentNumber" AS num, cr."DocumentDesc" AS descr, cr."CustomerId" AS customer_id,
+               cr."CustomerName" AS customer_name
+        FROM cr LEFT JOIN contra ON contra.rn = cr.rn
+        LEFT JOIN doc_type ON doc_type."DocumentPkId" = cr."DocumentPkId"
+        ORDER BY cr."DocumentDate" DESC, cr.rn DESC
+    '''
+    rows = _fetch(sql, params + [filters['date_from']] + [p + '%' for p in CONTRA_SKIP])
+    total = sum(float(r['amt'] or 0) for r in rows)
+    groups, accounts = {}, {}
+    for r in rows:
+        key, label, icon = _credit_category(r['account'])
+        group = groups.setdefault(key, {'key': key, 'label': label, 'icon': icon, 'amount': 0.0, 'count': 0, 'accounts': []})
+        # Харьцсан данс олдоогүй гүйлгээг баримтын төрлөөр нь ялгана
+        acc_key = r['account'] or f"?{r['doc_type'] or ''}"
+        account = accounts.get(acc_key)
+        if account is None:
+            account = accounts[acc_key] = {
+                'code': r['account'] or '',
+                'name': r['account_name'] or r['doc_type'] or 'Харьцсан данс тодорхойгүй',
+                'doc_type': r['doc_type'] or '',
+                'amount': 0.0, 'count': 0, 'items': [],
+            }
+            group['accounts'].append(account)
+        amount = float(r['amt'] or 0)
+        group['amount'] += amount
+        group['count'] += 1
+        account['amount'] += amount
+        account['count'] += 1
+        account['items'].append({
+            'date': r['d'].isoformat() if r['d'] else '',
+            'number': r['num'] or '',
+            'customer': (r['customer_name'] or r['customer_id'] or '').strip(),
+            'desc': r['descr'] or '',
+            'amount': amount,
+        })
+    order = [c[1] for c in CREDIT_CATEGORIES] + [OTHER_CATEGORY[0]]
+    result = sorted(groups.values(), key=lambda g: order.index(g['key']))
+    for g in result:
+        g['share'] = g['amount'] / total * 100 if total > EPS else 0
+        g['accounts'].sort(key=lambda a: -a['amount'])
+        for a in g['accounts']:
+            a['share'] = a['amount'] / g['amount'] * 100 if g['amount'] > EPS else 0
+    return {'groups': result, 'total': total, 'count': sum(g['count'] for g in result)}

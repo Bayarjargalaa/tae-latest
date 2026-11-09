@@ -14,12 +14,18 @@
             <div class="flex flex-col sm:flex-row sm:items-end justify-between gap-3 mb-4">
                 <div>
                     <h1 class="text-2xl lg:text-3xl font-bold text-gray-900">🎯 Борлуулалтын төлөвлөгөө</h1>
-                    <p class="text-sm text-gray-600 mt-1">Суваг бүрийн сарын дүн ба ХТ тус бүрийн төлөвлөгөөт бараа. Хяналтын самбарын биелэлтэд ашиглагдана.</p>
+                    {% if readonly %}
+                    <p class="text-sm text-gray-600 mt-1">{{ scope.employee_name }} - таны хариуцсан сувгийн төлөвлөгөө ба зарсан тоо{% if not scope.channels %} (хариуцсан суваг олдсонгүй){% endif %}.</p>
+                    {% else %}
+                    <p class="text-sm text-gray-600 mt-1">Суваг бүрийн сарын дүн ба ХТ, борлуулагч тус бүрийн төлөвлөгөөт бараа. Хяналтын самбарын биелэлтэд ашиглагдана.</p>
+                    {% endif %}
                 </div>
                 <div class="flex items-center gap-2">
                     <a href="?month={{ prev_month|date:'Y-m' }}" class="px-3 py-2 rounded-lg border border-gray-300 bg-white hover:bg-gray-50" aria-label="Өмнөх сар">◀</a>
                     <form method="get"><input type="month" name="month" value="{{ month|date:'Y-m' }}" onchange="this.form.submit()" class="border border-gray-300 rounded-lg px-3 py-2"></form>
                     <a href="?month={{ next_month|date:'Y-m' }}" class="px-3 py-2 rounded-lg border border-gray-300 bg-white hover:bg-gray-50" aria-label="Дараах сар">▶</a>
+                    <a href="?month={{ month|date:'Y-m' }}&export=print" target="_blank" rel="noopener" class="px-3 py-2 rounded-lg border border-gray-300 bg-white hover:bg-gray-50 text-sm whitespace-nowrap" title="Хадгалсан төлөвлөгөөг хэвлэх">🖨 Хэвлэх</a>
+                    <a href="?month={{ month|date:'Y-m' }}&export=xlsx" class="px-3 py-2 rounded-lg border border-gray-300 bg-white hover:bg-gray-50 text-sm whitespace-nowrap" title="Хадгалсан төлөвлөгөөг Эксэлээр татах">📊 Эксэл</a>
                 </div>
             </div>
 
@@ -27,12 +33,14 @@
             <div class="space-y-2 mb-4">{% for message in messages %}<div class="p-3 rounded-lg text-sm {% if message.tags == 'warning' %}bg-yellow-100 text-yellow-800{% elif message.tags == 'error' %}bg-red-100 text-red-800{% else %}bg-green-100 text-green-800{% endif %}">{{ message }}</div>{% endfor %}</div>
             {% endif %}
 
+            {% if not readonly %}
             <form method="post" class="mb-4">
                 {% csrf_token %}<input type="hidden" name="month" value="{{ month|date:'Y-m' }}"><input type="hidden" name="action" value="copy_prev">
                 <button class="text-sm px-3 py-2 rounded-lg border border-gray-300 bg-white hover:bg-gray-50" onclick="return confirm('{{ prev_month|date:'Y-m' }} сарын төлөвлөгөөг энэ сард хуулах уу? (Байгаа утгыг өөрчлөхгүй)');">📋 {{ prev_month|date:'Y-m' }} сараас хуулах</button>
             </form>
+            {% endif %}
 
-            <form method="post" id="plan-form">
+            <form method="post" id="plan-form" {% if readonly %}data-readonly onsubmit="return false"{% endif %}>
                 {% csrf_token %}<input type="hidden" name="month" value="{{ month|date:'Y-m' }}">
 
                 <!-- Сувгийн дүн -->
@@ -54,39 +62,87 @@
 
                 <!-- Төлөвлөгөөт бараа -->
                 <section class="bg-white rounded-xl border border-gray-100 shadow-sm p-4 mb-4">
-                    <h2 class="font-semibold text-gray-800">📦 Төлөвлөгөөт бараа (ширхэг)</h2>
-                    <p class="text-xs text-gray-500 mb-3">Онцолж борлуулах бараа нэмээд ХТ тус бүрийн тоо ширхгийн зорилтыг оруулна. Хоосон = зорилтгүй.</p>
-                    <div class="relative mb-3 max-w-xl">
-                        <input type="search" id="item-search" placeholder="Бараа нэмэх: нэр, код, баркодоор хайх..." autocomplete="off" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
-                        <div id="item-results" class="absolute z-10 mt-1 w-full max-h-64 overflow-y-auto bg-white border border-gray-200 rounded-lg shadow-lg hidden"></div>
+                    <div class="flex flex-wrap justify-between items-baseline gap-2">
+                        <h2 class="font-semibold text-gray-800">📦 Төлөвлөгөөт бараа (хайрцаг)</h2>
+                        <button type="button" id="picker-toggle" class="{% if readonly %}hidden {% endif %}text-sm px-3 py-1.5 rounded-lg border border-blue-300 text-blue-700 bg-blue-50 hover:bg-blue-100">☑ Бараа сонгох (<span id="picked-count">{{ items|length }}</span>)</button>
                     </div>
+                    <div class="{% if readonly %}hidden{% endif %}">
+                    <p class="text-xs text-gray-500 mb-3">Бараагаа хайж чеклээд ХТ, борлуулагч тус бүрт хайрцгийн тоог оруулна. Хайрцаг дахь тоог импортын захиалга / ERP-ээс авна, байхгүй бол гараар оруулна. Хоосон = зорилтгүй.</p>
+
+                    <div class="flex flex-wrap items-center gap-2 mb-2">
+                        <input type="search" id="picker-filter" placeholder="🔍 Бараа хайх: нэр, код, баркод... (↑↓ сонгох, Enter чеклэх)" autocomplete="off" class="flex-1 min-w-[14rem] max-w-xl border border-gray-300 rounded-lg px-3 py-2 text-sm">
+                        <label class="text-sm text-gray-600 flex items-center gap-1"><input type="checkbox" id="picker-only-selected"> Зөвхөн сонгосон</label>
+                    </div>
+
+                    <!-- Бараа сонгох жагсаалт -->
+                    <div id="picker" class="hidden border border-gray-200 rounded-lg mb-4">
+                        <div id="picker-none" class="hidden px-3 py-2 text-sm text-gray-500">Олдсонгүй</div>
+                        <div class="max-h-96 overflow-y-auto p-2">
+                            {% regroup catalog by group as groups %}
+                            {% for g in groups %}
+                            <div data-pick-group class="mb-3">
+                                <label class="flex items-center gap-2 text-xs font-semibold text-gray-700 uppercase tracking-wide py-1 sticky top-0 bg-white">
+                                    <input type="checkbox" data-pick-all> {{ g.grouper }} <span class="font-normal text-gray-400">({{ g.list|length }})</span>
+                                </label>
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-x-4">
+                                    {% for c in g.list %}
+                                    <label data-pick-row class="flex items-center gap-2 text-sm py-0.5 hover:bg-blue-50 rounded px-1" data-search="{{ c.name|lower }} {{ c.id|lower }} {{ c.barcode|lower }}">
+                                        <input type="checkbox" data-pick value="{{ c.id }}" data-name="{{ c.name }}" data-per-box="{{ c.per_box }}" data-unit="{{ c.unit }}" data-source="{{ c.source }}" {% if c.selected %}checked{% endif %}>
+                                        <span class="truncate flex-1" title="{{ c.name }}">{{ c.name }}</span>
+                                        <span class="text-[11px] whitespace-nowrap {% if c.per_box %}text-gray-400{% else %}text-orange-500{% endif %}">{% if c.per_box %}{{ c.per_box }} {{ c.unit }}/х{% else %}хайрцаггүй{% endif %}</span>
+                                    </label>
+                                    {% endfor %}
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    </div>
+
                     <div class="overflow-x-auto">
                         <table class="w-full text-sm" id="items-table">
                             <thead class="bg-gray-50 text-xs text-gray-500">
                                 <tr>
-                                    <th class="px-2 py-2 text-left min-w-[14rem]">Бараа</th>
-                                    {% for cid, name in ht_channels %}<th class="px-2 py-2 text-right" title="{{ name }}">{{ name|slice:"3:"|truncatechars:16 }}</th>{% endfor %}
-                                    <th class="px-2 py-2 text-right">Нийт</th><th></th>
+                                    <th class="sticky left-0 z-20 bg-gray-50 px-2 py-2 text-left min-w-[14rem] shadow-[inset_-1px_0_0_#e5e7eb]"><span class="inline-block w-6 mr-2 text-right">№</span>Бараа</th>
+                                    <th class="px-2 py-2 text-right" title="Хайрцаг дахь тоо (барааны хэмжих нэгжээр)">Хайрцаг дахь</th>
+                                    <th class="px-2 py-2 text-left" title="Сувгийн тоог хайрцгаар эсвэл ширхгээр оруулна">Оруулах</th>
+                                    {% for cid, name, excluded, label in ht_channels %}
+                                    <th class="px-2 py-2 text-right align-top" title="{{ name }}">
+                                        <div>{{ label|truncatechars:16 }}</div>
+                                        <label class="inline-flex items-center gap-1 font-normal text-[10px] text-gray-500 cursor-pointer whitespace-nowrap" title="Энэ сувгийг төлөвлөгөөт бараанд хамруулахгүй - бүх тоо 0">
+                                            <input type="checkbox" name="exclude_{{ cid }}" value="1" data-exclude="{{ forloop.counter0 }}" {% if excluded %}checked{% endif %}> хамруулахгүй
+                                        </label>
+                                    </th>
+                                    {% endfor %}
+                                    <th class="px-2 py-2 text-right">Нийт хайрцаг</th><th class="px-2 py-2 text-right">Нийт тоо</th>
+                                    <th class="px-2 py-2 text-right" title="{{ month|date:'Y-m' }} сард ХТ, борлуулагчийн сувгуудад зарагдсан тоо (ширхэг) ба төлөвлөгөөний биелэлт">Зарсан</th><th></th>
                                 </tr>
                             </thead>
                             <tbody class="divide-y divide-gray-100" id="items-body">
-                                {% for item in items %}
-                                <tr data-item="{{ item.id }}">
-                                    <td class="px-2 py-1.5"><input type="hidden" name="items" value="{{ item.id }}"><div class="truncate max-w-xs" title="{{ item.name }}">{{ item.name }}</div><div class="text-[11px] text-gray-400">{{ item.id }}</div></td>
-                                    {% for qty in item.cells %}
-                                    <td class="px-2 py-1.5 text-right"><input type="text" inputmode="numeric" data-qty value="{% if qty %}{{ qty|floatformat:0 }}{% endif %}" class="w-20 text-right tabular-nums border border-gray-300 rounded px-2 py-1"></td>
-                                    {% endfor %}
-                                    <td class="px-2 py-1.5 text-right tabular-nums font-semibold" data-row-total></td>
-                                    <td class="px-2 py-1.5 text-right"><button type="button" data-remove class="text-red-600 hover:bg-red-50 rounded px-2 py-1" title="Хасах">✕</button></td>
-                                </tr>
-                                {% endfor %}
+                                {% for item in items %}{% include 'shop/_sales_plan_row.html' %}{% endfor %}
                             </tbody>
+                            {# Баганын статистик - JS (updateStats) бөглөнө #}
+                            <tfoot id="items-stats" class="bg-gray-50 text-[11px] text-gray-600 border-t-2 border-gray-200 align-top">
+                                <tr>
+                                    <td class="sticky left-0 z-10 bg-gray-50 px-2 py-2 font-semibold text-gray-700 shadow-[inset_-1px_0_0_#e5e7eb]">
+                                        📊 Статистик
+                                        <div class="font-normal text-gray-400 leading-4">бараа · хайрцаг · ширхэг<br>зарсан · хувь<br>биелэлт (≤100%)<br>зарсан төрөл<br>100% хүрсэн бараа</div>
+                                    </td>
+                                    <td></td><td></td>
+                                    {% for c in ht_channels %}<td class="px-2 py-2 text-right whitespace-nowrap tabular-nums" data-stat-col="{{ forloop.counter0 }}"></td>{% endfor %}
+                                    <td class="px-2 py-2 text-right whitespace-nowrap tabular-nums font-semibold" data-stat-boxes></td>
+                                    <td class="px-2 py-2 text-right whitespace-nowrap tabular-nums" data-stat-units></td>
+                                    <td class="px-2 py-2 text-right whitespace-nowrap tabular-nums" data-stat-sold></td>
+                                    <td></td>
+                                </tr>
+                            </tfoot>
                         </table>
-                        <p id="items-empty" class="text-sm text-gray-500 py-3 {% if items %}hidden{% endif %}">Төлөвлөгөөт бараа нэмээгүй байна.</p>
+                        <template id="row-template">{% include 'shop/_sales_plan_row.html' with item=blank_item %}</template>
+                        <p id="items-empty" class="text-sm text-gray-500 py-3 {% if items %}hidden{% endif %}">{% if readonly %}Энэ сард таны сувагт төлөвлөгөөт бараа оруулаагүй байна.{% else %}Төлөвлөгөөт бараа сонгоогүй байна - «☑ Бараа сонгох»-оос чеклэнэ.{% endif %}</p>
                     </div>
                 </section>
 
-                <div class="sticky bottom-0 bg-gray-50/90 backdrop-blur py-3 flex justify-end">
+                <div class="{% if readonly %}hidden{% else %}sticky bottom-0 bg-gray-50/90 backdrop-blur py-3 flex justify-end{% endif %}">
                     <button class="bg-green-600 hover:bg-green-700 text-white font-semibold px-6 py-2.5 rounded-lg">💾 {{ month|date:'Y-m' }} сарын төлөвлөгөө хадгалах</button>
                 </div>
             </form>
@@ -114,78 +170,314 @@
         i.addEventListener('blur', function () { var v = num(i.value); i.value = v ? fmt.format(v) : ''; });
     });
 
-    // Барааны мөр: тоо оруулах талбарт item/суваг-ийн нэрийг онооно
+    var round2 = function (v) { return Math.round(v * 100) / 100; };
+    // Хувь 0.01 нарийвчлалтай (хэвлэх / Эксэл, борлуулалтын нэмэгдэлтэй ижил), үргэлж 2 оронтой харуулна
+    var pct2 = function (part, whole) { return Math.round(part / whole * 10000) / 100; };
+    var pctFmt = new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    var pctText = function (v) { return pctFmt.format(v) + '%'; };
+    function excludedCol(i) { return document.querySelector('[data-exclude="' + i + '"]').checked; }
+    function activeInputs(tr) {
+        return Array.prototype.filter.call(tr.querySelectorAll('[data-qty]'), function (input, i) { return !excludedCol(i); });
+    }
+
+    // Барааны мөр: талбаруудад item/суваг-ийн нэрийг онооно
     function wireRow(tr) {
         var id = tr.dataset.item;
+        var perBox = tr.querySelector('[data-per-box]');
+        var mode = tr.querySelector('[data-unit-mode]');
+        perBox.name = 'per_box_' + id;
+        mode.name = 'unit_' + id;
+        perBox.addEventListener('input', function () {
+            tr.querySelector('[data-source]').textContent = 'гараар';
+            rowTotal(tr);
+        });
+        // Нэгж солиход тоо хэвээр, зөвхөн утга нь өөрчлөгдөнө (ХТ тайлангаас оруулсан тоог хайрцаг/ширхэг гэж энд сонгоно)
+        mode.addEventListener('change', function () { rowTotal(tr); });
         tr.querySelectorAll('[data-qty]').forEach(function (input, i) {
             input.name = 'qty_' + id + '_' + channels[i][0];
-            input.addEventListener('input', function () { rowTotal(tr); });
+            input.dataset.prev = input.value;
+            input.addEventListener('input', function () {
+                // Эхний (хамруулсан) сувгийн тоо хоосон эсвэл түүнийг дагаж байсан бусад сувагт автоматаар орно
+                var active = activeInputs(tr);
+                if (input === active[0]) {
+                    active.slice(1).forEach(function (other) {
+                        if (other.value === '' || other.value === input.dataset.prev) { other.value = input.value; other.dataset.prev = input.value; }
+                    });
+                }
+                input.dataset.prev = input.value;
+                rowTotal(tr);
+            });
         });
-        tr.querySelector('[data-remove]').addEventListener('click', function () { tr.remove(); toggleEmpty(); });
+        tr.querySelector('[data-remove]').addEventListener('click', function () { removeItem(id); });
+        channels.forEach(function (c, i) { applyExclude(tr, i); });
         rowTotal(tr);
     }
-    function rowTotal(tr) {
-        var t = 0;
-        tr.querySelectorAll('[data-qty]').forEach(function (i) { t += num(i.value); });
-        tr.querySelector('[data-row-total]').textContent = t ? fmt.format(t) : '';
+    // Нүд бүрийн доор нөгөө нэгжээр, мөрийн ард нийт хайрцаг / нийт тоо
+    // Зарсан тоо ба биелэлтийн хувь (төлөвлөсөн ширхэгтэй харьцуулна); 100%-иас давсан бол доор нь "биелсэн 100%"
+    function showSold(el, planned, prefix, soldText) {
+        var sold = num(soldText === undefined ? el.dataset.sold : soldText);
+        var pct = planned && sold ? pct2(sold, planned) : null;
+        var text = soldText === undefined
+            ? (sold ? prefix + fmt.format(sold) + (pct !== null ? ' · ' + pctText(pct) : '') : '')
+            : (pct !== null ? pctText(pct) : '');
+        el.innerHTML = '<div>' + text + '</div>' + (pct !== null && pct > 100 ? '<div>биелсэн 100%</div>' : '');
+        el.classList.toggle('text-green-700', pct !== null && pct >= 100);
+        el.classList.toggle('text-amber-600', pct !== null && pct < 100);
+        el.classList.toggle('text-gray-400', pct === null);
     }
-    function toggleEmpty() { empty.classList.toggle('hidden', body.children.length > 0); }
-    Array.prototype.forEach.call(body.children, wireRow);
-
-    function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text) e.textContent = text; return e; }
-    function addItem(item) {
-        if (body.querySelector('[data-item="' + CSS.escape(item.id) + '"]')) return;
-        var tr = el('tr'); tr.dataset.item = item.id;
-        var td = el('td', 'px-2 py-1.5');
-        var hidden = el('input'); hidden.type = 'hidden'; hidden.name = 'items'; hidden.value = item.id;
-        td.appendChild(hidden);
-        var name = el('div', 'truncate max-w-xs', item.name); name.title = item.name;
-        td.appendChild(name); td.appendChild(el('div', 'text-[11px] text-gray-400', item.id));
-        tr.appendChild(td);
-        channels.forEach(function () {
-            var c = el('td', 'px-2 py-1.5 text-right');
-            var i = el('input', 'w-20 text-right tabular-nums border border-gray-300 rounded px-2 py-1');
-            i.type = 'text'; i.inputMode = 'numeric'; i.setAttribute('data-qty', '');
-            c.appendChild(i); tr.appendChild(c);
+    function rowTotal(tr) {
+        var pb = num(tr.querySelector('[data-per-box]').value);
+        var byPcs = tr.querySelector('[data-unit-mode]').value === 'pcs';
+        var unit = tr.querySelector('[data-unit-label]').textContent;
+        var boxes = 0, pcs = 0, missing = false;
+        tr.querySelectorAll('[data-qty]').forEach(function (input) {
+            var v = input.disabled ? 0 : num(input.value);
+            var conv = input.parentNode.querySelector('[data-conv]');
+            showSold(input.parentNode.querySelector('[data-sold]'), byPcs ? v : (pb ? v * pb : 0), 'зарсан ');
+            if (!v) { conv.textContent = ''; return; }
+            if (byPcs) {
+                pcs += v;
+                if (pb) boxes += v / pb;
+                conv.textContent = pb ? '= ' + fmt.format(round2(v / pb)) + ' х' : '';
+            } else {
+                boxes += v;
+                if (pb) pcs += v * pb; else missing = true;
+                conv.textContent = pb ? '= ' + fmt.format(round2(v * pb)) + ' ' + unit : '= ?';
+            }
         });
-        var total = el('td', 'px-2 py-1.5 text-right tabular-nums font-semibold'); total.setAttribute('data-row-total', ''); tr.appendChild(total);
-        var rm = el('td', 'px-2 py-1.5 text-right');
-        var b = el('button', 'text-red-600 hover:bg-red-50 rounded px-2 py-1', '✕'); b.type = 'button'; b.title = 'Хасах'; b.setAttribute('data-remove', '');
-        rm.appendChild(b); tr.appendChild(rm);
+        tr.querySelector('[data-row-boxes]').textContent = boxes ? fmt.format(round2(boxes)) : (byPcs && pcs && !pb ? '—' : '');
+        var units = tr.querySelector('[data-row-units]');
+        units.textContent = missing ? '?' : (pcs ? fmt.format(round2(pcs)) + ' ' + unit : '');
+        units.classList.toggle('text-orange-600', missing);
+        units.title = missing ? 'Хайрцаг дахь тоог оруулна уу, эсвэл ширхгээр оруулна уу' : '';
+        var rowSold = tr.querySelector('[data-row-sold]');
+        showSold(rowSold.querySelector('[data-row-pct]'), missing ? 0 : pcs, '', rowSold.dataset.rowSold);
+        var perBox = tr.querySelector('[data-per-box]');
+        perBox.classList.toggle('border-orange-400', !pb && !byPcs);
+        perBox.classList.toggle('bg-orange-50', !pb && !byPcs);
+        scheduleStats();
+    }
+
+    // Баганын статистик: зорилттой барааны тоо, нийт хайрцаг / ширхэг, зарсан ширхэг, биелэлт, 100% хүрсэн бараа
+    var statsTimer = null;
+    function scheduleStats() {
+        if (statsTimer) return;
+        statsTimer = setTimeout(function () { statsTimer = null; updateStats(); }, 0);
+    }
+    function pctClass(pct) { return pct === null ? 'text-gray-400' : (pct >= 100 ? 'text-green-700' : 'text-amber-600'); }
+    // Биелэлтийн хувь: 100%-иас давсан бараа 100% (төлөвлөсөн тоогоор), хүрээгүй нь зарсан тоогоороо
+    function fulfilHtml(st) {
+        var pct = st.pcs && st.sold ? pct2(st.capped, st.pcs) : null;
+        return pct !== null ? '<div class="' + pctClass(pct) + '">биелэлт ' + pctText(pct) + '</div>' : '';
+    }
+    function statHtml(st) {
+        var pct = st.pcs && st.sold ? pct2(st.sold, st.pcs) : null;
+        return '<div class="font-semibold text-gray-800">' + st.items + ' бараа</div>'
+            + '<div>' + (st.boxes ? fmt.format(round2(st.boxes)) + ' х · ' : '') + fmt.format(round2(st.pcs)) + ' ш</div>'
+            + '<div class="' + pctClass(pct) + '">зарсан ' + fmt.format(round2(st.sold)) + (pct !== null ? ' · ' + pctText(pct) : '') + '</div>'
+            + fulfilHtml(st)
+            + '<div>төрөл: ' + st.typesSold + '/' + st.items + '</div>'
+            + '<div class="text-gray-500">100%: ' + st.done + '/' + st.items + '</div>';
+    }
+    function updateStats() {
+        var cols = channels.map(function () { return {items: 0, boxes: 0, pcs: 0, sold: 0, capped: 0, done: 0, typesSold: 0}; });
+        var total = {items: 0, boxes: 0, pcs: 0, sold: 0, capped: 0, done: 0, typesSold: 0};
+        Array.prototype.forEach.call(body.children, function (tr) {
+            var pb = num(tr.querySelector('[data-per-box]').value);
+            var byPcs = tr.querySelector('[data-unit-mode]').value === 'pcs';
+            var row = {boxes: 0, pcs: 0, sold: 0};
+            tr.querySelectorAll('[data-qty]').forEach(function (input, i) {
+                var v = input.disabled ? 0 : num(input.value);
+                var sold = num(input.parentNode.querySelector('[data-sold]').dataset.sold);
+                var pcs = byPcs ? v : v * pb, boxes = byPcs ? (pb ? v / pb : 0) : v;
+                if (!v) return;  // зорилтгүй сувгийн борлуулалт биелэлтэд орохгүй
+                row.sold += sold;
+                var st = cols[i];
+                st.items++; st.boxes += boxes; st.pcs += pcs; st.sold += sold; st.capped += Math.min(sold, pcs);
+                if (sold > 0) st.typesSold++;
+                if (pcs && sold >= pcs) st.done++;
+                row.boxes += boxes; row.pcs += pcs;
+            });
+            if (row.pcs || row.boxes) {
+                total.items++; total.boxes += row.boxes; total.pcs += row.pcs; total.sold += row.sold;
+                total.capped += Math.min(row.sold, row.pcs);
+                if (row.sold > 0) total.typesSold++;
+                if (row.pcs && row.sold >= row.pcs) total.done++;
+            }
+        });
+        cols.forEach(function (st, i) {
+            document.querySelector('[data-stat-col="' + i + '"]').innerHTML = st.items ? statHtml(st) : '<span class="text-gray-300">—</span>';
+        });
+        var pct = total.pcs && total.sold ? pct2(total.sold, total.pcs) : null;
+        document.querySelector('[data-stat-boxes]').textContent = total.boxes ? fmt.format(round2(total.boxes)) : '';
+        document.querySelector('[data-stat-units]').textContent = total.pcs ? fmt.format(round2(total.pcs)) + ' ш' : '';
+        var soldCell = document.querySelector('[data-stat-sold]');
+        soldCell.innerHTML = '<div class="font-semibold text-gray-800">' + fmt.format(round2(total.sold)) + '</div>'
+            + '<div class="' + pctClass(pct) + '">' + (pct !== null ? pctText(pct) : '') + '</div>'
+            + fulfilHtml(total)
+            + (total.items ? '<div>төрөл: ' + total.typesSold + '/' + total.items + '</div>'
+                + '<div class="text-gray-500">100%: ' + total.done + '/' + total.items + '</div>' : '');
+        document.getElementById('items-stats').classList.toggle('hidden', !body.children.length);
+    }
+    // "Хамруулахгүй" сувгийн тоо 0 (хоосон, идэвхгүй); чекийг авахад өмнөх утга буцна
+    function applyExclude(tr, i) {
+        var input = tr.querySelectorAll('[data-qty]')[i];
+        var off = excludedCol(i);
+        if (off && !input.disabled) { input.dataset.kept = input.value; input.value = ''; }
+        if (!off && input.disabled) { input.value = input.dataset.kept || ''; }
+        input.disabled = off;
+        input.dataset.prev = input.value;
+        input.closest('td').classList.toggle('bg-gray-50', off);
+    }
+    document.querySelectorAll('[data-exclude]').forEach(function (cb) {
+        cb.addEventListener('change', function () {
+            Array.prototype.forEach.call(body.children, function (tr) { applyExclude(tr, Number(cb.dataset.exclude)); rowTotal(tr); });
+        });
+    });
+    function renumber() {
+        Array.prototype.forEach.call(body.children, function (tr, i) { tr.querySelector('[data-row-no]').textContent = i + 1; });
+    }
+    function toggleEmpty() {
+        empty.classList.toggle('hidden', body.children.length > 0);
+        document.getElementById('picked-count').textContent = body.children.length;
+        renumber();
+        scheduleStats();
+    }
+    Array.prototype.forEach.call(body.children, wireRow);
+    renumber();
+
+    var rowTemplate = document.getElementById('row-template');
+    function rowOf(id) { return body.querySelector('[data-item="' + CSS.escape(id) + '"]'); }
+    function addItem(item) {
+        if (rowOf(item.id)) return;
+        var tr = rowTemplate.content.firstElementChild.cloneNode(true);
+        tr.dataset.item = item.id;
+        tr.querySelector('input[name="items"]').value = item.id;
+        tr.querySelector('[data-name]').textContent = item.name;
+        tr.querySelector('[data-name]').title = item.name;
+        tr.querySelector('[data-code]').textContent = item.id;
+        tr.querySelector('[data-per-box]').value = item.perBox;
+        tr.querySelector('[data-unit-label]').textContent = item.unit;
+        tr.querySelector('[data-source]').textContent = item.source;
+        // Хайрцаг дахь тоогүй бараа анхнаасаа ширхгээр
+        tr.querySelector('[data-unit-mode]').value = item.perBox ? 'box' : 'pcs';
         body.appendChild(tr);
         wireRow(tr);
         toggleEmpty();
-        tr.querySelector('[data-qty]').focus();
+    }
+    function removeItem(id) {
+        var tr = rowOf(id);
+        if (tr) tr.remove();
+        var cb = document.querySelector('[data-pick][value="' + CSS.escape(id) + '"]');
+        if (cb) { cb.checked = false; syncGroup(cb.closest('[data-pick-group]')); }
+        toggleEmpty();
     }
 
-    // Бараа хайх
-    var search = document.getElementById('item-search');
-    var results = document.getElementById('item-results');
-    var timer;
-    search.addEventListener('input', function () {
-        clearTimeout(timer);
-        var q = search.value.trim();
-        if (q.length < 2) { results.classList.add('hidden'); return; }
-        timer = setTimeout(function () {
-            fetch('?q=' + encodeURIComponent(q)).then(function (r) { return r.json(); }).then(function (d) {
-                results.innerHTML = '';
-                d.results.forEach(function (item) {
-                    var b = el('button', 'block w-full text-left px-3 py-2 text-sm hover:bg-blue-50');
-                    b.type = 'button';
-                    b.appendChild(el('span', '', item.name));
-                    b.appendChild(el('span', 'ml-2 text-xs text-gray-400', item.id));
-                    b.addEventListener('click', function () { addItem(item); search.value = ''; results.classList.add('hidden'); });
-                    results.appendChild(b);
-                });
-                if (!d.results.length) results.appendChild(el('div', 'px-3 py-2 text-sm text-gray-500', 'Олдсонгүй'));
-                results.classList.remove('hidden');
+    // Бараа сонгох жагсаалт: чеклэхэд мөр нэмэгдэж, чекийг авахад хасагдана
+    var picker = document.getElementById('picker');
+    var filter = document.getElementById('picker-filter');
+    var onlySelected = document.getElementById('picker-only-selected');
+    document.getElementById('picker-toggle').addEventListener('click', function () {
+        picker.classList.toggle('hidden');
+        if (!picker.classList.contains('hidden')) filter.focus();
+    });
+    function pick(cb) {
+        if (cb.checked) addItem({id: cb.value, name: cb.dataset.name, perBox: cb.dataset.perBox, unit: cb.dataset.unit, source: cb.dataset.source});
+        else removeItem(cb.value);
+    }
+    // hidden атрибутыг Tailwind-ийн flex дардаг тул style.display-ээр нууна
+    function show(e, on) { e.style.display = on ? '' : 'none'; }
+    function shown(e) { return e.style.display !== 'none'; }
+    function visibleBoxes(group) {
+        return Array.prototype.filter.call(group.querySelectorAll('[data-pick]'), function (cb) { return shown(cb.closest('[data-pick-row]')); });
+    }
+    function syncGroup(group) {
+        var boxes = visibleBoxes(group);
+        var all = group.querySelector('[data-pick-all]');
+        var n = boxes.filter(function (cb) { return cb.checked; }).length;
+        all.checked = boxes.length > 0 && n === boxes.length;
+        all.indeterminate = n > 0 && n < boxes.length;
+    }
+    document.querySelectorAll('[data-pick-group]').forEach(function (group) {
+        group.querySelectorAll('[data-pick]').forEach(function (cb) {
+            cb.addEventListener('change', function () {
+                if (!cb.checked && rowHasValues(cb.value) && !confirm(cb.dataset.name + ' - оруулсан хайрцгийг хасах уу?')) { cb.checked = true; return; }
+                pick(cb); syncGroup(group);
             });
-        }, 250);
+        });
+        group.querySelector('[data-pick-all]').addEventListener('change', function (e) {
+            visibleBoxes(group).forEach(function (cb) {
+                if (cb.checked !== e.target.checked) {
+                    if (!e.target.checked && rowHasValues(cb.value) && !confirm(cb.dataset.name + ' - оруулсан хайрцгийг хасах уу?')) return;
+                    cb.checked = e.target.checked; pick(cb);
+                }
+            });
+            syncGroup(group);
+        });
+        syncGroup(group);
     });
-    search.addEventListener('keydown', function (e) {
-        if (e.key === 'Enter') { e.preventDefault(); var first = results.querySelector('button'); if (first) first.click(); }
+    function rowHasValues(id) {
+        var tr = rowOf(id);
+        return tr && Array.prototype.some.call(tr.querySelectorAll('[data-qty]'), function (i) { return num(i.value); });
+    }
+    function applyFilter() {
+        var words = filter.value.trim().toLowerCase().split(/\s+/).filter(Boolean);
+        var total = 0;
+        document.querySelectorAll('[data-pick-group]').forEach(function (group) {
+            var count = 0;
+            group.querySelectorAll('[data-pick-row]').forEach(function (row) {
+                var ok = words.every(function (w) { return row.dataset.search.indexOf(w) >= 0; })
+                    && (!onlySelected.checked || row.querySelector('[data-pick]').checked);
+                show(row, ok);
+                if (ok) count++;
+            });
+            show(group, count);
+            total += count;
+            syncGroup(group);
+        });
+        document.getElementById('picker-none').classList.toggle('hidden', total > 0);
+        if (words.length || onlySelected.checked) picker.classList.remove('hidden');
+        setActive(words.length ? 0 : -1);
+    }
+
+    // Хайлтын үр дүнгээс ↑↓-ээр тодруулж Enter-ээр чеклэнэ; дараа нь хайлтын текст сонгогдож дараагийн барааг шууд бичнэ
+    var active = -1;
+    function visibleRows() {
+        return Array.prototype.filter.call(picker.querySelectorAll('[data-pick-row]'), function (r) { return shown(r) && shown(r.closest('[data-pick-group]')); });
+    }
+    function setActive(i) {
+        var rows = visibleRows();
+        rows.forEach(function (r) { r.classList.remove('bg-blue-100'); });
+        active = rows.length ? Math.max(-1, Math.min(i, rows.length - 1)) : -1;
+        if (active >= 0) { rows[active].classList.add('bg-blue-100'); rows[active].scrollIntoView({block: 'nearest'}); }
+    }
+    function readyForNext() { filter.focus({preventScroll: true}); filter.select(); }
+    picker.addEventListener('change', function (e) { if (e.target.matches('[data-pick]')) readyForNext(); });
+    filter.addEventListener('input', applyFilter);
+    filter.addEventListener('focus', function () { if (filter.value.trim()) picker.classList.remove('hidden'); });
+    filter.addEventListener('keydown', function (e) {
+        if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+            e.preventDefault();
+            picker.classList.remove('hidden');
+            setActive(active + (e.key === 'ArrowDown' ? 1 : -1));
+        } else if (e.key === 'Enter') {
+            e.preventDefault();
+            var row = visibleRows()[Math.max(active, 0)];
+            if (row && filter.value.trim()) row.querySelector('[data-pick]').click();
+        } else if (e.key === 'Escape') {
+            filter.value = ''; applyFilter(); picker.classList.add('hidden');
+        }
     });
-    document.addEventListener('click', function (e) { if (!results.contains(e.target) && e.target !== search) results.classList.add('hidden'); });
+    onlySelected.addEventListener('change', applyFilter);
+
+    // ХТ - зөвхөн харах: талбарууд засагдахгүй, хасах товч нуугдана
+    if (document.getElementById('plan-form').hasAttribute('data-readonly')) {
+        document.querySelectorAll('#plan-form input, #plan-form select').forEach(function (el) {
+            if (el.type === 'text') { el.readOnly = true; el.classList.add('border-transparent', 'bg-transparent'); }
+            else el.disabled = true;
+        });
+        document.querySelectorAll('[data-remove]').forEach(function (b) { b.classList.add('hidden'); });
+    }
 })();
 </script>
 {% endblock %}

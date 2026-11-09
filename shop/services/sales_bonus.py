@@ -15,9 +15,12 @@
 - Нярав:  (ажилласан өдрүүдийн борлуулалт - буцаалт) x хувь + тооллого.
 - Худалдааны төлөөлөгч, Борлуулагч:
       нийт нэмэгдэл = мөрүүдийн нэмэгдэл
-      хасагдах      = нийт x суурь% (10%) x тасралтын хувь
-      биелэлтээр    = нийт x суурь% x (100% - төлөвлөгөөт барааны биелэлтийн хувь)
-      нэмэгдэл      = нийт - хасагдах - биелэлтээр
+      суваг тус бүрээр (мөр бүр, шилжүүлж авсан дүн бүр - шилжүүлсэн сувгийнхаа биелэлтээр):
+        биелэлт     = сувгийн төлөвлөгөөт барааны биелэлт (≤100%) - борлуулалтын төлөвлөгөөнөөс, гараар засаж болно
+        тасралт     = 100% - биелэлт
+        биелэлтээр  = мөрийн нэмэгдэл x суурь% (10%) x биелэлт   (олгоно)
+        хасагдах    = мөрийн нэмэгдэл x суурь% x тасралт
+      нэмэгдэл      = нийт - Σ хасагдах
 - Түгээгч: түгээлтийн дүн x шалгуур бүрийн хувь (биелсэн шалгуураар) + туслахгүй өдөр x мөнгө + хамт өдөр x мөнгө
 - Алтжин худалдагч: дэлгүүрийн агуулахын (тохиргоо: altjin.warehouse_id) сарын борлуулалт (OpenDataSale.PayAmount) -
   буцаалт (OpenDataSaleRefund.Amount) = цэвэр дүнд шатлалын хувь (altjin.tiers, жиш: 20 сая хүртэл 1%, түүнээс дээш 2%).
@@ -193,7 +196,18 @@ def month_data(year, month, start=None, end=None):
         )
         for w, v in cursor.fetchall():
             warehouse_sales.setdefault(w, {'sales': ZERO, 'returns': ZERO})['returns'] = D(v)
+    # Түгээгчийн туслахгүй өдөр - машины бүртгэлээс (DeliveryTrip, туслах хоосон), жолоочийн кодоор
+    from django.db.models import Count
+    from shop.models import DeliveryTrip
+    trips = DeliveryTrip.objects.filter(date__range=(start, end))
+    solo_days = dict(
+        trips.filter(helper_name='').exclude(driver_code='').values('driver_code')
+        .annotate(n=Count('date', distinct=True)).values_list('driver_code', 'n')
+    )
     return {
+        'plan_fulfil': plan_fulfilment(year, month),
+        'trips_registered': trips.exists(),
+        'trip_solo_days': solo_days,
         'warehouse_sales': warehouse_sales,
         'sales_by_day': sales_by_day,
         'returns_by_day': returns_by_day,
@@ -204,6 +218,41 @@ def month_data(year, month, start=None, end=None):
         'delivery_total': delivery_total,
         'returns_total': sum(returns.values(), ZERO),
     }
+
+
+def plan_fulfilment(year, month):
+    """Төлөвлөгөөт барааны биелэлт (≤100%) сувгаар (хуанлийн сар): {сувгийн нэр: {'pcs', 'capped'}}.
+    Борлуулалтын төлөвлөгөөний (/dashboard/sales-plan/) статистиктай ижил: бараа × суваг нүд бүрийн зарсан тоог
+    (OpenDataSale.Qty) тухайн нүдний төлөвлөсөн тоонд хязгаарлаж (100%-иас давсныг 100%) нэмнэ."""
+    from shop.models import SalesPlanItem
+    start, end = month_range(year, month)
+    targets = {(t.item_id, t.channel_id): D(t.target_qty)
+               for t in SalesPlanItem.objects.filter(month=start, target_qty__gt=0).exclude(channel_id='')}
+    if not targets:
+        return {}
+    with connection.cursor() as cursor:
+        cursor.execute('SELECT "Id", "Name" FROM "OpenDataDistributionChannel"')
+        names = dict(cursor.fetchall())
+        cursor.execute('''SELECT "ItemId", "DistributionChannelId", SUM("Qty") FROM "OpenDataSale"
+                          WHERE "DocumentDate" BETWEEN %s AND %s AND "ItemId" = ANY(%s) GROUP BY 1, 2''',
+                       [start, end, list({item for item, _ in targets})])
+        sold = {(item, cid): D(qty) for item, cid, qty in cursor.fetchall()}
+    result = {}
+    for (item, cid), pcs in targets.items():
+        row = result.setdefault(names.get(cid, cid), {'pcs': ZERO, 'capped': ZERO})
+        row['pcs'] += pcs
+        row['capped'] += min(sold.get((item, cid), ZERO), pcs)
+    return result
+
+
+def plan_auto_pct(channels, data):
+    """Ажилтны сувгуудын төлөвлөгөөт барааны биелэлт (≤100%), 0.01 хүртэл; төлөвлөгөөт бараагүй бол None."""
+    rows = [data.get('plan_fulfil', {}).get(ch) for ch in dict.fromkeys(channels)]
+    pcs = sum((r['pcs'] for r in rows if r), ZERO)
+    if not pcs:
+        return None
+    capped = sum((r['capped'] for r in rows if r), ZERO)
+    return (capped / pcs * 100).quantize(Decimal('0.01'), ROUND_HALF_UP)
 
 
 def tier_bonus(net, tiers, mode):
@@ -341,7 +390,11 @@ def compute(member, inputs, data, settings, alloc=None, transfers_out=None):
 
     if scheme == 'distributor':
         dist = settings['distributor']
-        auto = data['delivery'].get(member.employee_code, {'amount': ZERO, 'days': 0})
+        auto = dict(data['delivery'].get(member.employee_code, {'amount': ZERO, 'days': 0}))
+        # Туслахгүй өдрийн анхдагч: машины бүртгэл хөтлөгдсөн хугацаанд түүнээс (жолооч, туслахгүй өдөр),
+        # бүртгэлээс өмнөх сард түгээлтийн өдрөөр
+        if data.get('trips_registered'):
+            auto['days'] = data['trip_solo_days'].get(member.employee_code, 0)
         amount = D(inputs.get('delivery_amount'), auto['amount'])
         criteria_state = inputs.get('criteria') or {}
         total = ZERO
@@ -404,18 +457,37 @@ def compute(member, inputs, data, settings, alloc=None, transfers_out=None):
             result['transfers'].append({'channel': t.get('channel'), 'amount': amount, 'rate': rate, 'bonus': bonus})
         result['subtotal'] = subtotal
         total = subtotal
+        # Нийт нэмэгдлийн суурь% (10%)-ийг 100% гэж үзээд төлөвлөгөөт барааны биелэлтээр (олгоно) ба
+        # биелээгүй үлдсэн хувиар (тасралт = 100% - биелэлт, хасна) хуваана. Биелэлт: гараар оруулсан, үгүй бол
+        # борлуулалтын төлөвлөгөөний биелэлт (≤100%) ажилтны сувгуудаар, төлөвлөгөөт бараагүй бол 100%.
+        # Суваг тус бүрээр (мөр бүр, шилжүүлж авсан дүн бүр - шилжүүлсэн сувгийн биелэлтээр). Гараар засвал
+        # inputs.plan_pcts = {суваг: хувь}.
         base_pct = D(settings['deduction_base_pct'])
-        deduction_pct = D(inputs.get('deduction_pct'))
-        plan_pct = D(inputs.get('plan_pct'), Decimal(100))
-        base = subtotal * base_pct / 100
-        deduction = base * deduction_pct / 100
-        plan_part = base * plan_pct / 100
-        plan_loss = base - plan_part
+        overrides = inputs.get('plan_pcts') or {}
+        rows = [(l['channel'], l['bonus'], False) for l in result['lines']]
+        rows += [(t['channel'], t['bonus'], True) for t in result['transfers']]
+        plan_rows = []
+        for channel, bonus, is_transfer in rows:
+            auto = plan_auto_pct([channel], data)
+            pct = D(overrides.get(channel), auto if auto is not None else Decimal(100))
+            pct = min(max(pct, ZERO), Decimal(100))
+            row_base = bonus * base_pct / 100
+            part = row_base * pct / 100
+            plan_rows.append({
+                'channel': channel, 'transfer': is_transfer, 'bonus': bonus, 'base': row_base,
+                'plan_auto': auto, 'plan_pct': pct, 'plan_override': overrides.get(channel) not in (None, ''),
+                'plan_part': part, 'deduction_pct': Decimal(100) - pct, 'deduction': row_base - part,
+            })
+        base = sum((r['base'] for r in plan_rows), ZERO)
+        plan_part = sum((r['plan_part'] for r in plan_rows), ZERO)
+        deduction = base - plan_part
+        # Нэгтгэсэн хувь (жигнэсэн дундаж) - хураангуй, хэвлэлтэд
+        plan_pct = (plan_part / base * 100).quantize(Decimal('0.01'), ROUND_HALF_UP) if base else Decimal(100)
         result.update({
-            'base_pct': base_pct, 'deduction_pct': deduction_pct, 'deduction': deduction,
-            'plan_pct': plan_pct, 'plan_part': plan_part, 'plan_loss': plan_loss,
+            'base_pct': base_pct, 'base': base, 'plan_rows': plan_rows, 'plan_part': plan_part,
+            'plan_pct': plan_pct, 'deduction_pct': Decimal(100) - plan_pct, 'deduction': deduction,
         })
-        total = subtotal - deduction - plan_loss
+        total = subtotal - deduction
 
     adjustment = D(inputs.get('adjustment'))
     result['adjustment'] = adjustment

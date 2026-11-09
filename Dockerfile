@@ -14,6 +14,7 @@ RUN apt-get update && apt-get install -y \
     zlib1g-dev \
     curl \
     gnupg \
+    fonts-dejavu-core \
     && rm -rf /var/lib/apt/lists/*
 
 # pyodbc (MSSQL -> PostgreSQL синк): unixODBC (libodbc.so.2) + Microsoft "ODBC Driver 17 for SQL Server"

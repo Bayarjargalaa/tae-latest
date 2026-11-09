@@ -2,15 +2,15 @@
 {# Барааны карт - products.html-ийн grid болон бүлгийн мөрөнд хоёуланд нь ашиглана. #}
 {# Эхний харагдах 4 зургийг шууд, бусдыг нь lazy ачаална (бүлгийн харагдацад зөвхөн эхний мөр). #}
 <div class="group relative flex flex-col h-full bg-white rounded-xl border border-gray-100 hover:border-gray-200 hover:shadow-lg transition-shadow duration-200 overflow-hidden">
-    <a href="{% url 'shop:product_detail' product.id %}" class="flex flex-col flex-1 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded-xl">
+    <a href="{% url 'shop:product_detail' product.id %}?next={{ request.get_full_path|urlencode }}" class="flex flex-col flex-1 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded-xl">
         <!-- Зураг: 1:1 харьцаа, lazy-load, hover дээр 2 дахь зураг -->
         <div class="relative aspect-square bg-white p-3 overflow-hidden">
-            <img src="{{ product|product_image_url }}"
-                 alt="{% if product.extension and product.extension.name_mn %}{{ product.extension.name_mn }}{% else %}{{ product.name }}{% endif %}"
+            <img src="{{ product|product_thumb_url }}"
+                 alt="{{ product.display_name|default:product.name }}"
                  loading="{% if forloop.counter <= 4 and not forloop.parentloop.counter > 1 %}eager{% else %}lazy{% endif %}" decoding="async" width="400" height="400"
                  class="w-full h-full object-contain transition duration-300 {% if product.extension.image_2 %}group-hover:opacity-0{% else %}group-hover:scale-105{% endif %} {% if product.stock_status == 'out' %}opacity-50 grayscale{% endif %}">
             {% if product.extension.image_2 %}
-            <img src="{{ product.extension.image_2.url }}" alt="" aria-hidden="true" loading="lazy" decoding="async"
+            <img src="{{ product|product_thumb_url:'2' }}" alt="" aria-hidden="true" loading="lazy" decoding="async"
                  class="absolute inset-0 w-full h-full p-3 object-contain opacity-0 group-hover:opacity-100 transition duration-300">
             {% endif %}
 
@@ -27,12 +27,12 @@
             {% endif %}
 
             <h3 class="mt-0.5 text-sm lg:text-[15px] font-medium text-gray-900 leading-snug line-clamp-2 min-h-[2.5rem] group-hover:text-primary" title="{{ product.name }}">
-                {% if product.extension and product.extension.name_mn %}{{ product.extension.name_mn }}{% else %}{{ product.name }}{% endif %}
+                {{ product.display_name|default:product.name }}
             </h3>
 
-            {% if product.extension.country_of_origin or product.extension.qty_per_box %}
+            {% if product.display_country or product.display_box %}
             <div class="mt-1 text-xs text-gray-500 truncate">
-                {{ product.extension.country_of_origin|default:"" }}{% if product.extension.country_of_origin and product.extension.qty_per_box %} · {% endif %}{% if product.extension.qty_per_box %}{{ product.extension.qty_per_box }} ш/хайрцаг{% endif %}
+                {{ product.display_country }}{% if product.display_country and product.display_box %} · {% endif %}{{ product.display_box }}
             </div>
             {% endif %}
 
@@ -64,7 +64,7 @@
                 {% if product.cert_status %}
                 {# Шинжилгээний бичгийн төлөв - нэвтэрсэн хэрэглэгчид (services.product_certs) #}
                 <div class="mt-1 text-[11px] font-medium truncate
-                    {% if product.cert_status == 'expired' %}text-red-700{% elif product.cert_status == 'soon' %}text-amber-700{% elif product.cert_status == 'no_date' %}text-orange-700{% elif product.cert_status == 'none' %}text-gray-400{% else %}text-green-700{% endif %}"
+                    {% if product.cert_status == 'expired' %}text-red-700{% elif product.cert_status == 'soon' %}text-amber-700{% elif product.cert_status == 'no_date' %}text-orange-700{% elif product.cert_status == 'none' or product.cert_status == 'exempt' %}text-gray-400{% else %}text-green-700{% endif %}"
                      title="Шинжилгээний бичиг: {{ product.cert_label }}{% if product.cert_expires %} ({{ product.cert_expires|date:'Y.m.d' }}){% endif %}">
                     🧪 {% if product.cert_status == 'valid' %}{% if product.cert_expires %}{{ product.cert_expires|date:'Y.m.d' }} хүртэл{% else %}Хугацаагүй{% endif %}{% else %}{{ product.cert_text }}{% endif %}
                 </div>
@@ -73,10 +73,10 @@
         </div>
     </a>
 
-    {% if 'product_edit' in visible_menu_keys %}
-    <a href="{% url 'shop:product_edit' product.id %}"
+    {% if 'product_edit' in visible_menu_keys or 'product_image_upload' in visible_menu_keys %}
+    <a href="{% url 'shop:product_edit' product.id %}?next={{ request.get_full_path|urlencode }}"
        class="block text-center mx-3 mb-3 lg:mx-4 lg:mb-4 bg-gray-100 text-gray-700 py-1.5 rounded-lg hover:bg-gray-200 transition text-sm">
-        ✏️ Засах
+        {% if 'product_edit' in visible_menu_keys %}✏️ Засах{% else %}🖼️ Зураг оруулах{% endif %}
     </a>
     {% endif %}
 </div>

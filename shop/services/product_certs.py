@@ -18,6 +18,7 @@ STATUSES = [
     ('no_date', 'Хугацаа оруулаагүй', '🟠', 'orange'),
     ('none', 'Бичиггүй', '⚪', 'gray'),
     ('valid', 'Хүчинтэй', '🟢', 'green'),
+    ('exempt', 'Бичиг шаардлагагүй', '➖', 'slate'),
 ]
 STATUS_LABELS = {code: label for code, label, _, _ in STATUSES}
 STATUS_PRIORITY = {code: i for i, (code, *_rest) in enumerate(STATUSES)}
@@ -41,17 +42,20 @@ def default_type_ids():
 
 
 def annotate_status(qs, doc_type_ids, today=None):
-    """OpenDataItem queryset-д cert_status, cert_expires, cert_unlimited, cert_priority нэмнэ."""
-    from shop.models import ProductAttachmentItem
+    """OpenDataItem queryset-д cert_status, cert_expires, cert_unlimited, cert_priority нэмнэ.
+    Бичиг шаардлагагүй гэж тэмдэглэсэн бараа (ProductExtension.cert_not_required) бичигтэй эсэхээс үл хамааран 'exempt'."""
+    from shop.models import ProductAttachmentItem, ProductExtension
     today = today or date.today()
     links = ProductAttachmentItem.objects.filter(item_id=OuterRef('id'), attachment__doc_type_id__in=doc_type_ids)
     latest = links.order_by().values('item_id').annotate(m=Max(EFFECTIVE_EXPIRES)).values('m')[:1]
     qs = qs.annotate(
+        cert_exempt=Exists(ProductExtension.objects.filter(item_id=OuterRef('id'), cert_not_required=True)),
         cert_has=Exists(links),
         cert_unlimited=Exists(links.filter(EFFECTIVE_UNLIMITED)),
         cert_expires=Subquery(latest),
     )
     whens = [
+        When(cert_exempt=True, then=Value('exempt')),
         When(cert_has=False, then=Value('none')),
         When(cert_unlimited=True, then=Value('valid')),
         When(cert_expires__isnull=True, then=Value('no_date')),
@@ -74,6 +78,8 @@ def status_text(status, expires, unlimited=False, today=None):
     days = days_left(expires, today)
     if status == 'none':
         return 'Бичиггүй'
+    if status == 'exempt':
+        return 'Бичиг шаардлагагүй'
     if unlimited:
         return 'Хугацаагүй'
     if days is None:
@@ -173,6 +179,17 @@ def attachment_status(attachment, today=None, expires=None, no_expiry=None):
     else:
         status = 'valid'
     return status, status_text(status, expires, no_expiry, today)
+
+
+def set_not_required(item_ids, value):
+    """Бараануудыг бичиг шаардлагагүй (value=True) / шаардлагатай болгоно. Өөрчлөгдсөн тоог буцаана."""
+    from shop.models import ProductExtension
+    from shop.services.product_files import valid_item_ids
+    ids = list(valid_item_ids(item_ids))
+    have = set(ProductExtension.objects.filter(item_id__in=ids).values_list('item_id', flat=True))
+    created = [ProductExtension(item_id=i, cert_not_required=True) for i in ids if i not in have] if value else []
+    ProductExtension.objects.bulk_create(created)
+    return len(created) + ProductExtension.objects.filter(item_id__in=have).exclude(cert_not_required=value).update(cert_not_required=value)
 
 
 def parse_item_overrides(post, links, issued_on=None):

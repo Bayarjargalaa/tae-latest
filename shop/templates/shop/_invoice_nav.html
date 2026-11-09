@@ -1,0 +1,18 @@
+{# Нэхэмжлэхийн хуудсуудын толгой: гарчиг + tab (current: list / new / settings) #}
+<div class="flex flex-wrap items-end justify-between gap-3 mb-5">
+    <div>
+        <div class="text-xs font-medium text-gray-500 mb-1">Санхүү</div>
+        <h1 class="text-2xl lg:text-3xl font-bold text-gray-900">🧾 {{ title }}</h1>
+        <p class="text-sm text-gray-500 mt-1">Илгээх хаяг: <strong class="text-gray-700">{{ sender|default:'тохируулаагүй' }}</strong></p>
+    </div>
+    <nav class="inline-flex p-1 rounded-xl bg-gray-100 text-sm" aria-label="Нэхэмжлэх">
+        <a href="{% url 'shop:invoices' %}" class="px-3.5 py-1.5 rounded-lg {% if current == 'list' %}bg-white shadow-sm font-semibold text-gray-900{% else %}text-gray-600 hover:text-gray-900{% endif %}">📋 Жагсаалт</a>
+        <a href="{% url 'shop:invoice_new' %}" class="px-3.5 py-1.5 rounded-lg {% if current == 'new' %}bg-white shadow-sm font-semibold text-gray-900{% else %}text-gray-600 hover:text-gray-900{% endif %}">➕ Шинэ нэхэмжлэх</a>
+        {% if not ht_scope %}
+        <a href="{% url 'shop:invoice_settings' %}" class="px-3.5 py-1.5 rounded-lg {% if current == 'settings' %}bg-white shadow-sm font-semibold text-gray-900{% else %}text-gray-600 hover:text-gray-900{% endif %}">⚙️ Тохиргоо, данс</a>
+        {% endif %}
+    </nav>
+</div>
+{% if messages %}
+<div class="space-y-2 mb-4">{% for message in messages %}<div class="p-3 rounded-lg text-sm {% if message.tags == 'error' %}bg-red-100 text-red-800{% elif message.tags == 'warning' %}bg-yellow-100 text-yellow-800{% else %}bg-green-100 text-green-800{% endif %}">{{ message }}</div>{% endfor %}</div>
+{% endif %}

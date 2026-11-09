@@ -95,7 +95,7 @@ class ProductExtensionAdmin(admin.ModelAdmin):
             'fields': ('item_id',)
         }),
         ('Үндсэн мэдээлэл', {
-            'fields': ('name_mn', 'country_of_origin', 'qty_per_box', 'supplier')
+            'fields': ('name_mn', 'country_of_origin', 'qty_per_box', 'box_measure', 'supplier')
         }),
         ('Зургууд', {
             'fields': ('image_main', 'image_2', 'image_3')

@@ -146,13 +146,20 @@
                         {% if c.inventory %}<tr class="border-t"><td class="py-2 text-gray-700" colspan="2">Тооллого</td><td class="py-2 text-right">{{ c.inventory|floatformat:'-2g' }}</td></tr>{% endif %}
                         {% else %}
                         <tr class="border-t font-semibold"><td class="py-2" colspan="2">Нийт нэмэгдэл</td><td class="py-2 text-right">{{ c.subtotal|floatformat:'-2g' }}</td></tr>
+                        {% for r in c.plan_rows %}
+                        {# Суваг тус бүрийн биелэлт (олгох) ба тасралт (хасах); шилжүүлж авсан дүн шилжүүлсэн сувгийнхаа биелэлтээр #}
                         <tr class="border-t">
-                            <td class="py-2 text-gray-700" colspan="2">Хасагдах дүн <span class="text-xs text-gray-500">(нийт × {{ c.base_pct|floatformat:'-2' }}% × тасралтын {{ c.deduction_pct|floatformat:'-2' }}%)</span></td>
-                            <td class="py-2 text-right {% if c.deduction %}text-red-600{% endif %}">{% if c.deduction %}−{{ c.deduction|floatformat:'-2g' }}{% else %}-{% endif %}</td>
+                            <td class="py-2 text-gray-700" colspan="2">Төлөвлөгөөт барааны биелэлт{% if c.plan_rows|length > 1 %} · {% if r.transfer %}⇄ {% endif %}{{ r.channel }}{% endif %} <span class="text-xs text-gray-500">({{ r.plan_pct|floatformat:2 }}% · {{ c.base_pct|floatformat:'-2' }}% хэсэг: {{ r.base|floatformat:'-2g' }})</span></td>
+                            <td class="py-2 text-right">{{ r.plan_part|floatformat:'-2g' }}</td>
                         </tr>
                         <tr class="border-t">
-                            <td class="py-2 text-gray-700" colspan="2">Төлөвлөгөөт барааны биелэлт <span class="text-xs text-gray-500">({{ c.plan_pct|floatformat:'-2' }}%)</span></td>
-                            <td class="py-2 text-right {% if c.plan_loss %}text-red-600{% endif %}">{% if c.plan_loss %}−{{ c.plan_loss|floatformat:'-2g' }}{% else %}-{% endif %}</td>
+                            <td class="py-2 text-gray-700" colspan="2">Хасагдах дүн{% if c.plan_rows|length > 1 %} · {% if r.transfer %}⇄ {% endif %}{{ r.channel }}{% endif %} <span class="text-xs text-gray-500">(тасралтын {{ r.deduction_pct|floatformat:2 }}%)</span></td>
+                            <td class="py-2 text-right {% if r.deduction >= 0.005 %}text-red-600{% endif %}">{% if r.deduction >= 0.005 %}−{{ r.deduction|floatformat:'-2g' }}{% else %}-{% endif %}</td>
+                        </tr>
+                        {% endfor %}
+                        <tr class="border-t">
+                            <td class="py-2 text-gray-700" colspan="2">Хасагдах дүн <span class="text-xs text-gray-500">(нийт × {{ c.base_pct|floatformat:'-2' }}% × тасралтын {{ c.deduction_pct|floatformat:'-2' }}%)</span></td>
+                            <td class="py-2 text-right {% if c.deduction >= 0.005 %}text-red-600{% endif %}">{% if c.deduction >= 0.005 %}−{{ c.deduction|floatformat:'-2g' }}{% else %}-{% endif %}</td>
                         </tr>
                         {% endif %}
                         {% endif %}

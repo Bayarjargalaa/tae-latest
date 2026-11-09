@@ -207,6 +207,9 @@ EMAIL_USE_TLS = config('EMAIL_USE_TLS', default=True, cast=bool)
 EMAIL_HOST_USER = config('EMAIL_HOST_USER', default='')
 EMAIL_HOST_PASSWORD = config('EMAIL_HOST_PASSWORD', default='')
 DEFAULT_FROM_EMAIL = config('DEFAULT_FROM_EMAIL', default='webmaster@localhost')
+# Нэхэмжлэх илгээх тусдаа хаяг (shop.services.invoices) - Gmail бол тухайн хаягийн App Password
+INVOICE_EMAIL_HOST_USER = config('INVOICE_EMAIL_HOST_USER', default='')
+INVOICE_EMAIL_HOST_PASSWORD = config('INVOICE_EMAIL_HOST_PASSWORD', default='')
 
 # AI чат - Anthropic Claude API-г Django-с шууд дуудна
 ANTHROPIC_API_KEY = config('ANTHROPIC_API_KEY', default='')

@@ -8,6 +8,8 @@
   сувагт хааяа хийсэн цөөн борлуулалтаар тэр сувгийн бүх мэдээллийг харахгүй, ХТ солигдоход шинэ ХТ нь
   автоматаар авна.
 - Суваг олдоогүй ХТ юу ч харахгүй (sales_ht_access.NO_ACCESS_CHANNEL).
+- ERP-д ажилтны код, борлуулалтын SellerId зөрсөн бол SELLER_ALIASES-д хуучин SellerId-г ажилтны кодтой холбоно -
+  тэр кодоор хийсэн борлуулалт ажилтных болж тоологдоно (хуучин кодоор үүссэн сувгийн авлага харагдсаар байна).
 """
 from dataclasses import dataclass, field
 
@@ -16,6 +18,13 @@ from django.db import connection
 RESTRICTED_POSITIONS = {'Худалдааны төлөөлөгч', 'Борлуулагч'}
 OWNER_LOOKBACK_DAYS = 90
 NO_ACCESS_CHANNEL = '__no_access__'  # ямар ч сувагтай таарахгүй утга
+
+# Ажилтны код -> ERP борлуулалт дээр бүртгэгдсэн өөр SellerId-ууд.
+# 1007 Оюун.О: ERP-д ажилтны кодыг 1007 болгосон ч борлуулалт 1069 "Оюун 88090327"-оор ирсээр байна (2026-10-19).
+# ERP шинэ борлуулалтыг 1007-оор бүртгэж эхэлсэн ч 1069-ийн сүүлийн борлуулалтууд хуучиртал энэ мөрийг үлдээнэ.
+SELLER_ALIASES = {
+    '1007': ['1069'],
+}
 
 
 @dataclass
@@ -40,13 +49,19 @@ def _employee_for(user):
 
 
 def _owned_channels(seller_id):
-    """Сүүлийн OWNER_LOOKBACK_DAYS хоногт seller_id хамгийн олон борлуулалт хийсэн сувгууд [(Id, Name)]."""
+    """Сүүлийн OWNER_LOOKBACK_DAYS хоногт seller_id хамгийн олон борлуулалт хийсэн сувгууд [(Id, Name)].
+    SELLER_ALIASES-ийн хуучин кодын борлуулалтыг ажилтны кодоор нэгтгэж тоолно."""
+    alias_from = [old for old in (c for codes in SELLER_ALIASES.values() for c in codes)]
+    alias_to = [emp for emp, codes in SELLER_ALIASES.items() for _ in codes]
     with connection.cursor() as cursor:
         cursor.execute(
             '''
-            WITH counts AS (
-                SELECT s."DistributionChannelId" AS ch, s."SellerId" AS seller, count(*) AS n
+            WITH aliases AS (
+                SELECT * FROM unnest(%s::text[], %s::text[]) AS a(old_id, emp_id)
+            ), counts AS (
+                SELECT s."DistributionChannelId" AS ch, COALESCE(a.emp_id, s."SellerId") AS seller, count(*) AS n
                 FROM "OpenDataSale" s
+                LEFT JOIN aliases a ON a.old_id = s."SellerId"
                 WHERE s."DocumentDate"::date >= CURRENT_DATE - %s
                   AND s."DistributionChannelId" IS NOT NULL AND s."SellerId" IS NOT NULL
                 GROUP BY 1, 2
@@ -59,7 +74,7 @@ def _owned_channels(seller_id):
             WHERE r.rk = 1 AND r.seller = %s
             ORDER BY r.ch
             ''',
-            [OWNER_LOOKBACK_DAYS, seller_id],
+            [alias_from, alias_to, OWNER_LOOKBACK_DAYS, seller_id],
         )
         return cursor.fetchall()
 

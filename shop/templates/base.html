@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}EuroFoods - Европын Хүнс{% endblock %}</title>
+    <!-- Favicon (inline SVG) - хөтөч /favicon.ico хайж 404 авахаас сэргийлнэ -->
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%2316a34a'/%3E%3Ctext x='32' y='45' font-family='Arial' font-size='38' font-weight='bold' fill='white' text-anchor='middle'%3EE%3C/text%3E%3C/svg%3E">
     <script src="https://cdn.tailwindcss.com"></script>
     
     <!-- Choices.js - Searchable Dropdown (jQuery-гүй) -->
@@ -65,6 +67,13 @@
             main .flex.gap-3:not(td *):not(th *),
             main .flex.gap-4:not(td *):not(th *) {
                 flex-wrap: wrap;
+            }
+            /* Хэвтээ гүйлгэдэг мөр (жиш: бүтээгдэхүүний бүлгийн мөр) нэг мөрөндөө үлдэнэ. Босоо (flex-col)
+               layout-д wrap хэрэггүй бөгөөд өргөнийг агуулгаар нь сунгадаг тул мөн хасна.
+               Дээрх дүрэмтэй ижил жинтэй, сүүлд нь тул давуу */
+            main .flex.row-track:not(td *):not(th *),
+            main .flex.flex-col:not(td *):not(th *) {
+                flex-wrap: nowrap;
             }
             main .flex.justify-between:not(td *):not(th *) {
                 row-gap: 0.5rem;

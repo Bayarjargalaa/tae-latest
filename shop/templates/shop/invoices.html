@@ -1,0 +1,85 @@
+{% extends 'base.html' %}
+
+{% block title %}Нэхэмжлэх - Euro Foods{% endblock %}
+
+{% block hide_mobile_menu %}hidden{% endblock %}
+
+{% block content %}
+<div class="flex min-h-screen bg-gray-50">
+    {% include 'shop/_sidebar.html' with active_page='invoices' %}
+
+    <main class="flex-1 p-3 lg:p-8 min-w-0">
+        {% include 'shop/_invoice_nav.html' with title='Нэхэмжлэх' current='list' %}
+
+        <form method="get" class="bg-white rounded-xl border border-gray-100 shadow-sm p-4 mb-4 flex flex-wrap items-end gap-3">
+            <label class="flex-1 min-w-[14rem]"><span class="block text-xs font-medium text-gray-600 mb-1">Хайх</span>
+                <input type="search" name="q" value="{{ q }}" placeholder="Дугаар, харилцагч, имэйл" class="w-full border border-gray-300 rounded-lg px-3 py-2"></label>
+            <label><span class="block text-xs font-medium text-gray-600 mb-1">Төлөв</span>
+                <select name="status" class="border border-gray-300 rounded-lg px-2 py-2" onchange="this.form.submit()">
+                    <option value="">Бүгд</option>
+                    {% for v, label in status_choices %}<option value="{{ v }}" {% if v == status %}selected{% endif %}>{{ label }}</option>{% endfor %}
+                </select></label>
+            <button type="submit" class="bg-primary text-white px-5 py-2 rounded-lg hover:bg-green-700">Шүүх</button>
+        </form>
+
+        <section class="bg-white rounded-xl border border-gray-100 shadow-sm overflow-x-auto">
+            <table class="w-full text-sm">
+                <thead class="bg-gray-50 text-gray-600 text-xs uppercase tracking-wide">
+                    <tr>
+                        <th class="text-left px-3 py-2.5">Дугаар</th>
+                        <th class="text-left px-3 py-2.5">Огноо</th>
+                        <th class="text-left px-3 py-2.5">Харилцагч</th>
+                        <th class="text-right px-3 py-2.5">Дүн</th>
+                        <th class="text-left px-3 py-2.5">Имэйл</th>
+                        <th class="text-left px-3 py-2.5">Төлөв</th>
+                        <th class="text-left px-3 py-2.5">Үүсгэсэн</th>
+                        <th class="px-3 py-2.5"></th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100">
+                    {% for inv in page %}
+                    <tr class="align-top">
+                        <td class="px-3 py-2.5 font-medium whitespace-nowrap"><a href="{% url 'shop:invoice_pdf' inv.pk %}" target="_blank" class="text-blue-700 hover:underline">{{ inv.number }}</a></td>
+                        <td class="px-3 py-2.5 whitespace-nowrap">{{ inv.invoice_date|date:'Y.m.d' }}<div class="text-xs text-gray-400">төлөх: {{ inv.due_date|date:'Y.m.d' }}</div></td>
+                        <td class="px-3 py-2.5"><a href="{% url 'shop:invoice_new' %}?customer={{ inv.customer_id|urlencode }}" class="hover:underline">{{ inv.customer_name }}</a><div class="text-xs text-gray-400">{{ inv.customer_id }}</div></td>
+                        <td class="px-3 py-2.5 text-right font-semibold whitespace-nowrap tabular-nums">₮{{ inv.amount|floatformat:"2g" }}</td>
+                        <td class="px-3 py-2.5 break-all max-w-[16rem]">{{ inv.email|default:'—' }}</td>
+                        <td class="px-3 py-2.5 whitespace-nowrap">
+                            {% if inv.status == 'sent' %}<span class="px-2 py-0.5 rounded-full bg-green-100 text-green-800 text-xs font-semibold">Илгээсэн</span><div class="text-xs text-gray-400 mt-0.5">{{ inv.sent_at|date:'Y.m.d H:i' }}</div>
+                            {% elif inv.status == 'failed' %}<span class="px-2 py-0.5 rounded-full bg-red-100 text-red-800 text-xs font-semibold" title="{{ inv.error }}">Илгээж чадаагүй</span><div class="text-xs text-red-600 mt-0.5 max-w-[16rem] truncate" title="{{ inv.error }}">{{ inv.error }}</div>
+                            {% else %}<span class="px-2 py-0.5 rounded-full bg-gray-100 text-gray-700 text-xs font-semibold">Ноорог</span>{% endif %}
+                        </td>
+                        <td class="px-3 py-2.5 text-xs text-gray-500 whitespace-nowrap">{% if inv.created_by %}{{ inv.created_by.get_full_name|default:inv.created_by.username }}{% else %}—{% endif %}<div>{{ inv.created_at|date:'Y.m.d H:i' }}</div></td>
+                        <td class="px-3 py-2.5 whitespace-nowrap text-right">
+                            <a href="{% url 'shop:invoice_edit' inv.pk %}" class="inline-block px-2.5 py-1 rounded-lg border border-gray-200 hover:bg-gray-50 text-xs">✏️ Засах</a>
+                            <a href="{% url 'shop:invoice_pdf' inv.pk %}?download=1" class="inline-block px-2.5 py-1 rounded-lg border border-gray-200 hover:bg-gray-50 text-xs">⬇ PDF</a>
+                            <form method="post" action="{% url 'shop:invoice_delete' inv.pk %}" class="inline"
+                                  onsubmit="return confirm('Нэхэмжлэх {{ inv.number }}-ийг устгах уу?{% if inv.status == 'sent' %} Энэ нэхэмжлэх харилцагчид илгээгдсэн байна.{% endif %}')">
+                                {% csrf_token %}
+                                <button class="px-2.5 py-1 rounded-lg border border-red-200 text-red-700 hover:bg-red-50 text-xs">🗑 Устгах</button>
+                            </form>
+                            <form method="post" action="{% url 'shop:invoice_send' inv.pk %}" class="inline-flex gap-1 mt-1"
+                                  onsubmit="return confirm('Нэхэмжлэх {{ inv.number }}-ийг ' + (this.email.value || '(хоосон)') + ' хаяг руу илгээх үү?')">
+                                {% csrf_token %}
+                                <input type="text" name="email" value="{{ inv.email }}" placeholder="имэйл" class="border border-gray-200 rounded-lg px-2 py-1 text-xs w-44">
+                                <button class="px-2.5 py-1 rounded-lg bg-primary text-white text-xs hover:bg-green-700">{% if inv.status == 'sent' %}Дахин илгээх{% else %}Илгээх{% endif %}</button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="8" class="px-3 py-10 text-center text-gray-500">Нэхэмжлэх алга. <a href="{% url 'shop:invoice_new' %}" class="text-blue-700 underline">Шинэ нэхэмжлэх үүсгэх</a></td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </section>
+
+        {% if page.has_other_pages %}
+        <nav class="flex justify-center gap-2 mt-4 text-sm">
+            {% if page.has_previous %}<a href="?q={{ q|urlencode }}&status={{ status }}&page={{ page.previous_page_number }}" class="px-3 py-1.5 rounded-lg border bg-white">←</a>{% endif %}
+            <span class="px-3 py-1.5">{{ page.number }} / {{ page.paginator.num_pages }}</span>
+            {% if page.has_next %}<a href="?q={{ q|urlencode }}&status={{ status }}&page={{ page.next_page_number }}" class="px-3 py-1.5 rounded-lg border bg-white">→</a>{% endif %}
+        </nav>
+        {% endif %}
+    </main>
+</div>
+{% endblock %}

@@ -6,6 +6,11 @@
 
 {% block extra_css %}
 <style>
+/* Цалингийн тулгалтын алдаа / анхааруулгатай мөр (хэвлэхэд харагдахгүй) */
+@media screen {
+    tr.pc-row-error > td { background: #fee2e2 !important; }
+    tr.pc-row-warning > td { background: #fef3c7 !important; }
+}
 .payroll-table th { white-space: normal; line-height: 1.2; vertical-align: bottom; }
 .payroll-table td, .payroll-table th { border: 1px solid #e5e7eb; }
 .payroll-table td { white-space: nowrap; }
@@ -66,6 +71,7 @@
                 <a href="{% url 'shop:timesheet' %}?year={{ year|unlocalize }}&month={{ month }}" class="bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50 transition whitespace-nowrap">📅 Хоног бүртгэл</a>
                 <button type="button" onclick="window.print()" class="bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50 transition whitespace-nowrap">🖨 Хэвлэх</button>
                 <a href="{% if is_card %}{% url 'shop:payroll_card_export' %}{% else %}{% url 'shop:payroll_cash_export' %}{% endif %}?year={{ year|unlocalize }}&month={{ month }}" class="bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50 transition whitespace-nowrap">⬇ Excel</a>
+                {% if is_card %}<a href="{% url 'shop:payroll_card_erp_export' %}?year={{ year|unlocalize }}&month={{ month }}" title="ERP-д оруулах «Сүүл» хуудасны загвараар (ERP-ийн баганын код, ажилтан бүрийн цаг, нэмэгдэл, суутгал)" class="bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50 transition whitespace-nowrap">⬇ ERP (Сүүл)</a>{% endif %}
             </div>
         </div>
 
@@ -88,10 +94,11 @@
         </form>
 
         {% if close %}
-        <div class="bg-gray-100 border border-gray-300 rounded-lg p-4 mb-6 flex flex-wrap items-center justify-between gap-3 no-print">
+        <div id="reopen" class="bg-gray-100 border border-gray-300 rounded-lg p-4 mb-6 flex flex-wrap items-center justify-between gap-3 no-print">
             <div class="text-sm text-gray-700">
                 <b class="text-gray-900">🔒 Энэ сар хаагдсан</b> - {{ close.closed_at|date:'Y-m-d H:i' }}{% if close.closed_by %}, {{ close.closed_by.get_full_name|default:close.closed_by.username }}{% endif %}.
                 Хаасан үеийн бодолтоор харагдаж, засварлах боломжгүй. Тайлан, хувийн мэдээлэлд энэ бодолт орно.
+                Цалингийн тулгалт зөвхөн нээлттэй сард хийгдэнэ - шалгах, засах бол дахин нээнэ үү.
             </div>
             <form method="post" onsubmit="return confirm('Сарыг дахин нээх үү? Цалин одоогийн мэдээллээр (үндсэн цалин, ажилчид) дахин бодогдоно.')">
                 {% csrf_token %}
@@ -106,14 +113,17 @@
                 <b>Сар нээлттэй</b> - цалин ажилтны одоогийн мэдээллээр бодогдож байна. Бодолт эцэслэгдсэний дараа сарыг хаавал
                 цалингийн тайлан, ажилтны хувийн мэдээлэлд энэ дүнгээр баталгаажиж, дараа нь цалин / ажилтан өөрчлөгдсөн ч хэвээр үлдэнэ.
             </div>
-            <form method="post" onsubmit="return confirm('{{ month_label }}-ын {{ title|lower }}ыг хаах уу? Хаасны дараа засварлах боломжгүй (дахин нээж болно).')">
+            <form method="post" onsubmit="return confirm({% if checks.errors %}'⛔ Цалингийн тулгалтад {{ checks.errors }} алдаа байна (доорх жагсаалтыг үзнэ үү). Алдааг мэдсээр байж {{ month_label }}-ын {{ title|lower }}ыг хаах уу?'{% else %}'{{ month_label }}-ын {{ title|lower }}ыг хаах уу? Хаасны дараа засварлах боломжгүй (дахин нээж болно).'{% endif %})">
                 {% csrf_token %}
                 <input type="hidden" name="action" value="close_month">
+                {% if checks.errors %}<input type="hidden" name="force" value="1">{% endif %}
                 <input type="hidden" name="year" value="{{ year|unlocalize }}"><input type="hidden" name="month" value="{{ month }}">
                 <button type="submit" class="bg-primary text-white px-4 py-2 rounded-lg hover:bg-green-700 transition whitespace-nowrap">🔒 Сар хаах</button>
             </form>
         </div>
         {% endif %}
+
+        {% if not close %}{% include 'shop/_payroll_checks.html' with checks=checks sheet=sheet %}{% endif %}
 
         {% if not close %}
         <form method="post" class="bg-white rounded-lg shadow p-4 mb-6 flex flex-wrap items-center justify-between gap-3 no-print"
@@ -221,7 +231,7 @@
                     </thead>
                     <tbody>
                         {% for row in rows %}
-                        <tr class="text-right">
+                        <tr class="text-right{% if row.check_level %} pc-row-{{ row.check_level }}{% endif %}"{% if row.check_title %} title="{{ row.check_title }}"{% endif %}>
                             <td class="pr-sticky-no px-2 py-1.5 text-center">{{ forloop.counter }}</td>
                             <td class="pr-sticky-name pr-text px-2 py-1.5 text-left font-medium text-gray-900">
                                 {{ row.name }}

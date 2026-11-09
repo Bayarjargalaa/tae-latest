@@ -1,0 +1,256 @@
+{% load l10n %}<!doctype html>
+<html lang="mn">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% if single %}{{ single.code }} - {{ single.suppliers }}{% else %}Замын мэдээ {{ now|date:'Y-m-d' }}{% endif %} - Euro Foods</title>
+<style>
+    @page { size: A4 landscape; margin: 10mm; }
+    body.price-list .landscape-note { display: none; }
+    * { box-sizing: border-box; }
+    body { font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif; color: #111827; margin: 0; padding: 16px; font-size: 12px; background: #fff; }
+    .tools { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; padding: 10px 12px; margin-bottom: 14px; background: #f1f5f9; border-radius: 8px; font-size: 13px; }
+    .tools button { font-size: 13px; font-weight: 600; padding: 6px 14px; border-radius: 6px; border: 0; background: #0b6e8a; color: #fff; cursor: pointer; }
+    .tools label { display: inline-flex; gap: 5px; align-items: center; cursor: pointer; }
+    h1 { font-size: 20px; margin: 0; }
+    .head { display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 2px solid #111827; padding-bottom: 6px; margin-bottom: 10px; }
+    .head .meta { text-align: right; color: #4b5563; font-size: 11px; line-height: 1.5; }
+    table { width: 100%; border-collapse: collapse; }
+    /* Баганын өргөн агуулгаараа (хоосон зайгүй): тоо, огноо нэг мөрөнд; нэр, зам үлдсэн зайд мөр шилжинэ */
+    .main td, .main th { font-size: 11.5px; }
+    .main .w-sup { min-width: 140px; } .main .w-tr { min-width: 90px; }
+    th, td { border: 1px solid #9ca3af; padding: 4px 6px; vertical-align: top; text-align: left; }
+    th { background: #e5e7eb; font-size: 11px; font-weight: 700; line-height: 1.25; }
+    th.r { text-align: right; white-space: normal; }
+    .r { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+    .c { text-align: center; }
+    .nw { white-space: nowrap; }
+    .muted { color: #6b7280; font-size: 10.5px; }
+    .st { display: inline-block; font-weight: 700; font-size: 10.5px; padding: 0 6px; border-radius: 4px; border: 1px solid; white-space: nowrap; }
+    .st.arrived { color: #166534; border-color: #166534; }
+    .st.transit { color: #0b4f63; border-color: #0b4f63; }
+    .st.wait { color: #4b5563; border-color: #9ca3af; }
+    .late { color: #b91c1c; font-weight: 700; }
+    .route { line-height: 1.6; }
+    .route .n { white-space: nowrap; }
+    .route .n.plan { color: #6b7280; font-style: italic; }
+    .route .n.todo { color: #9ca3af; }
+    .route .n.here { font-weight: 700; text-decoration: underline; }
+    .route .arr { color: #9ca3af; margin: 0 2px; }
+    .goods { margin-top: 16px; page-break-inside: avoid; }
+    .goods h2 { font-size: 13px; margin: 0 0 4px; }
+    .goods h2 .muted { font-weight: 400; }
+    .goods td, .goods th { font-size: 11.5px; padding: 3px 5px; }
+    .goods td.r .muted { font-size: 10px; margin-left: 2px; }
+    .goods tfoot td { font-weight: 700; background: #f3f4f6; }
+    .sum td { font-weight: 700; background: #f3f4f6; }
+    body:not(.show-goods) .goods-part { display: none; }
+    body:not(.show-money) .money { display: none; }
+    body:not(.show-cost) .cost { display: none; }
+    body:not(.show-summary) .summary-part { display: none; }
+    body:not(.show-summary) .goods-part { display: block; }  /* хоосон хуудас гарахгүй */
+    body:not(.show-summary) .goods:first-child { margin-top: 0; }
+    body.show-cost .goods-part { display: block; }
+    /* Үнийн жагсаалт загвар: зөвхөн №, Бараа, Үнэ - бусад бүх хэсэг нуугдана */
+    .price-part { display: none; }
+    body.price-list .price-part { display: block; }
+    body.price-list .summary-part, body.price-list .goods-part, body.price-list .opt { display: none !important; }
+    .price-part .goods table { width: auto; min-width: 60%; }
+    body.price-list .price-part .goods td, body.price-list .price-part .goods th { font-size: 13px !important; padding: 5px 10px !important; }  /* бусад сонголтын жижиг үсгийг дарна */
+    .price-part .goods td.item { min-width: 380px; }
+    /* Өртөг + мөнгөн дүн хоёулаа - багана олон тул арай жижиг (уншигдахуйц) */
+    body.show-cost.show-money .goods td, body.show-cost.show-money .goods th { font-size: 10.5px; padding: 3px 4px; }
+    .goods .cost { background: #fbfaf5; }
+    .goods .item { min-width: 150px; }
+    .goods th.cost { background: #ece8d6; }
+    /* Захиалга дээр гараар оруулсан зарах үнэ - шар дэвсгэр (хар цагаан хэвлэлд * үлдэнэ) */
+    .goods td.manual { background: #fde68a; font-weight: 700; }
+    .legend { display: inline-block; width: 12px; height: 10px; background: #fde68a; border: 1px solid #d97706; vertical-align: middle; margin-right: 3px; }
+    .foot { margin-top: 12px; color: #6b7280; font-size: 10.5px; }
+    @media print {
+        body { padding: 0; }
+        .tools { display: none; }
+        th, td.manual, .legend, .goods .cost { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+        tr { page-break-inside: avoid; }
+        thead { display: table-header-group; }
+    }
+</style>
+</head>
+<body{% if single %} data-single{% endif %}>
+<div class="tools">
+    <button type="button" onclick="window.print()">🖨 Хэвлэх</button>
+    {% if full %}<label title="Зөвхөн №, Бараа, Үнэ (001 үнэ, гараар оруулсан бол түүгээр)"><input type="checkbox" data-toggle="price-list"> <b>Үнийн жагсаалт</b></label>{% endif %}
+    <label class="opt"><input type="checkbox" data-toggle="show-summary" data-default="1"> Замын мэдээний хүснэгт</label>
+    <label class="opt"><input type="checkbox" data-toggle="show-goods"> Барааны задаргаа</label>
+    {% if full %}<label class="opt"><input type="checkbox" data-toggle="show-money"> Мөнгөн дүн (татвар, төлбөр, ашиг)</label>
+    <label class="opt" title="Бараа бүрийн ₮ үнэ, ногдох тээвэр, гаалийн татвар, НӨАТ, нийт ба нэгжийн өртөг"><input type="checkbox" data-toggle="show-cost"> Өртөг (тээвэр, гааль, НӨАТ)</label>{% endif %}
+    <span class="muted landscape-note">Хэвлэхдээ хэвтээ (landscape) чиглэл сонгоно.</span>
+</div>
+
+<div class="head">
+    <div>
+        {% if single %}
+        <h1>🧭 Замын мэдээ · {{ single.code }}</h1>
+        <div class="muted">{{ single.suppliers }}</div>
+        {% else %}
+        <h1>🧭 Замын мэдээ</h1>
+        <div class="muted">Замд яваа чингэлгүүд ба сүүлийн {{ recent_days }} хоногт ирсэн ачаа, ирэх дарааллаар</div>
+        {% endif %}
+    </div>
+    <div class="meta">
+        Хэвлэсэн: {{ now|date:'Y-m-d H:i' }}{% if not single %}<br>
+        Замд: <b>{{ counts.transit }}</b> · Ачигдаагүй: <b>{{ counts.wait }}</b> · Ирсэн: <b>{{ counts.arrived }}</b>{% endif %}
+    </div>
+</div>
+
+<div class="summary-part">
+<table class="main">
+    <thead>
+        <tr>
+            <th class="c w-n">№</th>
+            <th class="w-sup">Нийлүүлэгч / захиалга</th>
+            <th class="w-tr">Тээвэр</th>
+            <th class="c w-st">Төлөв</th>
+            <th>Зам (сар-өдөр)</th>
+            <th class="w-loc">Одоо байгаа газар</th>
+            <th class="r w-eta">Монголд ирэх</th>
+            <th class="r w-days">Замд (хоног)</th>
+            <th class="r w-goods">Бараа</th>
+            {% if full %}<th class="r money w-m">Татвар ₮</th>{% endif %}
+            {% if full %}<th class="r money w-m">Шилжүүлсэн</th>{% endif %}
+            {% if full %}<th class="r money w-m">Бохир ашиг ₮</th>{% endif %}
+            {% if full %}<th class="r money w-p">Ашиг %</th>{% endif %}
+        </tr>
+    </thead>
+    <tbody>
+        {% for s in shipments %}
+        <tr>
+            <td class="c">{{ forloop.counter }}</td>
+            <td><b>{{ s.suppliers }}</b><div class="muted">{{ s.code }}</div></td>
+            <td>{% if s.transport_mode %}{{ s.transport_icon }} {{ s.transport_mode }}{% else %}—{% endif %}
+                {% if full %}<div class="muted">{{ s.get_container_size_display }}{% if s.container_no %} · {{ s.container_no }}{% endif %}{% if s.carrier_name %}<br>{{ s.carrier_name }}{% endif %}</div>{% endif %}</td>
+            <td class="c"><span class="st {% if s.arrived %}arrived{% elif s.load_actual %}transit{% else %}wait{% endif %}">{% if s.arrived %}Ирсэн{% elif s.load_actual %}Замд{% else %}Ачигдаагүй{% endif %}</span>
+                {% if full and not s.arrived %}<div class="muted" title="Бичиг баримт / төлбөрийн шат">{{ s.status_label }}</div>{% endif %}</td>
+            <td class="route">{% for n in s.timeline %}<span class="n {{ n.state }}{% if n.here %} here{% endif %}">{{ n.label }} {% if n.date %}{{ n.date|date:'m-d' }}{% else %}—{% endif %}</span>{% if not forloop.last %} <span class="arr">→</span> {% endif %}{% endfor %}</td>
+            <td><b>{{ s.location }}</b>{% if s.location_date %}<div class="muted">{{ s.location_date|date:'Y-m-d' }}</div>{% endif %}</td>
+            <td class="r">{% if s.arrival_actual %}<b>{{ s.arrival_actual|date:'Y-m-d' }}</b><div class="muted">ирсэн</div>{% elif s.arrival_planned %}{{ s.arrival_planned|date:'Y-m-d' }}<div class="muted">төлөвлөсөн</div>{% else %}—{% endif %}
+                {% if s.delay_days %}<div class="late">+{{ s.delay_days }} хоног хоцорсон</div>{% endif %}</td>
+            <td class="r">{% if s.transit_days is not None %}{{ s.transit_days }}{% else %}—{% endif %}</td>
+            <td class="r">{{ s.line_count }} нэр<div class="muted">{{ s.box_total|floatformat:'-2g' }} хайрцаг</div></td>
+            {% if full %}<td class="r money">{% if s.tax.total %}{{ s.tax.total|floatformat:'0g' }}{% else %}—{% endif %}</td>{% endif %}
+            {% if full %}<td class="r money">{% for c, a in s.paid_totals %}{{ a|floatformat:'2g' }} {{ c }}{% if not forloop.last %}<br>{% endif %}{% empty %}—{% endfor %}</td>{% endif %}
+            {% if full %}<td class="r money">{% if s.profit_lines %}{{ s.profit|floatformat:'0g' }}{% else %}—{% endif %}</td>{% endif %}
+            {% if full %}<td class="r money">{% if s.profit_lines and s.margin is not None %}{{ s.margin }}%{% else %}—{% endif %}</td>{% endif %}
+        </tr>
+        {% empty %}
+        <tr><td colspan="13" class="c muted">Одоогоор замд яваа ачаа алга.</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+<div class="foot">Зам: <b><u>тодоор</u></b> - одоо байгаа газар, <i>налуугаар</i> - төлөвлөсөн огноо, «—» - огноо бүртгээгүй. «Замд (хоног)» - ачигдсанаас хойш ирэх / өнөөдрийг хүртэл.</div>
+</div>
+
+{# Барааны задаргаа - чингэлэг бүрт тусдаа хүснэгт #}
+{% if full %}
+<div class="price-part">
+    {% for s in shipments %}
+    <div class="goods">
+        <h2>{{ s.suppliers }} <span class="muted">· {{ s.code }}</span></h2>
+        <table>
+            <thead><tr><th class="c">№</th><th class="item">Бараа</th><th class="r">Үнэ ₮</th></tr></thead>
+            <tbody>
+                {% for o in s.supplier_orders.all %}{% for l in o.lines.all %}
+                <tr><td class="c">{{ l.print_no }}</td><td class="item">{{ l.item_name }}</td>
+                    <td class="r">{% if l.base_price is not None %}{{ l.base_price|floatformat:'0g' }}{% else %}—{% endif %}</td></tr>
+                {% endfor %}{% empty %}
+                <tr><td colspan="3" class="c muted">Бараа бүртгээгүй</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endfor %}
+</div>
+{% endif %}
+
+<div class="goods-part">
+    {% for s in shipments %}
+    <div class="goods">
+        <h2>{{ forloop.counter }}. {{ s.suppliers }} <span class="muted">· {{ s.code }} · {% if s.arrived %}Ирсэн {{ s.arrival_actual|date:'Y-m-d' }}{% else %}Монголд ирэх {{ s.arrival_planned|date:'Y-m-d'|default:'—' }}{% endif %}{% if full %}<span class="cost"> · ханш {% for c, rate in s.print_rates %}1 {{ c }} = {{ rate|floatformat:'2g' }} ₮{% if not forloop.last %}, {% endif %}{% empty %}—{% endfor %}{% if s.freight_total %} · тээвэр {{ s.freight_total|floatformat:'2g' }} {{ s.freight_currency }}{% if not s.customs_include_freight %} (гаалийн үнэд ороогүй){% endif %}{% endif %}{% if s.other_total %} · бусад зардал {% for name, amount in s.other_rows %}{{ name|default:'—' }} {{ amount|floatformat:'0g' }}{% if not forloop.last %}, {% endif %}{% endfor %} ₮{% endif %}</span>{% endif %}</span></h2>
+        <table>
+            <thead><tr><th class="c">№</th><th class="item">Бараа</th><th class="r">Хайрцаг</th><th class="r">Тоо хэмжээ</th>
+                {% if full %}<th class="r money">Нэгж үнэ{% if s.print_currency %} {{ s.print_currency }}{% endif %}</th><th class="r money">Дүн{% if s.print_currency %} {{ s.print_currency }}{% endif %}</th>
+                <th class="r cost">Барааны үнэ ₮</th><th class="r cost">Тээвэр ₮</th><th class="r cost">Гаалийн үнэ ₮</th><th class="r cost">Гааль ₮</th><th class="r cost">НӨАТ ₮</th>{% if s.other_total %}<th class="r cost">Бусад ₮</th>{% endif %}<th class="r cost">Нийт өртөг ₮</th><th class="r cost">Нэгжийн өртөг ₮</th>
+                <th class="r money">001 үнэ ₮</th><th class="r money">Бохир ашиг ₮</th><th class="r money">Ашиг %</th>{% endif %}</tr></thead>
+            <tbody>
+                {% for o in s.supplier_orders.all %}{% for l in o.lines.all %}
+                <tr>
+                    <td class="c">{{ l.print_no }}</td>
+                    <td class="item">{{ l.item_name }}{% if s.supplier_orders.all|length > 1 %}<div class="muted">{{ o.supplier_name }}</div>{% endif %}</td>
+                    <td class="r">{{ l.box_qty|floatformat:'-2g' }}</td>
+                    <td class="r">{{ l.total_qty|floatformat:'-3g' }} {% if l.measure == 'Клограм' %}кг{% elif l.measure == 'Ширхэг' %}ш{% else %}{{ l.measure }}{% endif %}</td>
+                    {% if full %}
+                    <td class="r money">{{ l.unit_price_text }}{% if not s.print_currency %} {{ o.currency }}{% endif %}</td>
+                    <td class="r money">{{ l.total_amount|floatformat:'2g' }}{% if not s.print_currency %} {{ o.currency }}{% endif %}</td>
+                    {% if l.tax_currency == 'MNT' %}
+                    <td class="r cost">{{ l.goods_mnt|floatformat:'0g' }}</td>
+                    <td class="r cost">{{ l.freight_mnt|floatformat:'0g' }}</td>
+                    <td class="r cost">{{ l.customs_value|floatformat:'0g' }}</td>
+                    <td class="r cost">{{ l.duty_amount|floatformat:'0g' }} <span class="muted">{{ l.duty_rate|floatformat:'-2' }}%</span></td>
+                    <td class="r cost">{{ l.vat_amount|floatformat:'0g' }} <span class="muted">{{ l.vat_rate|floatformat:'-2' }}%</span></td>
+                    {% if s.other_total %}<td class="r cost">{{ l.other_cost|floatformat:'0g' }}</td>{% endif %}
+                    <td class="r cost"><b>{{ l.cost_total|floatformat:'0g' }}</b></td>
+                    <td class="r cost">{% if l.unit_cost is not None %}{{ l.unit_cost|floatformat:'0g' }}{% else %}—{% endif %}</td>
+                    {% else %}
+                    <td class="c cost muted" colspan="{% if s.other_total %}8{% else %}7{% endif %}">{{ o.currency }} ханшгүй - өртөг бодогдоогүй</td>
+                    {% endif %}
+                    <td class="r money{% if l.price_manual %} manual{% endif %}">{% if l.base_price is not None %}{{ l.base_price|floatformat:'0g' }}{% if l.price_manual %}<span title="Гараар оруулсан">*</span>{% endif %}{% else %}—{% endif %}</td>
+                    <td class="r money">{% if l.profit is not None %}{{ l.profit|floatformat:'0g' }}{% else %}—{% endif %}</td>
+                    <td class="r money">{% if l.margin is not None %}{{ l.margin }}%{% else %}—{% endif %}</td>
+                    {% endif %}
+                </tr>
+                {% endfor %}{% empty %}
+                <tr><td colspan="16" class="c muted">Бараа бүртгээгүй</td></tr>
+                {% endfor %}
+            </tbody>
+            <tfoot><tr><td></td><td>Нийт {{ s.line_count }} нэр</td><td class="r">{{ s.box_total|floatformat:'-2g' }}</td>
+                <td class="r">{% for unit, qty in s.qty_totals %}<div>{{ qty|floatformat:'-3g' }} {{ unit }}</div>{% endfor %}</td>
+                {% if full %}<td class="money"></td>
+                <td class="r money">{% for c, amount in s.amount_totals %}<div>{{ amount|floatformat:'2g' }}{% if not s.print_currency %} {{ c }}{% endif %}</div>{% endfor %}
+                    {% for c, extra in s.extra_totals %}<div class="muted" title="Гадаад дахь нэмэлт зардал - барааны үнэ ₮-д багтсан">+ нэмэлт {{ extra|floatformat:'2g' }}{% if not s.print_currency %} {{ c }}{% endif %}</div>{% endfor %}</td>
+                <td class="r cost">{{ s.tax.goods|floatformat:'0g' }}</td><td class="r cost">{{ s.tax.freight|floatformat:'0g' }}</td><td class="r cost">{{ s.tax.customs_value|floatformat:'0g' }}</td>
+                <td class="r cost">{{ s.tax.duty|floatformat:'0g' }}</td><td class="r cost">{{ s.tax.vat|floatformat:'0g' }}</td>{% if s.other_total %}<td class="r cost">{{ s.other_total|floatformat:'0g' }}</td>{% endif %}<td class="r cost">{{ s.cost_total|floatformat:'0g' }}</td><td class="cost"></td>
+                <td class="money"></td><td class="r money">{% if s.profit_lines %}{{ s.profit|floatformat:'0g' }}{% endif %}</td>
+                <td class="r money">{% if s.profit_lines and s.margin is not None %}{{ s.margin }}%{% endif %}</td>{% endif %}</tr></tfoot>
+        </table>
+        {% if full and s.has_manual_price %}<div class="foot money"><span class="legend"></span>* шар өнгөтэй - 001 үнийг захиалга дээр гараар оруулсан.</div>{% endif %}
+    </div>
+    {% endfor %}
+</div>
+
+<script>
+// Үнийн жагсаалт босоо (portrait), бусад нь хэвтээ хуудсаар хэвлэнэ
+var pageStyle = document.createElement('style');
+document.head.appendChild(pageStyle);
+function pageSize() {
+    pageStyle.textContent = document.body.classList.contains('price-list') ? '@page { size: A4 portrait; margin: 12mm; }' : '';
+}
+// Сонголтыг хадгална (дараа нээхэд хэвээр)
+document.querySelectorAll('[data-toggle]').forEach(function (box) {
+    // Нэг захиалга хэвлэхэд барааны задаргаа анхдагчаар харагдана; сонголтыг тусад нь хадгална
+    var single = document.body.hasAttribute('data-single');
+    var key = 'tracking-print-' + (single ? 'one-' : '') + box.dataset.toggle;
+    var saved = null;
+    try { saved = localStorage.getItem(key); } catch (e) {}
+    box.checked = saved === null ? (box.dataset.default === '1' || (single && box.dataset.toggle === 'show-goods')) : saved === '1';
+    function apply() {
+        document.body.classList.toggle(box.dataset.toggle, box.checked);
+        try { localStorage.setItem(key, box.checked ? '1' : '0'); } catch (e) {}
+    }
+    box.addEventListener('change', apply);
+    box.addEventListener('change', pageSize);
+    apply();
+});
+pageSize();
+</script>
+</body>
+</html>

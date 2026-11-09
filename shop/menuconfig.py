@@ -90,6 +90,7 @@ MENU_GROUPS = [
             {'key': 'expense_report_by_year', 'label': 'Зардлын тооцоолол жилээр', 'icon': '📈', 'url_name': 'shop:expense_report_by_year'},
             {'key': 'receivable_report', 'label': 'Авлагын тайлан', 'icon': '📥', 'url_name': 'shop:receivable_report'},
             {'key': 'payable_report', 'label': 'Өглөгийн тайлан', 'icon': '📤', 'url_name': 'shop:payable_report'},
+            {'key': 'invoices', 'label': 'Нэхэмжлэх', 'icon': '🧾', 'url_name': 'shop:invoices'},
         ],
     },
     {
@@ -100,6 +101,7 @@ MENU_GROUPS = [
             {'key': 'timesheet', 'label': 'Хоног бүртгэл', 'icon': '📅', 'url_name': 'shop:timesheet'},
             {'key': 'payroll_card', 'label': 'Картын цалин бодолт', 'icon': '💳', 'url_name': 'shop:payroll_card'},
             {'key': 'payroll_cash', 'label': 'Бэлэн цалин бодолт', 'icon': '💵', 'url_name': 'shop:payroll_cash'},
+            {'key': 'card_bank_accounts', 'label': 'Картын цалингийн данс', 'icon': '🏧', 'url_name': 'shop:card_bank_accounts'},
             {'key': 'cash_bank_accounts', 'label': 'Бэлэн цалингийн данс', 'icon': '🏦', 'url_name': 'shop:cash_bank_accounts'},
             {'key': 'payroll_report', 'label': 'Цалингийн тайлан', 'icon': '📊', 'url_name': 'shop:payroll_report'},
             {'key': 'payroll_advance_card', 'label': 'Картын урьдчилгаа', 'icon': '💳', 'url_name': 'shop:payroll_advance_card'},
@@ -117,6 +119,8 @@ MENU_GROUPS = [
 ACTION_PERMISSIONS = [
     {'key': 'product_edit', 'label': 'Бүтээгдэхүүний мэдээлэл засах', 'icon': '✏️'},
     {'key': 'product_attachment_upload', 'label': 'Бүтээгдэхүүнд шинжилгээний бичиг хавсаргах', 'icon': '📄'},
+    # Зөвхөн барааны үндсэн зураг оруулах (бусад мэдээлэл засахгүй), зурагтай/зураггүй шүүлт харна
+    {'key': 'product_image_upload', 'label': 'Бүтээгдэхүүний зураг оруулах', 'icon': '🖼️'},
     # Нүүр хуудсын удирдлагын нэгтгэл (борлуулалт, бараа материал, авлага, өглөг, мөнгөн хөрөнгө) - Ерөнхий нягтлан үргэлж
     {'key': 'exec_summary', 'label': 'Удирдлагын нэгтгэл (нүүр хуудас)', 'icon': '📈'},
 ]
@@ -133,9 +137,11 @@ SUBPAGE_MENU_KEYS = {
     'sales_report_ht_dashboard': ('sales_report_ht',),
     'sales_report_ht_breakdown': ('sales_report_ht',),
     'sales_report_ht_export': ('sales_report_ht',),
+    'sales_plan_items': ('sales_plan',),
     'unloading_export': ('unloading',),
     'delivery_trips_save': ('delivery_trips',),
     'delivery_trips_list': ('delivery_trips',),
+    'delivery_trips_delete': ('delivery_trips',),
     'delivery_trips_export': ('delivery_trips',),
     'vehicles_fuel_import': ('vehicles',),
     'vehicles_fuel_save': ('vehicles',),
@@ -145,13 +151,22 @@ SUBPAGE_MENU_KEYS = {
     'vehicles_parts_import': ('vehicles',),
     # Дэлгэрэнгүй/баримтыг view өөрөө нарийвчилж шалгана (services.imports.can_view_full) - ХТ-д нээгдэхгүй
     'import_shipment': ('import_orders', 'import_tracking'),
+    'import_tracking_print': ('import_tracking',),
     'import_receipt': ('import_orders', 'import_tracking'),
     'import_attachment': ('import_orders', 'import_tracking'),
+    'import_payment_receipt': ('import_orders', 'import_tracking'),
     'purchase_report_export': ('purchase_report',),
     'purchase_report_suggest': ('purchase_report',),
     'receivable_ledger': ('receivable_report',),
     'receivable_export': ('receivable_report',),
     'payable_ledger': ('payable_report',),
+    'invoice_new': ('invoices',),
+    'invoice_customers': ('invoices',),
+    'invoice_pdf': ('invoices',),
+    'invoice_send': ('invoices',),
+    'invoice_edit': ('invoices',),
+    'invoice_delete': ('invoices',),
+    'invoice_settings': ('invoices',),
     'payable_export': ('payable_report',),
     'expense_transaction_detail': ('expense_report', 'expense_report_by_year'),
     'item_prices_export': ('item_prices',),
@@ -181,13 +196,14 @@ SUBPAGE_MENU_KEYS = {
     'payroll_cash_export': ('payroll_cash',),
     'payroll_settings': ('payroll_card', 'payroll_cash'),
     'meal_allowance_export': ('meal_allowance',),
-    'product_edit': ('product_edit',),
+    'product_edit': ('product_edit', 'product_image_upload'),
     'product_attachment_upload': ('product_attachment_upload',),
     'product_attachment_delete': ('product_attachment_upload',),
     'product_attachment_link': ('product_attachment_upload',),
     'product_search': ('product_attachment_upload',),
     'product_attachment_edit': ('product_attachment_upload',),
     'product_doc_types': ('product_attachment_upload',),
+    'product_cert_required': ('product_attachment_upload',),
 }
 # Цэсний эрхээс үл хамааран нээлттэй (нэвтрээгүй хэрэглэгчид ч) - эрхийг view өөрөө шалгадаг эсвэл нийтийн хуудас
 PUBLIC_URL_NAMES = {

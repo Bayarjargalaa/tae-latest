@@ -2,6 +2,7 @@
 E-commerce shop моделууд
 """
 import os
+import uuid
 from datetime import date, timedelta
 from decimal import Decimal
 from django.db import models
@@ -14,21 +15,21 @@ from .models_inventory import InventorySnapshot
 
 
 def product_image_main_path(instance, filename):
-    """Үндсэн зургийн нэр автоматаар {item_id}_main.{ext}"""
+    """Үндсэн зургийн нэр {item_id}_main_{санамсаргүй}.{ext} - зураг солиход URL өөрчлөгдөж хөтөч хуучныг кэшээс харуулахгүй"""
     ext = filename.split('.')[-1].lower()
-    return f'products/{instance.item_id}_main.{ext}'
+    return f'products/{instance.item_id}_main_{uuid.uuid4().hex[:8]}.{ext}'
 
 
 def product_image_2_path(instance, filename):
-    """2-р зургийн нэр автоматаар {item_id}_2.{ext}"""
+    """2-р зургийн нэр {item_id}_2_{санамсаргүй}.{ext} - зураг солиход URL өөрчлөгдөж хөтөч хуучныг кэшээс харуулахгүй"""
     ext = filename.split('.')[-1].lower()
-    return f'products/{instance.item_id}_2.{ext}'
+    return f'products/{instance.item_id}_2_{uuid.uuid4().hex[:8]}.{ext}'
 
 
 def product_image_3_path(instance, filename):
-    """3-р зургийн нэр автоматаар {item_id}_3.{ext}"""
+    """3-р зургийн нэр {item_id}_3_{санамсаргүй}.{ext} - зураг солиход URL өөрчлөгдөж хөтөч хуучныг кэшээс харуулахгүй"""
     ext = filename.split('.')[-1].lower()
-    return f'products/{instance.item_id}_3.{ext}'
+    return f'products/{instance.item_id}_3_{uuid.uuid4().hex[:8]}.{ext}'
 
 
 class UserProfile(models.Model):
@@ -246,6 +247,8 @@ class MealAttendance(models.Model):
     date = models.DateField('Огноо', unique=True)
     change_comment = models.TextField('Өөрчлөлтийн тайлбар', blank=True)
     ingredients_changed = models.BooleanField('Орц стандарт жораас өөрчлөгдсөн эсэх', default=False)
+    # Орцыг бүгдийг нь хассан хоолнууд - хадгалсан орц үлдээгүй ч стандарт жор руу буцахгүй
+    cleared_meals = models.ManyToManyField(Meal, blank=True, related_name='+', verbose_name='Орцгүй болгосон хоолнууд')
     created_at = models.DateTimeField('Үүсгэсэн', auto_now_add=True)
     updated_at = models.DateTimeField('Шинэчилсэн', auto_now=True)
 
@@ -312,7 +315,7 @@ class MealAttendance(models.Model):
     def ingredients_for_meal(self, meal):
         """Тухайн өдөрт хадгалагдсан орцны хувилбар (байхгүй бол стандарт жор)."""
         overrides = self.ingredient_overrides.filter(meal=meal) if self.pk else MealAttendanceIngredient.objects.none()
-        if overrides.exists():
+        if overrides.exists() or (self.pk and self.cleared_meals.filter(pk=meal.pk).exists()):
             return overrides
         return meal.ingredients.all()
 
@@ -407,8 +410,12 @@ class ProductExtension(models.Model):
     # Нэмэлт баганууд
     name_mn = models.CharField('Монгол нэр', max_length=500, blank=True)
     country_of_origin = models.CharField('Үйлдвэрлэсэн улс', max_length=100, blank=True)
-    qty_per_box = models.IntegerField('Хайрцаг дахь тоо', null=True, blank=True)
+    # Хайрцаг дахь тоо хэмжээ box_measure нэгжээр (ширхэг, кг, литр) - кг-ийн бараанд бутархай байж болно
+    qty_per_box = models.DecimalField('Хайрцаг дахь тоо', max_digits=12, decimal_places=3, null=True, blank=True)
+    box_measure = models.CharField('Хайрцаг дахь тооны хэмжих нэгж', max_length=30, blank=True)
     supplier = models.CharField('Нийлүүллэгч', max_length=200, blank=True)
+    # Шинжилгээний бичиг шаардлагагүй бараа - хяналтад "Бичиггүй" биш "Бичиг шаардлагагүй" төлөвт гарна
+    cert_not_required = models.BooleanField('Бичиг шаардлагагүй', default=False)
     
     # Зургийн талбарууд
     image_main = models.ImageField('Үндсэн зураг', upload_to=product_image_main_path, blank=True, null=True)
@@ -450,14 +457,11 @@ class ProductExtension(models.Model):
         elif image_type == '3' and self.image_3:
             return self.image_3.url
         
-        # Fallback: {item_id}.ext хайх
-        extensions = ['jpg', 'jpeg', 'png', 'webp', 'JPG', 'JPEG', 'PNG', 'WEBP']
-        for ext in extensions:
-            filename = f'{self.item_id}.{ext}'
-            filepath = os.path.join(settings.MEDIA_ROOT, 'products', filename)
-            
-            if os.path.exists(filepath):
-                return f'{settings.MEDIA_URL}products/{filename}'
+        # Fallback: {item_id}.ext (хавтасны жагсаалтын кэшээс - services.product_images)
+        from shop.services.product_images import fallback_files
+        fallback = fallback_files().get(self.item_id) if image_type == 'main' else None
+        if fallback:
+            return f'{settings.MEDIA_URL}{fallback}'
         
         # Placeholder зураг
         return f'{settings.MEDIA_URL}placeholder.svg'
@@ -466,6 +470,21 @@ class ProductExtension(models.Model):
     def image_url(self):
         """Үндсэн зургийн URL (shortcut)"""
         return self.get_image_url('main')
+
+    # Хэмжих нэгжийн товчлол (картанд "15 кг/хайрцаг")
+    MEASURE_SHORT = {'Ширхэг': 'ш', 'Клограм': 'кг', 'Килограм': 'кг', 'кг': 'кг', 'Литр': 'л'}
+
+    @classmethod
+    def format_box(cls, qty, measure):
+        """'24 ш/хайрцаг', '3.4 кг/хайрцаг' - хайрцаг дахь тоо хоосон бол ''."""
+        if not qty:
+            return ''
+        unit = cls.MEASURE_SHORT.get(measure or 'Ширхэг', measure)
+        return f'{Decimal(qty).normalize():f} {unit}/хайрцаг'
+
+    @property
+    def box_label(self):
+        return self.format_box(self.qty_per_box, self.box_measure)
 
 
 class AttendanceRawLog(models.Model):
@@ -738,11 +757,17 @@ class EmployeePayProfile(models.Model):
     ndsh_employer_rate = models.DecimalField('НДШ байгууллага (%)', max_digits=5, decimal_places=2, null=True, blank=True)
     # Бэлэн цалин шилжүүлэх данс (банкны нэртэй чөлөөт бичвэр) - ажилтны мэдээлэл дэх данс нь картын цалингийнх тул тусад нь
     cash_bank_account = models.CharField('Бэлэн цалингийн данс', max_length=100, blank=True)
+    # Картын цалингийн багц гүйлгээний (ХХБ) "Хүлээн авах банк/салбар" - хоосон бол дансны дугаараас (shop.services.bank_accounts.tdb_branch)
+    card_bank_branch = models.CharField('Картын дансны салбар', max_length=10, blank=True)
+    # Нийгмийн даатгалын сарын тайлангийн "Ургийн овог" (ажилтны мэдээлэлд байхгүй тул энд)
+    family_name = models.CharField('Ургийн овог', max_length=100, blank=True)
     # Хоолны мөнгө олгох эсэх - False бол олгохгүй (хоолны нэрсийн бүртгэлд бичигдэж, идсэн тоонд нь орно)
     eats_meals = models.BooleanField('Хоолны мөнгө олгох', default=True)
     # Хоолны мөнгө (өдөрт) - хоосон бол албан тушаалын (AttendancePositionRule), тэр нь хоосон бол
     # PayrollSetting.meal_allowance_per_day; 0 бол олгохгүй
     meal_allowance_per_day = models.DecimalField('Хоолны мөнгө (өдөрт, ₮)', max_digits=10, decimal_places=2, null=True, blank=True)
+    # Шатахууны мөнгө олгох эсэх - True бол Тээврийн хэрэгсэл > "Шатахууны мөнгө олгох тооцоо"-нд харагдана
+    fuel_allowance = models.BooleanField('Шатахууны мөнгө олгох', default=False)
     updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, verbose_name='Засварласан хэрэглэгч')
     updated_at = models.DateTimeField('Засварласан огноо', auto_now=True)
 
@@ -753,6 +778,28 @@ class EmployeePayProfile(models.Model):
 
     def __str__(self):
         return f"{self.employee_code} - {self.get_pay_type_display() or '-'}"
+
+
+class FuelAllowanceEntry(models.Model):
+    """Шатахууны мөнгөний сарын бүртгэл (shop.services.fuel_allowance): ажиллах / ажилласан хоногийн гар засвар
+    (хоосон бол Хоног бүртгэлээс), олговол зохих дүн (хоосон бол өмнөх сарын дүн дамжина)."""
+    employee_code = models.CharField('Ажилтны код', max_length=50)
+    year = models.PositiveSmallIntegerField('Он')
+    month = models.PositiveSmallIntegerField('Сар')
+    required_days = models.DecimalField('Ажиллах хоног', max_digits=5, decimal_places=1, null=True, blank=True)
+    worked_days = models.DecimalField('Ажилласан хоног', max_digits=5, decimal_places=1, null=True, blank=True)
+    due_amount = models.DecimalField('Олговол зохих дүн', max_digits=14, decimal_places=2, null=True, blank=True)
+    updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, verbose_name='Засварласан хэрэглэгч')
+    updated_at = models.DateTimeField('Засварласан огноо', auto_now=True)
+
+    class Meta:
+        db_table = 'shop_fuel_allowance_entry'
+        unique_together = [('employee_code', 'year', 'month')]
+        verbose_name = 'Шатахууны мөнгө'
+        verbose_name_plural = 'Шатахууны мөнгө'
+
+    def __str__(self):
+        return f"{self.employee_code} {self.year}-{self.month:02d}"
 
 
 class MealAllowanceEntry(models.Model):
@@ -1176,6 +1223,11 @@ class ImportShipment(models.Model):
     # Гаалийн тооцоо: {валют: 1 нэгж = хэдэн төгрөг} (Монголбанкны ханш), тээврийг гаалийн үнэд оруулах эсэх
     customs_rates = models.JSONField('Гаалийн ханш', default=dict, blank=True)
     customs_include_freight = models.BooleanField('Тээврийн зардлыг гаалийн үнэд оруулах', default=True)
+    # Ирсэн захиалгын бодит (гаалийн мэдүүлгийн) нийт дүн, ₮ - мөрүүдэд тооцоолсон дүнгийнх нь жингээр хуваагдана
+    customs_duty_actual = models.DecimalField('Бодит гаалийн татвар', max_digits=16, decimal_places=2, null=True, blank=True)
+    customs_vat_actual = models.DecimalField('Бодит НӨАТ', max_digits=16, decimal_places=2, null=True, blank=True)
+    # Ирсэн захиалгын бусад зардал [{name, amount}] (₮) - нийлбэр нь барааны гаалийн үнийн жингээр өртөгт хуваагдана
+    other_costs = models.JSONField('Бусад зардал', default=list, blank=True)
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='+')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='+')
@@ -1215,6 +1267,9 @@ class ImportSupplierOrder(models.Model):
     ci_date = models.DateField('Commercial invoice огноо', null=True, blank=True)
     ci_amount = models.DecimalField('Commercial invoice дүн', max_digits=16, decimal_places=2, null=True, blank=True)
     payment_status = models.CharField('Төлбөрийн төлөв', max_length=10, choices=PAY_CHOICES, default=PAY_NONE)
+    # Монгол руу гарахаас өмнө гадаадад гарсан нэмэлт зардал (захиалгын валютаар) - мөрүүдийн төлөх дүнгийн жингээр
+    # хуваарилагдаж, нийт төлбөр (= төлөх дүн + энэ) нь гаалийн үнийн суурь болно (services.imports.decorate)
+    foreign_extra = models.DecimalField('Гадаад дахь нэмэлт зардал', max_digits=16, decimal_places=2, default=0)
     position = models.PositiveSmallIntegerField(default=0)
 
     class Meta:
@@ -1243,8 +1298,11 @@ class ImportOrderLine(models.Model):
     gross_amount = models.DecimalField('Нийт дүн (хөнгөлөлтөөс өмнө)', max_digits=16, decimal_places=2, default=0)
     discount_rate = models.DecimalField('Хөнгөлөлт %', max_digits=7, decimal_places=4, default=0)
     total_amount = models.DecimalField('Төлөх дүн', max_digits=16, decimal_places=2, default=0)
-    # Анхдагч: малын гаралтай бараа 15%, бусад 10% (services.imports.default_duty_rate); гараар засна
+    # Анхдагч: тухайн барааны сүүлд хадгалсан хувь, анх удаа бол малын гаралтай 15%, бусад 10%
+    # (services.imports.item_catalog / default_duty_rate); гараар засна
     duty_rate = models.DecimalField('Гаалийн татвар %', max_digits=5, decimal_places=2, default=10)
+    # Зарах үнэ (₮) гараар - хоосон бол ERP-ийн 001 үндсэн үнэ (services.imports.attach_base_prices)
+    sale_price = models.DecimalField('Зарах үнэ (гараар)', max_digits=16, decimal_places=2, null=True, blank=True)
     vat_rate = models.DecimalField('НӨАТ %', max_digits=5, decimal_places=2, default=10)
     position = models.PositiveSmallIntegerField(default=0)
 
@@ -1280,6 +1338,35 @@ class ImportPayment(models.Model):
         ordering = ['paid_date', 'id']
         verbose_name = 'Импортын төлбөр'
         verbose_name_plural = 'Импортын төлбөрүүд'
+
+
+def import_payment_file_path(instance, filename):
+    """Шилжүүлгийн нэмэлт баримт - import_receipt_path-тай ижил хавтас, таахааргүй нэр."""
+    import uuid
+    ext = os.path.splitext(filename)[1].lower()[:10]
+    return f'import_receipts/{instance.payment.supplier_order.shipment_id}/{uuid.uuid4().hex}{ext}'
+
+
+class ImportPaymentReceipt(models.Model):
+    """Нэг шилжүүлгийн баримтууд (SWIFT, банкны хуулга, нэхэмжлэх г.м. - нэгээс олон). ImportPayment.receipt нь
+    хуучин (нэг файлтай) бүртгэлийнх, шинэ файлууд энд хадгалагдана."""
+    IMAGE_EXTS = ('.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp')
+
+    payment = models.ForeignKey(ImportPayment, on_delete=models.CASCADE, related_name='receipts')
+    file = models.FileField('Баримт', upload_to=import_payment_file_path)
+    original_name = models.CharField('Файлын нэр', max_length=255, blank=True)
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='+')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'shop_import_payment_receipt'
+        ordering = ['id']
+        verbose_name = 'Импортын төлбөрийн баримт'
+        verbose_name_plural = 'Импортын төлбөрийн баримтууд'
+
+    @property
+    def is_image(self):
+        return os.path.splitext(self.file.name)[1].lower() in self.IMAGE_EXTS
 
 
 def import_attachment_path(instance, filename):
@@ -1496,6 +1583,8 @@ class SalesPlan(models.Model):
     month = models.DateField('Сар (1-ний өдөр)', db_index=True)
     channel_id = models.CharField('Сувгийн код', max_length=20)
     amount = models.DecimalField('Төлөвлөгөө (₮)', max_digits=16, decimal_places=2, default=0)
+    # Тухайн сард энэ сувгийг төлөвлөгөөт бараанд хамруулахгүй (барааны зорилт 0)
+    items_excluded = models.BooleanField('Төлөвлөгөөт бараанд хамруулахгүй', default=False)
     updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='+')
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -1510,11 +1599,15 @@ class SalesPlan(models.Model):
 
 
 class SalesPlanItem(models.Model):
-    """Төлөвлөгөөт бараа - сар бүр онцолж борлуулах бараа ба суваг тус бүрийн тоо ширхгийн зорилт."""
+    """Төлөвлөгөөт бараа - сар бүр онцолж борлуулах бараа ба суваг тус бүрийн зорилт. Хайрцгаар оруулна:
+    target_qty = target_boxes × qty_per_box (барааны хэмжих нэгжээр - биелэлтийг үүгээр бодно).
+    channel_id='' мөр нь зорилтгүй ч сонгосон барааг (ба хайрцаг дахь тоог) хадгална."""
     month = models.DateField('Сар (1-ний өдөр)', db_index=True)
     item_id = models.TextField('Барааны код')
     channel_id = models.CharField('Сувгийн код', max_length=20)
     target_qty = models.DecimalField('Зорилт (ширхэг)', max_digits=14, decimal_places=2, default=0)
+    target_boxes = models.DecimalField('Зорилт (хайрцаг)', max_digits=12, decimal_places=2, null=True, blank=True)
+    qty_per_box = models.DecimalField('Хайрцаг дахь тоо', max_digits=12, decimal_places=3, null=True, blank=True)
     updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='+')
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -1666,3 +1759,110 @@ class VehiclePartRecord(models.Model):
 
     def __str__(self):
         return f'{self.date} {self.vehicle_plate} {self.description} {self.amount}'
+
+
+class InvoiceSetting(models.Model):
+    """Нэхэмжлэхийн тохиргоо (ганц мөр, pk=1) - нэхэмжлэгчийн мэдээлэл, дугаарлалт, лого/тамга, имэйлийн загвар.
+    Илгээх имэйлийн нууц үг .env-д (INVOICE_EMAIL_HOST_USER / INVOICE_EMAIL_HOST_PASSWORD) - shop.services.invoices."""
+    company_name = models.CharField('Байгууллагын нэр', max_length=200, default='Төгс Амин Эрдэнэ ХХК')
+    address = models.CharField('Хаяг', max_length=255, blank=True, default='БГД 20-р хороо Ажилчны гудамж 44/3 тоот')
+    phone = models.CharField('Утас, Факс', max_length=100, blank=True, default='70180085')
+    email = models.CharField('И-мэйл (нэхэмжлэх дээр)', max_length=150, blank=True, default='finance.tugsaminerdene@gmail.com')
+    prepared_by = models.CharField('Нэхэмжлэл бичсэн', max_length=100, blank=True, default='Баяржаргал')
+    number_prefix = models.CharField('Дугаарын угтвар', max_length=10, default='НЭ')
+    next_number = models.PositiveIntegerField('Дараагийн дугаар', default=120011)
+    due_days = models.PositiveSmallIntegerField('Төлөх хугацаа (хоног)', default=0)
+    vat_rate = models.DecimalField('НӨАТ (%)', max_digits=5, decimal_places=2, default=Decimal('10'))
+    logo = models.ImageField('Лого', upload_to='invoice/', blank=True, default='invoice/logo.png')
+    stamp = models.ImageField('Тамга, гарын үсэг', upload_to='invoice/', blank=True, default='invoice/stamp.png')
+    email_subject = models.CharField('Имэйлийн гарчиг', max_length=200, default='Нэхэмжлэх №{number} - {company}')
+    email_body = models.TextField('Имэйлийн бичвэр', default=(
+        'Сайн байна уу,\n\n{customer}-д {date}-ний өдрийн {amount}₮-ийн нэхэмжлэхийг хавсралтаар илгээж байна. '
+        'Төлбөрийг {due_date}-ний дотор доорх дансаар шилжүүлнэ үү.\n\n{bank}\n\nХүндэтгэсэн,\n{sender_name}\n{company}\n{phone}'
+    ))
+    updated_at = models.DateTimeField('Засварласан огноо', auto_now=True)
+
+    class Meta:
+        db_table = 'shop_invoice_setting'
+        verbose_name = 'Нэхэмжлэхийн тохиргоо'
+        verbose_name_plural = 'Нэхэмжлэхийн тохиргоо'
+
+    @classmethod
+    def get(cls):
+        obj, _ = cls.objects.get_or_create(pk=1)
+        return obj
+
+
+class CompanyBankAccount(models.Model):
+    """Байгууллагын банкны данс - нэхэмжлэх дээр "Банк" мөрөнд гарна. Сувгаар (ХТ) оноож болно."""
+    bank_name = models.CharField('Банк', max_length=100)
+    account_number = models.CharField('Дансны дугаар', max_length=50)
+    account_name = models.CharField('Данс эзэмшигч', max_length=200, blank=True)
+    currency = models.CharField('Валют', max_length=10, default='MNT')
+    is_default = models.BooleanField('Анхдагч', default=False)
+    is_active = models.BooleanField('Идэвхтэй', default=True)
+    sort_order = models.PositiveSmallIntegerField('Дараалал', default=0)
+    # Энэ дансаар төлөх харилцагчдын борлуулалтын суваг (OpenDataDistributionChannel.Id) - тэдгээрийн нэхэмжлэхэд
+    # автоматаар сонгогдоно; хоосон бол сувгаар оноогоогүй (анхдагч данс сонгогдоно)
+    channels = models.JSONField('Харилцагчийн суваг', default=list, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'shop_company_bank_account'
+        ordering = ['sort_order', 'id']
+        verbose_name = 'Байгууллагын банкны данс'
+        verbose_name_plural = 'Байгууллагын банкны данс'
+
+    def __str__(self):
+        return f'{self.bank_name} {self.account_number}'
+
+
+class CustomerContact(models.Model):
+    """Харилцагчийн нэхэмжлэх илгээх имэйл, хаяг (OpenDataCustomer-д байхгүй тул энд хадгална)."""
+    customer_id = models.CharField('Харилцагчийн код', max_length=50, unique=True)
+    customer_name = models.CharField('Харилцагч', max_length=255, blank=True)
+    email = models.CharField('Имэйл', max_length=500, blank=True, help_text='Олон бол таслалаар')
+    address = models.CharField('Хаяг', max_length=255, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'shop_customer_contact'
+        verbose_name = 'Харилцагчийн холбоо барих'
+        verbose_name_plural = 'Харилцагчийн холбоо барих'
+
+    def __str__(self):
+        return f'{self.customer_id} {self.email}'
+
+
+class Invoice(models.Model):
+    """Харилцагчид илгээсэн нэхэмжлэх (авлагын үлдэгдлээр). PDF-ийг хадгалсан утгуудаас үүсгэнэ."""
+    STATUS_DRAFT, STATUS_SENT, STATUS_FAILED = 'draft', 'sent', 'failed'
+    STATUS_CHOICES = [(STATUS_DRAFT, 'Ноорог'), (STATUS_SENT, 'Илгээсэн'), (STATUS_FAILED, 'Илгээж чадаагүй')]
+
+    number = models.CharField('Дугаар', max_length=30, unique=True)
+    customer_id = models.CharField('Харилцагчийн код', max_length=50, db_index=True)
+    customer_name = models.CharField('Харилцагч', max_length=255)
+    registry_number = models.CharField('Регистр / гэрчилгээний №', max_length=50, blank=True)
+    address = models.CharField('Хаяг', max_length=255, blank=True)
+    email = models.CharField('Имэйл', max_length=500, blank=True)
+    invoice_date = models.DateField('Нэхэмжилсэн огноо')
+    due_date = models.DateField('Төлбөр хийх хугацаа')
+    description = models.CharField('Утга', max_length=255)
+    unit = models.CharField('Хэмжих нэгж', max_length=20, blank=True, default='ш')
+    amount = models.DecimalField('Нийт дүн (НӨАТ-тэй)', max_digits=16, decimal_places=2)
+    vat_rate = models.DecimalField('НӨАТ (%)', max_digits=5, decimal_places=2, default=Decimal('10'))
+    bank_text = models.TextField('Банк', blank=True)
+    status = models.CharField('Төлөв', max_length=10, choices=STATUS_CHOICES, default=STATUS_DRAFT)
+    sent_at = models.DateTimeField('Илгээсэн огноо', null=True, blank=True)
+    error = models.TextField('Алдаа', blank=True)
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='+')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'shop_invoice'
+        ordering = ['-created_at']
+        verbose_name = 'Нэхэмжлэх'
+        verbose_name_plural = 'Нэхэмжлэх'
+
+    def __str__(self):
+        return f'{self.number} {self.customer_name} {self.amount}'

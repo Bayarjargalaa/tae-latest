@@ -39,6 +39,10 @@
             </div>
         </div>
 
+        {% if messages %}
+        <div class="no-print space-y-2">{% for message in messages %}<div class="p-3 rounded-xl text-sm font-semibold {% if message.tags == 'error' %}bg-red-100 text-red-800{% elif message.tags == 'warning' %}bg-yellow-100 text-yellow-800{% else %}bg-green-100 text-green-800{% endif %}">{{ message }}</div>{% endfor %}</div>
+        {% endif %}
+
         {# Шүүлт #}
         <form method="get" class="no-print bg-white rounded-xl shadow-sm border border-gray-100 p-4 space-y-3">
             <div class="flex flex-wrap gap-2">
@@ -85,12 +89,29 @@
         </form>
 
         {# Нэгтгэл #}
-        <div class="no-print grid grid-cols-2 md:grid-cols-5 gap-3">
+        <div class="no-print grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
             <div class="bg-white rounded-xl border border-gray-100 shadow-sm p-3"><div class="text-xs text-gray-500">Явсан удаа</div><div class="text-2xl font-bold">{{ totals.trips }}</div></div>
             <div class="bg-white rounded-xl border border-gray-100 shadow-sm p-3"><div class="text-xs text-gray-500">Харилцагч</div><div class="text-2xl font-bold">{{ totals.customers }}</div></div>
             <div class="bg-white rounded-xl border border-gray-100 shadow-sm p-3"><div class="text-xs text-gray-500">Буцаж ирсэн айл</div><div class="text-2xl font-bold text-orange-700">{{ totals.returned }}</div></div>
             <div class="bg-white rounded-xl border border-gray-100 shadow-sm p-3"><div class="text-xs text-gray-500">Хүргэсэн</div><div class="text-2xl font-bold text-green-700">{{ totals.delivered }}{% if totals.delivered_pct is not None %} <span class="text-sm font-medium text-gray-500">({{ totals.delivered_pct }}%)</span>{% endif %}</div></div>
             <div class="bg-white rounded-xl border border-gray-100 shadow-sm p-3"><div class="text-xs text-gray-500">Ирээгүй машин</div><div class="text-2xl font-bold {% if totals.out %}text-red-700{% endif %}">{{ totals.out }}</div></div>
+            <a href="?date_from={{ date_from|date:'Y-m-d' }}&date_to={{ date_to|date:'Y-m-d' }}&driver={{ driver|urlencode }}&helper={{ helper|urlencode }}&plate={{ plate|urlencode }}&status=dup" title="Зөвхөн давхар бүртгэлийг харах"
+               class="block rounded-xl border shadow-sm p-3 {% if totals.dup %}bg-yellow-50 border-yellow-300 hover:bg-yellow-100{% else %}bg-white border-gray-100{% endif %}"><div class="text-xs text-gray-500">Давхар бүртгэл</div><div class="text-2xl font-bold {% if totals.dup %}text-yellow-700{% endif %}">{{ totals.dup }}</div></a>
+        </div>
+
+        {# Бүртгэлгүй өдрүүд #}
+        <div class="no-print bg-white rounded-xl border {% if missing_days %}border-red-200{% else %}border-gray-100{% endif %} shadow-sm p-3">
+            {% if missing_days %}
+            <div class="text-sm font-semibold text-red-700 mb-2">Бүртгэлгүй өдөр: {{ missing_days|length }}{% if driver or helper or plate %} <span class="font-normal text-gray-500">(шүүлтээр: {% if driver %}{{ driver }} {% endif %}{% if helper %}{{ helper }} {% endif %}{% if plate %}{{ plate }}{% endif %})</span>{% endif %}</div>
+            <div class="flex flex-wrap gap-1.5">
+                {% for d in missing_days %}
+                <a href="{% url 'shop:delivery_trips' %}?date={{ d.date|date:'Y-m-d' }}" title="Бүртгэл нээх"
+                   class="text-sm px-2.5 py-1 rounded-lg border tabular-nums {% if d.weekend %}border-gray-200 bg-gray-50 text-gray-500{% else %}border-red-200 bg-red-50 text-red-800 hover:bg-red-100{% endif %}">{{ d.date|date:'m.d' }} <span class="text-xs">{{ d.weekday }}</span></a>
+                {% endfor %}
+            </div>
+            {% else %}
+            <div class="text-sm text-green-700">✓ Хугацааны өдөр бүр бүртгэлтэй.</div>
+            {% endif %}
         </div>
 
         <div class="dl-card bg-white rounded-xl shadow-sm border border-gray-100 p-3">
@@ -106,15 +127,15 @@
                             <th class="px-2 py-2">№</th><th class="px-2 py-2">Огноо</th><th class="px-2 py-2">Жолооч</th><th class="px-2 py-2">Туслах</th>
                             <th class="px-2 py-2">Машин</th><th class="px-2 py-2 text-center">Гарсан</th><th class="px-2 py-2 text-right">Харилцагч</th>
                             <th class="px-2 py-2 text-center">Ирсэн</th><th class="px-2 py-2 text-center">Хугацаа</th><th class="px-2 py-2 text-right">Буцсан айл</th><th class="px-2 py-2">Шалтгаан</th>
-                            <th class="px-2 py-2 no-print"></th>
+                            <th class="px-2 py-2">Бүртгэсэн</th><th class="px-2 py-2 no-print"></th>
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-gray-100">
                         {% for r in rows %}{% with t=r.trip %}
-                        <tr class="hover:bg-gray-50 {% if not t.return_time %}bg-red-50{% endif %}">
+                        <tr class="hover:bg-gray-50 {% if not t.return_time %}bg-red-50{% elif r.dup %}bg-yellow-50{% endif %}">
                             <td class="px-2 py-1.5 text-gray-500">{{ forloop.counter }}</td>
                             <td class="px-2 py-1.5 whitespace-nowrap">{{ t.date|date:'Y.m.d' }}</td>
-                            <td class="px-2 py-1.5">{{ t.driver_name }}</td>
+                            <td class="px-2 py-1.5">{{ t.driver_name }}{% if r.dup %} <span class="ml-1 inline-block text-xs font-semibold px-1.5 py-0.5 rounded bg-yellow-200 text-yellow-900 whitespace-nowrap" title="Энэ өдөр {{ r.dup }} удаа бүртгэгдсэн">×{{ r.dup }} давхар</span>{% endif %}</td>
                             <td class="px-2 py-1.5">{{ t.helper_name|default:"Туслахгүй" }}</td>
                             <td class="px-2 py-1.5 font-semibold whitespace-nowrap">{{ t.vehicle_plate }}</td>
                             <td class="px-2 py-1.5 text-center tabular-nums">{{ t.depart_time|time:'H:i' }}</td>
@@ -123,7 +144,9 @@
                             <td class="px-2 py-1.5 text-center tabular-nums text-gray-600">{{ r.duration }}</td>
                             <td class="px-2 py-1.5 text-right tabular-nums {% if t.returned_count %}text-orange-700 font-semibold{% endif %}">{{ t.returned_count|default_if_none:'' }}</td>
                             <td class="px-2 py-1.5 text-gray-700">{{ t.remainder_note }}</td>
-                            <td class="px-2 py-1.5 no-print"><a href="{% url 'shop:delivery_trips' %}?date={{ t.date|date:'Y-m-d' }}" class="text-blue-600 hover:underline whitespace-nowrap">Нээх →</a></td>
+                            <td class="px-2 py-1.5 text-gray-600 whitespace-nowrap" title="{{ t.created_at|date:'Y.m.d H:i' }}">{{ r.created_by }}</td>
+                            <td class="px-2 py-1.5 no-print whitespace-nowrap"><a href="{% url 'shop:delivery_trips' %}?date={{ t.date|date:'Y-m-d' }}" class="text-blue-600 hover:underline">Нээх →</a>{% if can_delete %}
+                                <button type="button" data-delete="{{ t.pk }}" data-label="{{ t.date|date:'Y.m.d' }} · {{ t.vehicle_plate }} · {{ t.driver_name }}" class="ml-2 text-red-600 hover:underline">Устгах</button>{% endif %}</td>
                         </tr>
                         {% endwith %}{% endfor %}
                     </tbody>
@@ -134,7 +157,7 @@
                             <td class="px-2 py-2 text-right tabular-nums">{{ totals.customers }}</td>
                             <td></td><td></td>
                             <td class="px-2 py-2 text-right tabular-nums">{{ totals.returned }}</td>
-                            <td></td><td class="no-print"></td>
+                            <td></td><td></td><td class="no-print"></td>
                         </tr>
                     </tfoot>
                 </table>
@@ -163,4 +186,21 @@
         {% endif %}
     </main>
 </div>
+{% if can_delete %}
+<form id="dl-delete-form" method="post" action="{% url 'shop:delivery_trips_delete' %}" class="hidden">
+    {% csrf_token %}
+    <input type="hidden" name="id">
+    <input type="hidden" name="query" value="{{ export_query }}">
+</form>
+<script>
+document.querySelectorAll('[data-delete]').forEach((b) => b.addEventListener('click', () => {
+    if (!confirm(`${b.dataset.label}
+
+Энэ бүртгэлийг устгах уу?`)) return;
+    const form = document.getElementById('dl-delete-form');
+    form.elements.id.value = b.dataset.delete;
+    form.submit();
+}));
+</script>
+{% endif %}
 {% endblock %}

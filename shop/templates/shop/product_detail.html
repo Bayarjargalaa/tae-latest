@@ -5,33 +5,107 @@
 
 {% block content %}
 <div class="container mx-auto px-2 sm:px-4 py-4 lg:py-8">
+    <!-- Жагсаалт руу буцах: сайт дотроос ирсэн бол history.back() - шүүлт, гүйлгэсэн байрлал хадгалагдана -->
+    <a href="{{ back_url }}" id="back-to-list"
+       class="inline-flex items-center gap-1.5 mb-3 px-3 py-2 rounded-lg bg-white border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50 shadow-sm">
+        ← Жагсаалт руу буцах
+    </a>
+    <script>
+    document.getElementById('back-to-list').addEventListener('click', function (e) {
+        if (document.referrer.indexOf(location.origin + '/products') === 0 && history.length > 1) {
+            e.preventDefault();
+            history.back();
+        }
+    });
+    </script>
     <div class="bg-white rounded-lg shadow-lg overflow-hidden">
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 lg:gap-8 p-4 lg:p-8">
             <!-- Product Images -->
             <div class="min-w-0">
-                <div class="mb-4">
-                    <img src="{{ product|product_image_url }}"
-                         alt="{{ product.name }}"
+                <div class="mb-4 relative">
+                    {% if gallery %}
+                    <button type="button" id="main-image-btn" class="block w-full cursor-zoom-in" aria-label="Зургийг томруулж харах">
+                        <img id="main-image" src="{{ gallery.0 }}" alt="{{ product.name }}"
+                             class="w-full h-64 sm:h-96 object-contain bg-gray-50 rounded-lg">
+                        <span class="absolute bottom-2 right-2 bg-black/60 text-white text-xs px-2 py-1 rounded-md pointer-events-none">🔍 Томруулах</span>
+                    </button>
+                    {% else %}
+                    <img src="{{ product|product_image_url }}" alt="{{ product.name }}"
                          class="w-full h-64 sm:h-96 object-contain bg-gray-50 rounded-lg">
+                    {% endif %}
                 </div>
-                
-                <!-- Thumbnail Images -->
-                {% if product.extension %}
+
+                <!-- Зургийн жагсаалт: дарахад үндсэн зураг солигдоно -->
+                {% if gallery|length > 1 %}
                 <div class="grid grid-cols-3 gap-2">
-                    <img src="{{ product.extension.image_url }}" 
-                         alt="{{ product.name }}"
-                         class="h-24 object-contain bg-gray-50 rounded cursor-pointer hover:ring-2 ring-primary">
-                    {% if product.extension.image_2 %}
-                    <img src="{{ product.extension.get_image_url.2 }}" 
-                         alt="{{ product.name }}"
-                         class="h-24 object-contain bg-gray-50 rounded cursor-pointer hover:ring-2 ring-primary">
-                    {% endif %}
-                    {% if product.extension.image_3 %}
-                    <img src="{{ product.extension.get_image_url.3 }}" 
-                         alt="{{ product.name }}"
-                         class="h-24 object-contain bg-gray-50 rounded cursor-pointer hover:ring-2 ring-primary">
-                    {% endif %}
+                    {% for src in gallery %}
+                    <button type="button" class="gallery-thumb rounded {% if forloop.first %}ring-2 ring-primary{% endif %}" data-index="{{ forloop.counter0 }}" aria-label="{{ forloop.counter }}-р зураг">
+                        <img src="{{ src }}" alt="" class="w-full h-24 object-contain bg-gray-50 rounded hover:opacity-80">
+                    </button>
+                    {% endfor %}
                 </div>
+                {% endif %}
+
+                {% if gallery %}
+                <!-- Томруулж харах: дарж эсвэл Esc-ээр хаана; ‹ ›, сум товч, хуруугаар шударч солино -->
+                <div id="lightbox" class="hidden fixed inset-0 flex items-center justify-center" style="z-index:100;background:rgba(0,0,0,.92)" role="dialog" aria-modal="true" aria-label="Зураг">
+                    <button type="button" id="lb-close" class="absolute top-3 right-3 w-11 h-11 rounded-full bg-white/15 hover:bg-white/30 text-white text-2xl leading-none" aria-label="Хаах">×</button>
+                    {% if gallery|length > 1 %}
+                    <button type="button" id="lb-prev" class="absolute left-2 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-white/15 hover:bg-white/30 text-white text-2xl" aria-label="Өмнөх">‹</button>
+                    <button type="button" id="lb-next" class="absolute right-2 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-white/15 hover:bg-white/30 text-white text-2xl" aria-label="Дараах">›</button>
+                    {% endif %}
+                    <img id="lb-image" src="{{ gallery.0 }}" alt="{{ product.name }}" class="object-contain select-none" style="width:95vw;height:85vh">
+                    <div id="lb-counter" class="absolute bottom-3 left-1/2 -translate-x-1/2 text-white/80 text-sm {% if gallery|length < 2 %}hidden{% endif %}"></div>
+                </div>
+                {{ gallery|json_script:"gallery-data" }}
+                <script>
+                (function () {
+                    const images = JSON.parse(document.getElementById('gallery-data').textContent);
+                    const main = document.getElementById('main-image');
+                    const box = document.getElementById('lightbox');
+                    const lbImg = document.getElementById('lb-image');
+                    const counter = document.getElementById('lb-counter');
+                    const thumbs = document.querySelectorAll('.gallery-thumb');
+                    let current = 0;
+                    const show = function (i) {
+                        current = (i + images.length) % images.length;
+                        main.src = images[current];
+                        lbImg.src = images[current];
+                        counter.textContent = (current + 1) + ' / ' + images.length;
+                        thumbs.forEach(function (t, k) {
+                            t.classList.toggle('ring-2', k === current);
+                            t.classList.toggle('ring-primary', k === current);
+                        });
+                    };
+                    const open = function () { show(current); box.classList.remove('hidden'); document.body.style.overflow = 'hidden'; };
+                    const close = function () { box.classList.add('hidden'); document.body.style.overflow = ''; };
+                    document.getElementById('main-image-btn').addEventListener('click', open);
+                    thumbs.forEach(function (t) { t.addEventListener('click', function () { show(Number(t.dataset.index)); }); });
+                    document.getElementById('lb-close').addEventListener('click', close);
+                    box.addEventListener('click', function (e) { if (e.target === box) close(); });
+                    const prev = document.getElementById('lb-prev');
+                    const next = document.getElementById('lb-next');
+                    if (prev) prev.addEventListener('click', function () { show(current - 1); });
+                    if (next) next.addEventListener('click', function () { show(current + 1); });
+                    document.addEventListener('keydown', function (e) {
+                        if (box.classList.contains('hidden')) return;
+                        if (e.key === 'Escape') close();
+                        else if (e.key === 'ArrowLeft' && images.length > 1) show(current - 1);
+                        else if (e.key === 'ArrowRight' && images.length > 1) show(current + 1);
+                    });
+                    // Утсан дээр нэг хуруугаар зүүн/баруун шударч солино (хоёр хуруугаар томруулахад саад болохгүй)
+                    let startX = null;
+                    box.addEventListener('touchstart', function (e) {
+                        startX = e.touches.length === 1 ? e.touches[0].clientX : null;
+                    }, { passive: true });
+                    box.addEventListener('touchend', function (e) {
+                        if (startX === null || images.length < 2) return;
+                        const dx = e.changedTouches[0].clientX - startX;
+                        if (Math.abs(dx) > 50) show(current + (dx < 0 ? 1 : -1));
+                        startX = null;
+                    });
+                })();
+                </script>
                 {% endif %}
             </div>
             
@@ -93,7 +167,7 @@
                     {% if product.extension and product.extension.qty_per_box %}
                     <div class="flex justify-between">
                         <span class="text-gray-600">Хайрцаг дахь тоо:</span>
-                        <span class="font-medium">{{ product.extension.qty_per_box }}</span>
+                        <span class="font-medium">{{ product.extension.box_label }}</span>
                     </div>
                     {% endif %}
                     
@@ -111,10 +185,10 @@
                         🛒 Сагсанд нэмэх
                     </button>
                     
-                    {% if 'product_edit' in visible_menu_keys %}
+                    {% if 'product_edit' in visible_menu_keys or 'product_image_upload' in visible_menu_keys %}
                     <a href="{% url 'shop:product_edit' product.id %}" 
                        class="block w-full bg-secondary text-white py-3 rounded-lg hover:bg-blue-700 font-medium text-center transition">
-                        ✏️ Засах
+                        {% if 'product_edit' in visible_menu_keys %}✏️ Засах{% else %}🖼️ Зураг оруулах{% endif %}
                     </a>
                     {% endif %}
                 </div>
@@ -127,8 +201,18 @@
     <div id="attachments" class="mt-6 bg-white rounded-lg shadow-lg p-4 lg:p-6">
         <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
             <h2 class="text-lg lg:text-xl font-bold">📄 Шинжилгээний бичиг</h2>
-            <div class="flex items-center gap-3 text-sm">
+            <div class="flex flex-wrap items-center gap-3 text-sm">
                 {% if attachments %}<span class="text-gray-500">{{ attachments|length }} файл</span>{% endif %}
+                {% if can_attach %}
+                {# Шинжилгээний бичиг шаардлагагүй бараа - хяналтад "Бичиггүй"-д гарахгүй #}
+                <form method="post" action="{% url 'shop:product_cert_required' %}">
+                    {% csrf_token %}<input type="hidden" name="item_ids" value="{{ product.id }}"><input type="hidden" name="next" value="{{ request.path }}#attachments">
+                    <input type="hidden" name="value" value="{% if cert_not_required %}1{% else %}0{% endif %}">
+                    <label class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border cursor-pointer {% if cert_not_required %}border-slate-400 bg-slate-100 text-slate-800{% else %}border-gray-200 text-gray-600 hover:bg-gray-50{% endif %}" title="Чеклэвэл бичгийн хяналтад 'Бичиг шаардлагагүй' төлөвт гарна">
+                        <input type="checkbox" {% if cert_not_required %}checked{% endif %} onchange="this.form.submit()" class="w-4 h-4 rounded border-gray-300"> ➖ Бичиг шаардлагагүй
+                    </label>
+                </form>
+                {% elif cert_not_required %}<span class="px-2 py-1 rounded-lg bg-slate-100 text-slate-700">➖ Бичиг шаардлагагүй</span>{% endif %}
                 {% if 'product_certificates' in visible_menu_keys %}
                 <a href="{% url 'shop:product_certificates' %}" class="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 font-medium">🧪 Бичгийн хяналт →</a>
                 {% endif %}
@@ -177,6 +261,7 @@
                     <button type="button" class="flex-1 py-2 hover:bg-blue-50 text-blue-700 border-l border-gray-200" title="Өөр бараатай холбох"
                             data-link-open data-link-url="{% url 'shop:product_attachment_link' a.pk %}" data-delete-url="{% url 'shop:product_attachment_delete' a.pk %}"
                             data-name="{{ a.original_name }}" data-count="{{ a.other_items|length|add:1 }}"
+                            data-issued="{{ a.issued_on|date:'Y-m-d' }}" data-expires="{{ a.expires_on|date:'Y-m-d' }}" data-no-expiry="{{ a.no_expiry|yesno:'1,0' }}"
                             data-exclude="{% for it in a.other_items %}{{ it.id }}|{% endfor %}">🔗</button>
                     <form method="post" action="{% url 'shop:product_attachment_delete' a.pk %}"
                           onsubmit="return confirm('{% if a.other_items %}{{ a.original_name|escapejs }}: энэ бараанаас салгах уу? (бусад {{ a.other_items|length }} бараанд хэвээр үлдэнэ){% else %}{{ a.original_name|escapejs }} файлыг устгах уу?{% endif %}');">
@@ -241,7 +326,9 @@
                     </div>
                     <button type="button" class="text-gray-500 hover:text-gray-800 text-xl px-2" data-link-close>✕</button>
                 </div>
-                <p class="text-sm text-gray-600">Барааны нэр, кодоо бичээд <b>доор гарах жагсаалтаас бараан дээр дарж</b> нэмнэ (Enter = эхнийх), дараа нь <b>Холбох</b> дарна. Тэдгээр барааны хуудсанд ч энэ бичиг харагдана.</p>
+                <p class="text-sm text-gray-600">Барааны нэр, кодоо бичээд <b>доор гарах жагсаалтаас бараан дээр дарж</b> нэмнэ (Enter = эхнийх), дараа нь <b>Холбох</b> дарна. Тэдгээр барааны хуудсанд ч энэ бичиг харагдана.
+                    Сонгосон бараа бүрт <b>дуусах огноо</b> оруулж болно - хоосон бол бичгийн ерөнхий огноог (<span id="link-general"></span>) авна.</p>
+                <input type="hidden" name="items_submitted" value="1">
                 <div id="link-picker"></div>
                 <div class="flex flex-wrap justify-between gap-2 pt-2 border-t border-gray-100">
                     <button type="submit" form="link-delete-form" class="text-sm px-3 py-2 rounded-lg text-red-700 hover:bg-red-50"
@@ -260,15 +347,17 @@
             var SEARCH_URL = '{% url "shop:product_search" %}';
 
             // Бараа хайж сонгох жижиг хэрэгсэл: сонгосон бараа бүр hidden item_ids болж формд орно
-            function makePicker(host, excludeIds) {
+            // expiry өгвөл (холбох цонх) сонгосон бараа бүр дуусах огноо / хугацаагүй сонгох мөртэй болно
+            function makePicker(host, excludeIds, expiry) {
                 host.innerHTML = '<input type="search" placeholder="Барааны нэр, код, баркодоор хайх..." class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" data-q>' +
                     '<div class="mt-1 max-h-56 overflow-y-auto border-2 border-blue-300 rounded-lg divide-y divide-gray-100 hidden" data-results></div>' +
-                    '<div class="flex flex-wrap gap-1.5 mt-2" data-chips></div>';
+                    '<div class="' + (expiry ? 'space-y-1.5 mt-2 max-h-72 overflow-y-auto' : 'flex flex-wrap gap-1.5 mt-2') + '" data-chips></div>';
                 var q = host.querySelector('[data-q]'), results = host.querySelector('[data-results]'), chips = host.querySelector('[data-chips]');
                 var exclude = new Set(excludeIds), chosen = new Set(), timer = null, seq = 0, first = null;
                 function addChip(item) {
                     if (chosen.has(item.id) || exclude.has(item.id)) return;
                     chosen.add(item.id);
+                    if (expiry) return addRow(item);
                     var chip = document.createElement('span');
                     chip.className = 'inline-flex items-center gap-1 bg-blue-50 border border-blue-200 text-blue-800 rounded-full pl-3 pr-1 py-1 text-xs';
                     chip.append(item.name || item.id);
@@ -279,6 +368,54 @@
                     x.addEventListener('click', function () { chosen.delete(item.id); chip.remove(); });
                     chip.append(hidden, x);
                     chips.append(chip);
+                }
+                function addRow(item) {
+                    var row = document.createElement('div');
+                    row.className = 'border border-blue-200 bg-blue-50/50 rounded-lg px-2 py-1.5 text-sm';
+                    row.innerHTML = '<div class="flex items-start justify-between gap-2"><div class="min-w-0"><div class="font-medium text-gray-800 break-words" data-n></div>' +
+                        '<div class="text-[11px] text-gray-400" data-i></div></div><button type="button" class="px-1.5 text-gray-500 hover:text-red-600" title="Хасах" data-x>✕</button></div>' +
+                        '<div class="flex flex-wrap items-center gap-1.5 mt-1"><span class="text-xs text-gray-600">Дуусах огноо:</span>' +
+                        '<input type="date" class="border border-gray-300 rounded-lg px-2 py-0.5 text-sm bg-white">' +
+                        '<button type="button" class="px-2 py-0.5 text-xs rounded-lg border border-gray-300 bg-white hover:bg-gray-100" data-m="12">+1 жил</button>' +
+                        '<button type="button" class="px-2 py-0.5 text-xs rounded-lg border border-gray-300 bg-white hover:bg-gray-100" data-m="24">+2 жил</button>' +
+                        '<label class="inline-flex items-center gap-1 text-xs text-gray-700 cursor-pointer"><input type="checkbox" value="1" class="w-3.5 h-3.5"> Хугацаагүй</label></div>' +
+                        '<div class="text-xs mt-0.5" data-p></div>';
+                    row.querySelector('[data-n]').textContent = item.name || item.id;
+                    row.querySelector('[data-i]').textContent = item.id;
+                    var ids = document.createElement('input'), own = document.createElement('input');
+                    ids.type = own.type = 'hidden';
+                    ids.name = 'item_ids'; ids.value = item.id;
+                    own.name = 'item_own_' + item.id;
+                    var date = row.querySelector('input[type=date]'), no = row.querySelector('input[type=checkbox]'), hint = row.querySelector('[data-p]');
+                    date.name = 'item_expires_' + item.id;
+                    no.name = 'item_no_expiry_' + item.id;
+                    // Огноо эсвэл "Хугацаагүй" сонговол энэ бараанд тусдаа огноо (item_own=1), хоосон бол ерөнхий огноо
+                    function refresh() {
+                        date.disabled = no.checked;
+                        var isOwn = no.checked || !!date.value;
+                        own.value = isOwn ? '1' : '0';
+                        if (!isOwn) { hint.textContent = '→ Ерөнхий огноо: ' + expiry.general; hint.className = 'text-xs mt-0.5 text-gray-500'; return; }
+                        if (no.checked) { hint.textContent = '♾ Энэ бараанд хугацаагүй'; hint.className = 'text-xs mt-0.5 text-green-700'; return; }
+                        var bad = expiry.issued && date.value <= expiry.issued;
+                        hint.textContent = bad ? '⚠ Олгосон огнооноос (' + expiry.issued.replace(/-/g, '.') + ') хойш байх ёстой' : '✓ Энэ бараанд ' + date.value.replace(/-/g, '.') + ' хүртэл';
+                        hint.className = 'text-xs mt-0.5 ' + (bad ? 'text-red-600 font-medium' : 'text-green-700');
+                    }
+                    // +1/+2 жил: олгосон огноо (байхгүй бол өнөөдөр) + N сар, сарын сүүлийн өдрийг хадгална
+                    row.querySelectorAll('[data-m]').forEach(function (b) {
+                        b.addEventListener('click', function () {
+                            var base = expiry.issued ? new Date(expiry.issued + 'T00:00') : new Date();
+                            var d = new Date(base.getFullYear(), base.getMonth() + +b.dataset.m, 1);
+                            d.setDate(Math.min(base.getDate(), new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()));
+                            date.value = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+                            no.checked = false;
+                            refresh();
+                        });
+                    });
+                    [date, no].forEach(function (e) { e.addEventListener('change', refresh); e.addEventListener('input', refresh); });
+                    row.querySelector('[data-x]').addEventListener('click', function () { chosen.delete(item.id); row.remove(); });
+                    row.append(ids, own);
+                    chips.append(row);
+                    refresh();
                 }
                 function render(items) {
                     results.innerHTML = '';
@@ -369,7 +506,11 @@
                     document.getElementById('link-form').action = btn.dataset.linkUrl;
                     document.getElementById('link-delete-form').action = btn.dataset.deleteUrl;
                     document.getElementById('link-name').textContent = btn.dataset.name + ' · одоо ' + btn.dataset.count + ' бараанд холбоотой';
-                    linkPicker = makePicker(document.getElementById('link-picker'), [currentProduct].concat(btn.dataset.exclude.split('|').filter(Boolean)));
+                    var d = btn.dataset;
+                    var general = d.noExpiry === '1' ? 'хугацаагүй' : (d.expires ? d.expires.replace(/-/g, '.') : 'огноогүй');
+                    document.getElementById('link-general').textContent = general;
+                    linkPicker = makePicker(document.getElementById('link-picker'), [currentProduct].concat(d.exclude.split('|').filter(Boolean)),
+                                            {general: general, issued: d.issued || ''});
                     dialog.showModal();
                     dialog.querySelector('[data-q]').focus();
                 });
@@ -390,7 +531,7 @@
             <a href="{% url 'shop:product_detail' related.id %}" 
                class="bg-white rounded-lg shadow hover:shadow-lg transition p-4">
                 <div class="h-32 mb-3 bg-gray-50 rounded overflow-hidden">
-                    <img src="{{ related|product_image_url }}" 
+                    <img src="{{ related|product_thumb_url }}" 
                          alt="{{ related.name }}"
                          class="w-full h-full object-contain">
                 </div>

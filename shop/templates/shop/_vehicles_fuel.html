@@ -34,7 +34,10 @@
 </div>
 {% if by_type %}
 <div class="flex flex-wrap gap-2 text-sm">
-    {% for d in by_type %}<span class="bg-white border border-gray-200 rounded-full px-3 py-1">{{ d.type }}: <b>{{ d.liters|floatformat:2|intcomma }} л</b> · {{ d.amount|floatformat:0|intcomma }}₮ · {{ d.count }} удаа</span>{% endfor %}
+    {% for d in by_type %}<div class="bg-white border border-gray-200 rounded-xl px-3 py-1">
+        <div>{{ d.type }}: <b>{{ d.liters|floatformat:2|intcomma }} л</b> · {{ d.amount|floatformat:0|intcomma }}₮ · {{ d.count }} удаа</div>
+        <div class="text-xs text-gray-500">🚚 Манай машинд: <b class="text-gray-700">{{ d.ours_liters|floatformat:2|intcomma }} л</b> · {{ d.ours_amount|floatformat:0|intcomma }}₮ · {{ d.ours_count }} удаа</div>
+    </div>{% endfor %}
 </div>
 {% endif %}
 

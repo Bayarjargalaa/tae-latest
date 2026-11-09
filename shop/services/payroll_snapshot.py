@@ -150,14 +150,14 @@ def get_close(year, month, sheet):
     return PayrollMonthClose.objects.filter(year=year, month=month, sheet=sheet).select_related('closed_by').first()
 
 
-def get_payroll(year, month, sheet, employee_code=None):
+def get_payroll(year, month, sheet, employee_code=None, timesheet_rows=None):
     """Цалин бодолт: хаагдсан сард хуулбараас, үгүй бол шууд бодно. (rows, totals, setting, close эсвэл None)."""
     from shop.models import PayrollSetting
     from shop.services.payroll import build_payroll, payroll_totals
 
     close = get_close(year, month, sheet)
     if close is None:
-        rows, totals, setting = build_payroll(year, month, sheet, employee_code)
+        rows, totals, setting = build_payroll(year, month, sheet, employee_code, timesheet_rows=timesheet_rows)
         return rows, totals, setting, None
     rows = [_load_row(r) for r in close.rows if employee_code is None or r.get('employee_code') == employee_code]
     return rows, payroll_totals(rows), PayrollSetting.get(), close

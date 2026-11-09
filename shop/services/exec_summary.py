@@ -53,6 +53,13 @@ SECTIONS = [
 COMING_SOON = {'fleet'}
 
 HT_PREFIX = 'ХТ'
+# Төлөвлөгөөт бараа (SalesPlanItem) оруулах сувгууд: ХТ + борлуулагчийн суваг ("Бэлэн борлуулагч")
+PLAN_SELLER_WORD = 'борлуулагч'
+
+
+def is_plan_item_channel(name):
+    name = name or ''
+    return name.startswith(HT_PREFIX) or PLAN_SELLER_WORD in name.lower()
 # Кэшийн түлхүүрийн хувилбар - тооцооны бүтэц өөрчлөгдөхөд нэмэгдүүлнэ (хуучин кэш хэрэглэгдэхгүй)
 CACHE_VERSION = 5
 INVENTORY_ACCOUNT = '1501%'
@@ -318,7 +325,8 @@ def _plans(p, channels):
         months.append(m)
         m = _shift_months(m, 1)
     plans = {}
-    for plan in SalesPlan.objects.filter(month__in=months):
+    # amount=0 мөр - зөвхөн "хамруулахгүй" тэмдэглэгээтэй суваг
+    for plan in SalesPlan.objects.filter(month__in=months, amount__gt=0):
         plans[plan.channel_id] = plans.get(plan.channel_id, 0) + float(plan.amount)
 
     # Сар дуусаагүй бол өнөөдрийг хүртэлх "байх ёстой" дүн (төлөвлөгөө x өнгөрсөн хоног / сарын хоног)
@@ -339,7 +347,9 @@ def _plans(p, channels):
             channel_rows.append({'id': cid, 'name': cid, 'target': target, 'actual': 0, 'pct': 0, 'pace_pct': 0,
                                  'forecast': 0, 'forecast_pct': 0})
 
-    items = list(SalesPlanItem.objects.filter(month__in=months).values('item_id', 'channel_id', 'target_qty'))
+    # channel_id='' - зөвхөн сонгосон бараа (зорилтгүй) тул биелэлтэд орохгүй
+    items = list(SalesPlanItem.objects.filter(month__in=months).exclude(channel_id='')
+                 .values('item_id', 'channel_id', 'target_qty'))
     focus = {}
     if items:
         item_ids = sorted({i['item_id'] for i in items})

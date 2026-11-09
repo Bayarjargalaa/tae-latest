@@ -28,7 +28,7 @@
                 <!-- Утсан дээр шүүлтийг товчоор нээж хаана (бараанууд шууд харагдана) -->
                 <button type="button" id="filters-toggle" aria-expanded="false" aria-controls="filters-panel"
                         class="lg:hidden w-full flex items-center justify-between bg-white rounded-lg shadow-md px-4 py-3 font-bold">
-                    <span>🔎 Шүүлт{% if search_query or current_category or current_group or current_brand %} (идэвхтэй){% endif %}</span>
+                    <span>🔎 Шүүлт{% if search_query or current_category or current_group or current_brand or current_image %} (идэвхтэй){% endif %}</span>
                     <span id="filters-toggle-icon">▼</span>
                 </button>
                 <div id="filters-panel" class="hidden lg:block mt-2 lg:mt-0 bg-white rounded-lg shadow-md p-4 lg:p-6 lg:sticky lg:top-24">
@@ -49,10 +49,23 @@
                         <input type="hidden" name="group" value="{{ current_group }}">
                         {% endif %}
                         {% if current_cert %}<input type="hidden" name="cert" value="{{ current_cert }}">{% endif %}
+                        {% if current_image %}<input type="hidden" name="image" value="{{ current_image }}">{% endif %}
                         <button type="submit" class="w-full mt-2 bg-primary text-white py-2 rounded-lg hover:bg-green-700 transition">
                             🔍 Хайх
                         </button>
                     </form>
+
+                    {% if image_links %}
+                    <!-- Зурагтай/зураггүй шүүлт (бараа засах эрхтэй хэрэглэгчид) -->
+                    <div class="mb-6">
+                        <h3 class="font-bold mb-3">🖼️ Зураг</h3>
+                        <div class="flex gap-1">
+                            {% for c in image_links %}
+                            <a href="{{ c.url }}" class="flex-1 text-center px-2 py-2 rounded border border-gray-200 hover:bg-gray-100 transition text-sm {% if current_image == c.code %}bg-primary text-white border-primary hover:bg-green-700{% endif %}">{{ c.label }}</a>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    {% endif %}
 
                     <!-- Барааны бүлэг -->
                     {% if item_groups %}
@@ -63,7 +76,7 @@
                                 <span>Бүгд</span>
                             </a>
                             {% for name, n in item_groups %}
-                            <a href="?group={{ name|urlencode }}{% if jijig_min_qty == 'true' %}&jijig_min=true{% endif %}{% if current_cert %}&cert={{ current_cert }}{% endif %}"
+                            <a href="?group={{ name|urlencode }}{% if jijig_min_qty == 'true' %}&jijig_min=true{% endif %}{% if current_cert %}&cert={{ current_cert }}{% endif %}{% if current_image %}&image={{ current_image }}{% endif %}"
                                class="flex justify-between gap-2 px-3 py-2 rounded hover:bg-gray-100 transition {% if current_group == name %}bg-primary text-white hover:bg-green-700{% endif %}">
                                 <span class="min-w-0 truncate">{{ name }}</span><span class="text-xs opacity-70 tabular-nums">{{ n }}</span>
                             </a>
@@ -81,7 +94,7 @@
                                 Бүгд
                             </a>
                             {% for brand in brands %}
-                            <a href="?brand={{ brand|urlencode }}{% if jijig_min_qty == 'true' %}&jijig_min=true{% endif %}{% if current_cert %}&cert={{ current_cert }}{% endif %}{% if view_mode == 'name' %}&view=name{% endif %}" 
+                            <a href="?brand={{ brand|urlencode }}{% if jijig_min_qty == 'true' %}&jijig_min=true{% endif %}{% if current_cert %}&cert={{ current_cert }}{% endif %}{% if current_image %}&image={{ current_image }}{% endif %}{% if view_mode == 'name' %}&view=name{% endif %}" 
                                class="block px-3 py-2 rounded hover:bg-gray-100 transition {% if current_brand == brand %}bg-primary text-white hover:bg-green-700{% endif %}">
                                 {{ brand }}
                             </a>
@@ -112,6 +125,7 @@
                             <input type="hidden" name="group" value="{{ current_group }}">
                             {% endif %}
                             {% if current_cert %}<input type="hidden" name="cert" value="{{ current_cert }}">{% endif %}
+                            {% if current_image %}<input type="hidden" name="image" value="{{ current_image }}">{% endif %}
 
                             <!-- Агуулах жижиг 10+ checkbox -->
                             <label class="flex items-start space-x-3 p-3 bg-blue-50 rounded-lg border border-blue-200 hover:bg-blue-100 transition cursor-pointer">
@@ -147,6 +161,7 @@
                             {% endfor %}
                         </div>
                     </div>
+
                     {% else %}
                     <!-- Нэвтрээгүй хэрэглэгчдэд мэдэгдэл -->
                     <div class="mb-6">
@@ -206,11 +221,11 @@
                             <div class="flex items-center gap-2 shrink-0">
                                 <button type="button" class="row-scroll hidden md:inline-flex w-8 h-8 items-center justify-center rounded-full border border-gray-200 bg-white hover:bg-gray-100 disabled:opacity-30 disabled:cursor-default" data-dir="-1" aria-label="Өмнөх">‹</button>
                                 <button type="button" class="row-scroll hidden md:inline-flex w-8 h-8 items-center justify-center rounded-full border border-gray-200 bg-white hover:bg-gray-100 disabled:opacity-30 disabled:cursor-default" data-dir="1" aria-label="Дараах">›</button>
-                                <a href="?group={{ group.name|urlencode }}{% if jijig_min_qty == 'true' %}&amp;jijig_min=true{% endif %}{% if current_brand %}&amp;brand={{ current_brand|urlencode }}{% endif %}{% if search_query %}&amp;q={{ search_query|urlencode }}{% endif %}"
+                                <a href="?group={{ group.name|urlencode }}{% if jijig_min_qty == 'true' %}&amp;jijig_min=true{% endif %}{% if current_brand %}&amp;brand={{ current_brand|urlencode }}{% endif %}{% if search_query %}&amp;q={{ search_query|urlencode }}{% endif %}{% if current_image %}&amp;image={{ current_image }}{% endif %}"
                                    class="text-sm font-medium text-primary hover:underline whitespace-nowrap">Бүгдийг харах →</a>
                             </div>
                         </div>
-                        <div class="row-track flex gap-3 lg:gap-4 overflow-x-auto snap-x snap-mandatory scroll-smooth pb-2 -mx-4 px-4 lg:mx-0 lg:px-0">
+                        <div class="row-track flex gap-3 lg:gap-4 overflow-x-auto snap-x snap-mandatory scroll-smooth scroll-px-4 lg:scroll-px-0 pb-2 -mx-4 px-4 lg:mx-0 lg:px-0">
                             {% for product in group.products %}
                             <div class="snap-start shrink-0 w-[44%] sm:w-[31%] md:w-[30%] xl:w-[23%]">
                                 {% include 'shop/_product_card.html' %}

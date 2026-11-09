@@ -80,6 +80,7 @@ STATUS_CHOICES = [
     ('out', 'Ирээгүй'),
     ('back', 'Ирсэн'),
     ('remainder', 'Үлдэгдэлтэй'),
+    ('dup', 'Давхар (нэг өдөр нэг жолооч)'),
 ]
 
 
@@ -111,29 +112,51 @@ def _minutes(t):
     return t.hour * 60 + t.minute
 
 
-def list_data(filters):
-    from django.db.models import Q
+WEEKDAYS = ['Да', 'Мя', 'Лх', 'Пү', 'Ба', 'Бя', 'Ня']
 
-    qs = DeliveryTrip.objects.filter(date__range=(filters['date_from'], filters['date_to']))
+
+def _missing_days(filters, registered):
+    """Хугацаанд (өнөөдрөөс хойшхийг тооцохгүй) нэг ч машин бүртгэгдээгүй өдрүүд - төлөвийн шүүлтээс үл хамаарна."""
+    end = min(filters['date_to'], timezone.localdate())
+    days, day = [], filters['date_from']
+    while day <= end:
+        if day not in registered:
+            days.append({'date': day, 'weekday': WEEKDAYS[day.weekday()], 'weekend': day.weekday() >= 5})
+        day += timedelta(days=1)
+    return days
+
+
+def list_data(filters):
+    from django.db.models import Count, Q
+
+    qs = DeliveryTrip.objects.filter(date__range=(filters['date_from'], filters['date_to'])).select_related('created_by')
     if filters['driver']:
         qs = qs.filter(driver_name=filters['driver'])
     if filters['helper']:
         qs = qs.filter(helper_name='' if filters['helper'] == 'Туслахгүй' else filters['helper'])
     if filters['plate']:
         qs = qs.filter(vehicle_plate=filters['plate'])
+    missing_days = _missing_days(filters, set(qs.values_list('date', flat=True)))
+    # Нэг өдөр нэг жолооч хэд бүртгэгдсэн - төлөвийн шүүлтээс өмнө тоолно
+    dup_counts = {(r['date'], r['driver_name']): r['n'] for r in
+                  qs.values('date', 'driver_name').annotate(n=Count('id')).filter(n__gt=1)}
     if filters['status'] == 'out':
         qs = qs.filter(return_time__isnull=True)
     elif filters['status'] == 'back':
         qs = qs.filter(return_time__isnull=False)
     elif filters['status'] == 'remainder':
         qs = qs.filter(Q(returned_count__gt=0) | ~Q(remainder_note=''))
+    elif filters['status'] == 'dup':
+        qs = qs.filter(pk__in=[t.pk for t in qs if (t.date, t.driver_name) in dup_counts])
 
     rows = []
     for t in qs.order_by('date', 'depart_time', 'id'):
         minutes = None
         if t.depart_time and t.return_time:
             minutes = (_minutes(t.return_time) - _minutes(t.depart_time)) % 1440
-        rows.append({'trip': t, 'minutes': minutes, 'duration': f'{minutes // 60}:{minutes % 60:02d}' if minutes is not None else ''})
+        u = t.created_by
+        rows.append({'trip': t, 'dup': dup_counts.get((t.date, t.driver_name), 0), 'minutes': minutes, 'duration': f'{minutes // 60}:{minutes % 60:02d}' if minutes is not None else '',
+                     'created_by': (u.get_full_name() or u.username) if u else ''})
 
     by_driver = {}
     for r in rows:
@@ -152,13 +175,26 @@ def list_data(filters):
     returned = sum(r['trip'].returned_count or 0 for r in rows)
     return {
         'rows': rows,
+        'missing_days': missing_days,
         'by_driver': drivers,
         'totals': {
             'trips': len(rows), 'customers': customers, 'returned': returned, 'delivered': customers - returned,
             'out': sum(1 for r in rows if not r['trip'].return_time),
+            'dup': sum(1 for r in rows if r['dup']),
             'delivered_pct': round((customers - returned) * 100 / customers) if customers else None,
         },
     }
+
+
+# Жагсаалтаас бүртгэл устгах эрхтэй албан тушаал (superuser-ээс гадна)
+DELETE_POSITIONS = {'Ерөнхий нягтлан'}
+
+
+def can_delete(user):
+    if user.is_superuser:
+        return True
+    from shop.services.meal_allowance import user_position
+    return user_position(user) in DELETE_POSITIONS
 
 
 def filter_choices():

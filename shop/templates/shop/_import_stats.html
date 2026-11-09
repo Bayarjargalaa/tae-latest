@@ -1,0 +1,11 @@
+{# Импортын жижиг статистик (services.imports.shipment_stats) - замын мэдээ, захиалгын жагсаалт #}
+<div class="grid grid-cols-3 md:grid-cols-7 gap-2">
+    <a href="?show=all" title="Бүх захиалгыг харах" class="block bg-sky-50 rounded-lg border border-sky-200 shadow-sm px-3 py-2 hover:bg-sky-100"><div class="text-xs text-gray-500">Σ Нийт</div><div class="text-xl font-bold num text-sky-900">{{ stats.overall }}</div>
+        {% if stats.total != stats.overall %}<div class="text-[11px] text-gray-500">жагсаалтад {{ stats.total }}</div>{% endif %}</a>
+    <div class="bg-white rounded-lg border border-gray-100 shadow-sm px-3 py-2 border-l-4" style="border-left-color:#0b6e8a"><div class="text-xs text-gray-500">🚢 Замд</div><div class="text-xl font-bold num">{{ stats.transit }}</div></div>
+    <div class="bg-white rounded-lg border border-gray-100 shadow-sm px-3 py-2 border-l-4" style="border-left-color:#9ca3af"><div class="text-xs text-gray-500">⏳ Ачигдаагүй</div><div class="text-xl font-bold num">{{ stats.wait }}</div></div>
+    <div class="bg-white rounded-lg border border-gray-100 shadow-sm px-3 py-2 border-l-4" style="border-left-color:#2f7d4f"><div class="text-xs text-gray-500" title="Харагдаж буй жагсаалтад">✅ Ирсэн</div><div class="text-xl font-bold num">{{ stats.arrived }}</div></div>
+    <div class="rounded-lg border shadow-sm px-3 py-2 {% if stats.late %}bg-red-50 border-red-200{% else %}bg-white border-gray-100{% endif %}"><div class="text-xs text-gray-500">⚠️ Хоцорсон</div><div class="text-xl font-bold num {% if stats.late %}text-red-700{% endif %}">{{ stats.late }}</div></div>
+    <div class="bg-white rounded-lg border border-gray-100 shadow-sm px-3 py-2"><div class="text-xs text-gray-500" title="Төлөвлөсөн огноогоор 7 хоногийн дотор (хугацаа хэтэрсэн ч ирээгүйг оролцуулна)">📅 7 хоногт ирэх</div><div class="text-xl font-bold num">{{ stats.week }}</div></div>
+    <div class="bg-white rounded-lg border border-gray-100 shadow-sm px-3 py-2"><div class="text-xs text-gray-500">📦 Замд хайрцаг</div><div class="text-xl font-bold num">{{ stats.boxes|floatformat:'0g' }}</div></div>
+</div>

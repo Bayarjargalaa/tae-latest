@@ -410,7 +410,15 @@
     });
     form.addEventListener('submit', (e) => {
         if (!$('f-driver').value.trim()) { e.preventDefault(); alert('Жолоочийг сонгоно уу.'); $('f-driver').focus(); return; }
-        if (!$('f-plate').value.trim()) { e.preventDefault(); alert('Машины дугаарыг сонгоно уу.'); $('f-plate').focus(); }
+        if (!$('f-plate').value.trim()) { e.preventDefault(); alert('Машины дугаарыг сонгоно уу.'); $('f-plate').focus(); return; }
+        // Нэг өдөр нэг жолоочийг дахин бүртгэж байвал анхааруулна (2 дахь удаагаа явсан бол зөвшөөрнө)
+        if ($('f-action').value !== 'delete') {
+            const driver = $('f-driver').value.trim();
+            const dup = Object.values(DATA.trips).filter((t) => t.driver === driver && String(t.id) !== $('f-id').value);
+            if (dup.length && !confirm(`${driver} энэ өдөр аль хэдийн бүртгэлтэй байна (${dup.map((t) => `${t.plate} ${t.depart || ''}`.trim()).join(', ')}).\n\nДахин бүртгэх үү?`)) {
+                e.preventDefault(); $('f-driver').focus();
+            }
+        }
     });
 })();
 </script>

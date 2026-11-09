@@ -81,7 +81,9 @@
                     <tr class="bg-gray-100 text-left">
                         <th class="px-4 py-3 font-semibold text-gray-700">Огноо</th>
                         <th class="px-4 py-3 font-semibold text-gray-700 text-right">Хүний тоо</th>
+                        <th class="px-4 py-3 font-semibold text-gray-700">Хоол</th>
                         <th class="px-4 py-3 font-semibold text-gray-700">Орцны төлөв</th>
+                        <th class="px-4 py-3 font-semibold text-gray-700" title="Хоолны бүртгэлийн стандарт жорын нэг хүнд ногдох хэмжээнээс давсан орц">Норм</th>
                         <th class="px-4 py-3 font-semibold text-gray-700">Тайлбар</th>
                         <th class="px-4 py-3 font-semibold text-gray-700 text-right">Үйлдэл</th>
                     </tr>
@@ -91,6 +93,10 @@
                     <tr class="border-t {% if attendance.ingredients_changed %}bg-yellow-50{% endif %}">
                         <td class="px-4 py-3 font-medium text-gray-900">{{ attendance.date }}</td>
                         <td class="px-4 py-3 text-right">{{ attendance.headcount }}</td>
+                        <td class="px-4 py-3 text-gray-800">
+                            {% if attendance.day_number %}<span class="inline-block mb-0.5 px-1.5 rounded bg-gray-100 text-xs font-semibold text-gray-600" title="Тухайн өдрийн цэсний дугаар">№{{ attendance.day_number }}</span>{% endif %}
+                            {% for type_label, name, number in attendance.meal_rows %}<div class="leading-5"><span class="text-xs text-gray-400">{{ type_label }}:</span> {% if number %}<span class="text-xs font-semibold {% if number != attendance.day_number|stringformat:'s' %}text-amber-700{% else %}text-gray-500{% endif %}" title="Хоолны дугаар{% if number != attendance.day_number|stringformat:'s' %} - өөр дугаарын хоолоор сольсон{% endif %}">{{ number }}.</span> {% endif %}{{ name }}</div>{% empty %}<span class="text-gray-400">-</span>{% endfor %}
+                        </td>
                         <td class="px-4 py-3 whitespace-nowrap">
                             {% if attendance.ingredients_changed %}
                             <span class="inline-block px-2 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">Өөрчлөлттэй</span>
@@ -101,6 +107,14 @@
                             <span class="inline-block px-2 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-800" title="{% for sw in attendance.swaps.all %}{{ sw.original_meal.name|default:'(нэмсэн)' }} → {{ sw.meal.name }}{% if not forloop.last %}; {% endif %}{% endfor %}">🔄 Хоол сольсон</span>
                             {% endif %}
                         </td>
+                        <td class="px-4 py-3">
+                            {% if attendance.norm_exceeded %}
+                            <span class="inline-block px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-700 whitespace-nowrap">⚠ Норм хэтэрсэн</span>
+                            {% for r in attendance.norm_exceeded %}
+                            <div class="text-[11px] leading-4 text-gray-600 mt-0.5" title="{{ r.meal }}">{{ r.name }}: {% if r.norm is None %}<span class="text-red-600">жорт байхгүй</span> {{ r.qty|floatformat:'-3' }}{% else %}{{ r.norm|floatformat:'-3' }} → <b class="text-red-600">{{ r.qty|floatformat:'-3' }}</b>{% endif %} {{ r.unit }}</div>
+                            {% endfor %}
+                            {% else %}<span class="text-xs text-gray-400">Хэвийн</span>{% endif %}
+                        </td>
                         <td class="px-4 py-3 text-gray-600 max-w-xs">{{ attendance.change_comment|default:'-'|linebreaksbr }}</td>
                         <td class="px-4 py-3 text-right whitespace-nowrap">
                             <a href="{% url 'shop:meal_attendance_edit' attendance.pk %}" class="text-primary hover:underline mr-3">Засах</a>
@@ -110,7 +124,7 @@
                     </tr>
                     {% empty %}
                     <tr>
-                        <td colspan="5" class="px-4 py-6 text-center text-gray-500">Сонгосон шүүлтэд тохирох бүртгэл алга байна.</td>
+                        <td colspan="7" class="px-4 py-6 text-center text-gray-500">Сонгосон шүүлтэд тохирох бүртгэл алга байна.</td>
                     </tr>
                     {% endfor %}
                 </tbody>

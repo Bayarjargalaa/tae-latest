@@ -1,0 +1,207 @@
+{% extends 'base.html' %}
+
+{% block title %}{% if invoice %}Нэхэмжлэх {{ invoice.number }}{% else %}Шинэ нэхэмжлэх{% endif %} - Euro Foods{% endblock %}
+
+{% block hide_mobile_menu %}hidden{% endblock %}
+
+{% block extra_css %}
+<style>
+    .iv-label { display: block; font-size: .75rem; font-weight: 600; color: #6b7280; margin-bottom: .3rem; }
+    .iv-field { width: 100%; border: 1px solid #d1d5db; border-radius: .6rem; padding: .5rem .75rem; font-size: .9rem; background: #fff; }
+    .iv-field:focus { outline: 2px solid rgba(22,163,74,.3); border-color: #16a34a; }
+    .iv-card { background: #fff; border: 1px solid #f1f1ef; border-radius: 1rem; box-shadow: 0 1px 2px rgba(0,0,0,.04); }
+    .iv-results button { display: flex; width: 100%; justify-content: space-between; align-items: center; gap: 1rem; text-align: left; padding: .55rem .8rem; font-size: .9rem; }
+    .iv-results button:hover, .iv-results button:focus { background: #f0fdf4; outline: none; }
+</style>
+{% endblock %}
+
+{% block content %}
+{% load l10n %}
+<div class="flex min-h-screen bg-gray-50">
+    {% include 'shop/_sidebar.html' with active_page='invoices' %}
+
+    <main class="flex-1 p-3 lg:p-8 min-w-0 max-w-5xl">
+        {% if invoice %}
+        {% include 'shop/_invoice_nav.html' with title='Нэхэмжлэх засах' current='list' %}
+
+        <section class="iv-card p-4 lg:p-5 mb-5 flex flex-wrap items-center justify-between gap-3">
+            <div>
+                <div class="text-xs text-gray-500">Нэхэмжлэх № <strong class="text-gray-800">{{ invoice.number }}</strong> · {{ invoice.customer_id }}</div>
+                <div class="text-lg font-semibold text-gray-900">{{ invoice.customer_name }}</div>
+            </div>
+            <a href="{% url 'shop:invoice_pdf' invoice.pk %}" target="_blank" class="text-sm text-blue-700 hover:underline">Одоогийн PDF харах →</a>
+        </section>
+        {% if invoice.status == 'sent' %}
+        <div class="mb-4 p-3 rounded-lg text-sm bg-yellow-100 text-yellow-800">
+            Энэ нэхэмжлэх {{ invoice.sent_at|date:'Y.m.d H:i' }}-д {{ invoice.email }} хаяг руу илгээгдсэн. Зассаны дараа харилцагчид шинэчилсэн хувийг дахин илгээнэ үү.
+        </div>
+        {% endif %}
+        {% else %}
+        {% include 'shop/_invoice_nav.html' with title='Шинэ нэхэмжлэх' current='new' %}
+
+        {# Харилцагч сонгох #}
+        <section class="iv-card p-4 lg:p-5 mb-5">
+            <label for="iv-search" class="iv-label">Харилцагч</label>
+            <div class="relative">
+                <input id="iv-search" type="search" autocomplete="off" class="iv-field" placeholder="Сонгох эсвэл нэр, кодоор хайх" role="combobox" aria-controls="iv-results"
+                       value="{% if initial %}{{ initial.customer_name }} ({{ initial.customer_id }}){% endif %}">
+                <div id="iv-results" role="listbox" class="iv-results absolute left-0 right-0 top-full mt-1 bg-white border border-gray-200 rounded-xl shadow-lg z-20 overflow-y-auto max-h-80 hidden"></div>
+            </div>
+            <div class="flex flex-wrap items-center gap-2 mt-3 text-sm text-gray-600">
+                <span>Авлагын үлдэгдлийн огноо:</span>
+                <input type="date" id="iv-date-to" value="{{ date_to|date:'Y-m-d' }}" class="border border-gray-300 rounded-lg px-2 py-1">
+                <label class="inline-flex items-center gap-1.5 ml-auto cursor-pointer"><input type="checkbox" id="iv-all"> Бүх харилцагчаас хайх</label>
+            </div>
+        </section>
+        {% endif %}
+
+        {% if initial %}
+        {% if not banks %}
+        <div class="mb-4 p-3 rounded-lg text-sm bg-yellow-100 text-yellow-800">
+            Байгууллагын банкны данс бүртгээгүй байна - <a href="{% url 'shop:invoice_settings' %}" class="underline font-semibold">Тохиргоо, данс</a> хэсэгт нэмнэ үү.
+        </div>
+        {% endif %}
+        <form method="post" class="space-y-5" id="iv-form">
+            {% csrf_token %}
+            <input type="hidden" name="customer_id" value="{{ initial.customer_id }}">
+
+            <section class="iv-card p-4 lg:p-5">
+                <h2 class="font-semibold text-gray-800 mb-3">Төлөгч</h2>
+                <div class="grid sm:grid-cols-2 gap-4">
+                    <label><span class="iv-label">Байгууллагын нэр</span><input name="customer_name" class="iv-field" value="{{ initial.customer_name }}" required></label>
+                    <label><span class="iv-label">Гэрчилгээний № / регистр</span><input name="registry_number" class="iv-field" value="{{ initial.registry_number }}"></label>
+                    <label class="sm:col-span-2"><span class="iv-label">Хаяг</span><input name="address" class="iv-field" value="{{ initial.address }}"></label>
+                    <label class="sm:col-span-2"><span class="iv-label">Имэйл <span class="font-normal text-gray-400">(олон бол таслалаар; дараа нь автоматаар бөглөгдөнө)</span></span>
+                        <input name="email" type="text" inputmode="email" class="iv-field" value="{{ initial.email }}" placeholder="name@example.com"></label>
+                </div>
+            </section>
+
+            <section class="iv-card p-4 lg:p-5">
+                <h2 class="font-semibold text-gray-800 mb-3">Нэхэмжлэх</h2>
+                <div class="grid sm:grid-cols-3 gap-4">
+                    <label><span class="iv-label">Нэхэмжилсэн огноо</span><input type="date" name="invoice_date" class="iv-field" value="{{ initial.invoice_date|date:'Y-m-d' }}"></label>
+                    <label><span class="iv-label">Төлбөр хийх хугацаа</span><input type="date" name="due_date" class="iv-field" value="{{ initial.due_date|date:'Y-m-d' }}"></label>
+                    <label><span class="iv-label">Нийт дүн, ₮ <span class="font-normal text-gray-400">(НӨАТ {{ setting.vat_rate|floatformat:"-2" }}%-тай)</span></span>
+                        <input name="amount" class="iv-field text-right font-semibold" inputmode="decimal" value="{{ initial.amount|unlocalize }}" required></label>
+                    <label class="sm:col-span-3"><span class="iv-label">Материал / утга</span><input name="description" class="iv-field" value="{{ initial.description }}" maxlength="255"></label>
+                </div>
+                {% if not invoice and initial.amount <= 0 %}<p class="mt-3 text-sm text-amber-700">⚠️ {{ date_to|date:'Y.m.d' }}-ний байдлаар энэ харилцагчид авлагын эерэг үлдэгдэл алга - дүнгээ гараар оруулна уу.</p>{% endif %}
+                {% if banks %}
+                <fieldset class="mt-4">
+                    <legend class="iv-label">Банкны данс (нэхэмжлэх дээр гарна)</legend>
+                    <div class="flex flex-wrap gap-2">
+                        {% for b in banks %}
+                        <label class="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-200 text-sm cursor-pointer hover:bg-gray-50">
+                            <input type="checkbox" name="bank" value="{{ b.pk }}" {% if b.pk in selected_bank_ids %}checked{% endif %}>
+                            <span><strong>{{ b.bank_name }}</strong> {{ b.account_number }}{% if b.currency != 'MNT' %} · {{ b.currency }}{% endif %}</span>
+                        </label>
+                        {% endfor %}
+                    </div>
+                </fieldset>
+                {% endif %}
+            </section>
+
+            <details class="iv-card p-4 lg:p-5">
+                <summary class="font-semibold text-gray-800 cursor-pointer">✉️ Имэйлийн гарчиг, бичвэр</summary>
+                <p class="text-xs text-gray-500 mt-2">Орлуулагдах утга: {number} {company} {customer} {date} {due_date} {amount} {bank} {phone} {sender_name} (илгээж буй хүний нэр)</p>
+                <div class="space-y-3 mt-3">
+                    <label class="block"><span class="iv-label">Гарчиг</span><input name="email_subject" class="iv-field" value="{{ setting.email_subject }}"></label>
+                    <label class="block"><span class="iv-label">Бичвэр</span><textarea name="email_body" rows="8" class="iv-field">{{ setting.email_body }}</textarea></label>
+                </div>
+            </details>
+
+            <div class="flex flex-wrap gap-2 justify-end">
+                {% if invoice %}
+                <a href="{% url 'shop:invoices' %}" class="px-5 py-2.5 rounded-lg text-gray-600 hover:bg-gray-100">Болих</a>
+                <button type="submit" name="action" value="save" class="px-5 py-2.5 rounded-lg border border-gray-300 bg-white text-gray-800 hover:bg-gray-50 font-medium">💾 Хадгалах</button>
+                {% endif %}
+                <button type="submit" name="action" value="pdf" formtarget="_blank" class="px-5 py-2.5 rounded-lg border border-gray-300 bg-white text-gray-800 hover:bg-gray-50 font-medium">📄 {% if invoice %}Хадгалаад{% else %}Үүсгээд{% endif %} PDF харах</button>
+                <button type="submit" name="action" value="send" class="px-5 py-2.5 rounded-lg bg-primary text-white hover:bg-green-700 font-semibold"
+                        onclick="return confirm('Нэхэмжлэхийг ' + (this.form.email.value || '(хоосон)') + ' хаяг руу илгээх үү?')">✉️ {% if invoice %}Хадгалаад{% else %}Үүсгээд{% endif %} имэйлээр илгээх</button>
+            </div>
+        </form>
+
+        {% if history %}
+        <section class="iv-card p-4 lg:p-5 mt-6">
+            <h2 class="font-semibold text-gray-800 mb-2">Энэ харилцагчийн сүүлийн нэхэмжлэхүүд</h2>
+            <ul class="divide-y divide-gray-100 text-sm">
+                {% for h in history %}
+                <li class="py-2 flex flex-wrap justify-between gap-2">
+                    <a href="{% url 'shop:invoice_pdf' h.pk %}" target="_blank" class="text-blue-700 hover:underline">{{ h.number }}</a>
+                    <span class="text-gray-500">{{ h.invoice_date|date:'Y.m.d' }}</span>
+                    <span class="font-medium">₮{{ h.amount|floatformat:"0g" }}</span>
+                    <span class="{% if h.status == 'sent' %}text-green-700{% elif h.status == 'failed' %}text-red-700{% else %}text-gray-500{% endif %}">{{ h.get_status_display }}{% if h.sent_at %} · {{ h.sent_at|date:'Y.m.d H:i' }}{% endif %}</span>
+                </li>
+                {% endfor %}
+            </ul>
+        </section>
+        {% endif %}
+        {% endif %}
+    </main>
+</div>
+
+<script>
+(function () {
+    const input = document.getElementById('iv-search');
+    if (!input) return;  // засах горимд харилцагч солихгүй
+    const box = document.getElementById('iv-results');
+    const dateTo = document.getElementById('iv-date-to');
+    const allToggle = document.getElementById('iv-all');
+    const URL_SEARCH = '{% url "shop:invoice_customers" %}';
+    const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const nf = new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 });
+    const go = (id) => { location.href = `?customer=${encodeURIComponent(id)}&date_to=${dateTo.value}`; };
+    let timer, seq = 0, active = -1;
+
+    // Анхдагч: авлагын үлдэгдэлтэй харилцагчид (хоосон хайлтаар ч), "Бүх харилцагч" бол 2+ тэмдэгтээр хайна
+    async function load() {
+        const q = input.value.trim(), all = allToggle.checked, my = ++seq;
+        box.classList.remove('hidden');
+        if (all && q.length < 2) {
+            box.innerHTML = '<div class="px-3 py-2 text-sm text-gray-500">Нэр эсвэл кодоо бичнэ үү (2-оос дээш тэмдэгт)</div>';
+            return;
+        }
+        box.innerHTML = '<div class="px-3 py-2 text-sm text-gray-400">Ачаалж байна…</div>';
+        const params = new URLSearchParams({ q, date_to: dateTo.value });
+        if (all) params.set('all', '1');
+        const data = await (await fetch(`${URL_SEARCH}?${params}`)).json();
+        if (my !== seq) return;
+        active = -1;
+        const n = data.items.length;
+        const head = all ? '' : `<div class="px-3 py-1.5 text-xs text-gray-500 bg-gray-50 border-b border-gray-100">${dateTo.value}-ны байдлаар авлагын үлдэгдэлтэй ${n}${n >= 500 ? '+' : ''} харилцагч</div>`;
+        box.innerHTML = head + (data.items.map((c) => `<button type="button" role="option" data-id="${esc(c.id)}">
+                <span class="min-w-0"><span class="block truncate">${esc(c.name)} <span class="text-gray-400 text-xs">${esc(c.id)}</span></span>
+                    ${c.email ? `<span class="block truncate text-xs text-green-700">✉️ ${esc(c.email)}</span>` : ''}</span>
+                ${c.balance !== undefined ? `<span class="shrink-0 font-medium tabular-nums">₮${nf.format(Math.round(c.balance))}</span>` : ''}
+            </button>`).join('') || '<div class="px-3 py-2 text-sm text-gray-500">Олдсонгүй</div>');
+    }
+    const schedule = () => { clearTimeout(timer); timer = setTimeout(load, 250); };
+    const options = () => [...box.querySelectorAll('button[data-id]')];
+    function highlight(i) {
+        const opts = options();
+        if (!opts.length) return;
+        active = (i + opts.length) % opts.length;
+        opts.forEach((o, k) => o.classList.toggle('bg-green-50', k === active));
+        opts[active].scrollIntoView({ block: 'nearest' });
+    }
+
+    input.addEventListener('focus', () => { if (box.classList.contains('hidden')) load(); });
+    input.addEventListener('click', () => { if (box.classList.contains('hidden')) load(); });
+    input.addEventListener('input', schedule);
+    input.addEventListener('keydown', (e) => {
+        if (e.key === 'ArrowDown') { e.preventDefault(); if (box.classList.contains('hidden')) load(); else highlight(active + 1); }
+        else if (e.key === 'ArrowUp') { e.preventDefault(); highlight(active - 1); }
+        else if (e.key === 'Enter') {
+            e.preventDefault();
+            const opts = options(), o = opts[active] || (opts.length === 1 ? opts[0] : null);
+            if (o) go(o.dataset.id);
+        }
+        else if (e.key === 'Escape') box.classList.add('hidden');
+    });
+    allToggle.addEventListener('change', () => { input.focus(); load(); });
+    box.addEventListener('click', (e) => { const b = e.target.closest('button[data-id]'); if (b) go(b.dataset.id); });
+    document.addEventListener('click', (e) => { if (!box.contains(e.target) && e.target !== input && e.target !== allToggle) box.classList.add('hidden'); });
+    {% if initial %}dateTo.addEventListener('change', () => go('{{ initial.customer_id|escapejs }}'));{% else %}dateTo.addEventListener('change', () => { if (!box.classList.contains('hidden')) load(); });{% endif %}
+})();
+</script>
+{% endblock %}

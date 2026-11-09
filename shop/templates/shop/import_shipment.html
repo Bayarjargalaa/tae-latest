@@ -20,10 +20,21 @@
     .lines td { padding: .3rem .35rem; border-bottom: 1px solid #f3f4f6; vertical-align: top; }
     .lines th { padding: .45rem .35rem; }
     .lines .field { padding: .3rem .45rem; font-size: .82rem; }
+    .lines .field.manual { background: #fef3c7; border-color: #f59e0b; }  /* гараар оруулсан зарах үнэ */
+    .lines td.margin { padding-top: .55rem; font-weight: 600; color: #15803d; white-space: nowrap; }
+    .lines td.margin.neg { color: #b91c1c; }
     .lines input.n { text-align: right; font-variant-numeric: tabular-nums; }
     .lines .hint { font-size: .68rem; color: #6b7280; margin-top: 2px; }
     .lines tfoot td { font-weight: 600; border-bottom: 0; border-top: 1px solid #e5e7eb; padding: .5rem .35rem; }
-    .rcpt { width: 56px; height: 56px; object-fit: cover; border-radius: .4rem; border: 1px solid #e5e7eb; }
+    /* Төлбөр: шилжүүлэг бүр туузны нэг хэсэг, жагсаалт */
+    .pay-bar { display: flex; gap: 2px; height: 10px; border-radius: 999px; overflow: hidden; background: #efefec; }
+    .pay-bar > div { background: #2f9e5b; }
+    .pay-bar > div:nth-child(even) { background: #5bbd82; }
+    .pay-table { width: 100%; font-size: .8rem; border-collapse: collapse; }
+    .pay-table th { text-align: left; font-size: .68rem; font-weight: 600; color: #6b7280; text-transform: uppercase; letter-spacing: .03em; padding: .3rem .45rem; border-bottom: 1px solid #e5e7eb; }
+    .pay-table td { padding: .4rem .45rem; border-bottom: 1px solid #f3f4f6; vertical-align: top; }
+    .pay-table .r { text-align: right; }
+    .pay-table tfoot td { font-weight: 600; border-bottom: 0; border-top: 1px solid #e5e7eb; }
     .tl { list-style: none; margin: 0 0 0 .4rem; padding: 0; border-left: 2px solid #e6ebee; }
     .tl li { position: relative; padding: .1rem 0 .9rem 1rem; display: flex; justify-content: space-between; gap: .75rem; }
     .tl li::before { content: ""; position: absolute; left: -7px; top: .35rem; width: 12px; height: 12px; border-radius: 50%; background: #fff; border: 2px solid #0b6e8a; }
@@ -40,6 +51,10 @@
     .lines .no-n { display: inline-block; min-width: 1.4em; text-align: right; font-size: .75rem; color: #6b7280; font-variant-numeric: tabular-nums; }
     .xbtn { display: inline-grid; place-items: center; width: 22px; height: 22px; margin-left: 2px; border-radius: 50%; color: #b03a2e; vertical-align: middle; }
     .xbtn:hover, .xbtn:focus-visible { background: #fbe4e1; outline: none; }
+    /* Хэвтээ гүйлгэхэд № ба барааны нэр зүүн талдаа тогтмол */
+    .lines tr > :first-child { position: sticky; left: 0; z-index: 2; width: 58px; min-width: 58px; max-width: 58px; background: #fff; }
+    .lines tr > :nth-child(2) { position: sticky; left: 58px; z-index: 2; background: #fff; box-shadow: inset -1px 0 0 #e5e7eb; }
+    .lines thead tr > :first-child, .lines thead tr > :nth-child(2) { background: #fafaf9; z-index: 3; }
     .lines .tx { background: #fbfaf5; }
     .lines thead .tx { background: #f6f3e6; }
     #dirty-note:not([hidden]) { color: #8a5a00; font-weight: 600; }
@@ -124,42 +139,83 @@
                             {% include 'shop/_import_files.html' with files=o.files.ci stage='ci' prefix=o.id %}</div>
                     </div>
 
-                    {# Төлбөр #}
+                    {# Төлбөр - нэг захиалгын төлбөр олон шилжүүлгээс бүрдэнэ, шилжүүлэг бүр олон баримттай #}
                     <div class="p-4 border-b border-gray-100 space-y-3">
                         <div class="grid grid-cols-2 md:grid-cols-4 gap-3 items-end">
                             <label><span class="lbl">Төлбөрийн төлөв</span>
                                 <select class="field" name="so{{ o.id|unlocalize }}_payment_status">{% for k, v in pay_choices %}<option value="{{ k }}" {% if k == o.payment_status %}selected{% endif %}>{{ v }}</option>{% endfor %}</select></label>
-                            <div><span class="lbl">Төлсөн</span><div class="num font-semibold">{{ o.paid_total|floatformat:'2g' }} {{ o.currency }}</div></div>
-                            <div><span class="lbl">Proforma-аас үлдэгдэл</span><div class="num font-semibold {% if o.pi_balance > 0 %}late{% endif %}">{% if o.pi_balance is not None %}{{ o.pi_balance|floatformat:'2g' }}{% else %}—{% endif %}</div></div>
+                            <div><span class="lbl" title="Commercial invoice > Proforma > барааны дүн">Төлөх дүн</span>
+                                <div class="num font-semibold">{% if o.pay_target %}{{ o.pay_target|floatformat:'2g' }} {{ o.currency }}{% else %}—{% endif %}</div>
+                                {% if o.pay_target_label %}<div class="text-[11px] text-gray-500">{{ o.pay_target_label }}-аас</div>{% endif %}</div>
+                            <div><span class="lbl">Шилжүүлсэн</span>
+                                <div class="num font-semibold">{{ o.paid_total|floatformat:'2g' }} {{ o.currency }}</div>
+                                <div class="text-[11px] text-gray-500">{{ o.payments.all|length }} шилжүүлэг</div></div>
+                            <div><span class="lbl">Үлдэгдэл</span>
+                                {% if o.pay_remaining is None %}<div class="num font-semibold">—</div>
+                                {% elif o.pay_remaining > 0.009 %}<div class="num font-semibold late">{{ o.pay_remaining|floatformat:'2g' }} {{ o.currency }}</div>
+                                {% elif o.pay_over %}<div class="num font-semibold text-amber-700" title="Шилжүүлсэн нь төлөх дүнгээс их">Илүү {{ o.pay_over|floatformat:'2g' }} {{ o.currency }}</div>
+                                {% else %}<div class="font-semibold text-green-700">✓ Бүрэн</div>{% endif %}</div>
                         </div>
+                        {% if o.pay_pct is not None %}
+                        <div class="pay-bar" role="img" aria-label="Төлбөрийн биелэлт {{ o.pay_pct|floatformat:0 }}%">
+                            {% for p in o.payments.all %}{% if p.share %}<div style="width: {{ p.share|stringformat:'.2f' }}%" title="{{ forloop.counter }}. {{ p.paid_date|date:'Y-m-d' }} · {{ p.amount|floatformat:'2g' }} {{ o.currency }}"></div>{% endif %}{% endfor %}
+                        </div>
+                        <div class="text-xs text-gray-500 -mt-1">{{ o.pay_pct|floatformat:1 }}% төлөгдсөн</div>
+                        {% endif %}
                         {% if o.payments.all %}
-                        <div class="flex flex-wrap gap-3">
-                            {% for p in o.payments.all %}
-                            <div class="flex gap-2 items-start border border-gray-100 rounded-lg p-2 text-xs">
-                                {% if p.receipt %}<a href="{% url 'shop:import_receipt' p.pk %}" target="_blank" rel="noopener" title="Баримт нээх"><img class="rcpt" src="{% url 'shop:import_receipt' p.pk %}" alt="Баримт" loading="lazy" onerror="this.replaceWith(document.createTextNode('📎 Баримт'))"></a>{% endif %}
-                                <div><div class="num font-semibold">{{ p.amount|floatformat:'2g' }} {{ o.currency }}</div><div class="text-gray-500">{{ p.paid_date|date:'Y-m-d' }}</div>{% if p.note %}<div class="text-gray-500">{{ p.note }}</div>{% endif %}</div>
-                                <button type="submit" name="delete_payment" value="{{ p.id|unlocalize }}" class="x edit-only" onclick="return confirm('Энэ төлбөрийг устгах уу?');" title="Устгах">✕</button>
-                            </div>
-                            {% endfor %}
+                        <div class="overflow-x-auto">
+                            <table class="pay-table">
+                                <thead><tr><th>№</th><th>Огноо</th><th class="r">Дүн, {{ o.currency }}</th><th class="r">Хувь</th><th class="r">Хуримтлагдсан</th><th>Баримт</th><th>Тайлбар</th><th></th></tr></thead>
+                                <tbody>
+                                    {% for p in o.payments.all %}
+                                    <tr>
+                                        <td class="text-gray-500">{{ forloop.counter }}</td>
+                                        <td class="num whitespace-nowrap">{{ p.paid_date|date:'Y-m-d' }}</td>
+                                        <td class="r num font-semibold">{{ p.amount|floatformat:'2g' }}</td>
+                                        <td class="r num text-gray-500">{% if p.share is not None %}{{ p.share|floatformat:1 }}%{% endif %}</td>
+                                        <td class="r num text-gray-500">{{ p.running|floatformat:'2g' }}</td>
+                                        <td><div class="att">
+                                            {% if p.receipt %}<div class="att-item"><a href="{% url 'shop:import_receipt' p.pk %}" target="_blank" rel="noopener" title="Баримт нээх"><img src="{% url 'shop:import_receipt' p.pk %}" alt="Баримт" loading="lazy" onerror="this.replaceWith(Object.assign(document.createElement('span'), {className: 'att-doc', textContent: '📄'}))"></a></div>{% endif %}
+                                            {% for r in p.receipts.all %}
+                                            <div class="att-item">
+                                                <a href="{% url 'shop:import_payment_receipt' r.pk %}" target="_blank" rel="noopener" title="{{ r.original_name }}">{% if r.is_image %}<img src="{% url 'shop:import_payment_receipt' r.pk %}" alt="{{ r.original_name }}" loading="lazy">{% else %}<span class="att-doc">📄</span>{% endif %}<span class="att-name">{{ r.original_name|truncatechars:14 }}</span></a>
+                                                <button type="submit" name="delete_payment_receipt" value="{{ r.id|unlocalize }}" class="x edit-only" onclick="return confirm('{{ r.original_name|escapejs }} баримтыг устгах уу?');" title="Устгах">✕</button>
+                                            </div>
+                                            {% endfor %}
+                                            <label class="att-add edit-only" title="Энэ шилжүүлэгт баримт нэмэх (SWIFT, хуулга г.м., {{ max_receipts }} хүртэл)">
+                                                <span>📎 Нэмэх</span><input type="file" multiple accept="image/*,application/pdf" name="payment{{ p.id|unlocalize }}_files" data-pay-files>
+                                            </label>
+                                            <span class="att-picked" data-att-picked></span>
+                                        </div></td>
+                                        <td class="text-gray-600">{{ p.note }}</td>
+                                        <td><button type="submit" name="delete_payment" value="{{ p.id|unlocalize }}" class="x edit-only" onclick="return confirm('{{ p.paid_date|date:'Y-m-d' }}-ны {{ p.amount|floatformat:'2g' }} {{ o.currency }} шилжүүлгийг баримттай нь устгах уу?');" title="Устгах">✕</button></td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                                {% if o.payments.all|length > 1 %}<tfoot><tr><td colspan="2">Нийт</td><td class="r num">{{ o.paid_total|floatformat:'2g' }}</td><td class="r num">{% if o.pay_pct is not None %}{{ o.pay_pct|floatformat:1 }}%{% endif %}</td><td colspan="4"></td></tr></tfoot>{% endif %}
+                            </table>
                         </div>
                         {% endif %}
-                        <div class="edit-only grid grid-cols-2 md:grid-cols-5 gap-2 items-end bg-gray-50 rounded-lg p-2">
-                            <label><span class="lbl">Шилжүүлсэн огноо</span><input class="field" type="date" name="so{{ o.id|unlocalize }}_pay_date" value="{{ today|date:'Y-m-d' }}"></label>
-                            <label><span class="lbl">Дүн, {{ o.currency }}</span><input class="field text-right" type="number" step="any" name="so{{ o.id|unlocalize }}_pay_amount"></label>
-                            <label class="md:col-span-2"><span class="lbl">Баримтын зураг</span><input class="field" type="file" accept="image/*,application/pdf" name="so{{ o.id|unlocalize }}_pay_file"></label>
-                            <label><span class="lbl">Тайлбар</span><input class="field" name="so{{ o.id|unlocalize }}_pay_note" placeholder="Урьдчилгаа 30%"></label>
+                        {# Шинэ шилжүүлэг - нэг дор хэд хэдийг нэмж болно #}
+                        <div class="edit-only space-y-2" data-pay-new data-prefix="so{{ o.id|unlocalize }}_">
+                            <div data-pay-rows>
+                                {% include 'shop/_import_pay_row.html' with prefix=o.id key='0' currency=o.currency %}
+                            </div>
+                            <template data-pay-tpl>{% include 'shop/_import_pay_row.html' with prefix=o.id key='__KEY__' currency=o.currency %}</template>
+                            <button type="button" data-pay-add class="text-sm font-medium text-primary hover:underline">+ Өөр шилжүүлэг нэмэх</button>
+                            <span class="text-xs text-gray-500">Нэг захиалгын төлбөрийг хэд хэдэн удаа шилжүүлсэн бол мөр бүрд нэгийг оруулна. Нэг шилжүүлэгт олон баримт (SWIFT, банкны хуулга г.м.) хавсаргаж болно.</span>
                         </div>
                     </div>
 
                     {# Бараа #}
                     <div class="overflow-x-auto">
                         <table class="im-table lines">
-                            <thead><tr><th>№</th><th style="min-width:240px">Бараа</th><th>Нэгж</th><th class="r">Хайрцаг</th><th class="r">Хайрцагт</th><th class="r">Нийт тоо</th><th class="r">Нэгж үнэ</th><th class="r" title="Тоо × нэгж үнэ (хөнгөлөлтөөс өмнө)">Нийт дүн</th><th class="r" title="Нийлүүлэгчийн хөнгөлөлт">Хөнгөлөлт %</th><th class="r" title="Хөнгөлөлтийн дараа - татвар, шилжүүлэх дүн үүнээс">Төлөх дүн</th><th class="r tx" title="Гаалийн татварын хувь">Гааль %</th><th class="r tx" title="НӨАТ-ын хувь">НӨАТ %</th><th class="r tx">Гаалийн татвар</th><th class="r tx">НӨАТ</th></tr></thead>
+                            <thead><tr><th>№</th><th style="min-width:240px">Бараа</th><th>Нэгж</th><th class="r">Хайрцаг</th><th class="r">Хайрцагт</th><th class="r">Нийт тоо</th><th class="r">Нэгж үнэ</th><th class="r" title="Тоо × нэгж үнэ (хөнгөлөлтөөс өмнө)">Нийт дүн</th><th class="r" title="Нийлүүлэгчийн хөнгөлөлт">Хөнгөлөлт %</th><th class="r" title="Хөнгөлөлтийн дараа - нийлүүлэгчид шилжүүлэх дүн">Төлөх дүн</th><th class="r" title="Монгол руу гарахаас өмнө гадаадад гарсан нэмэлт зардал ({{ o.currency }}) - хөл дүнд оруулахад мөрүүдийн төлөх дүнгийн жингээр хуваарилагдана">Гадаад дахь нэмэлт зардал</th><th class="r" title="Төлөх дүн + гадаад дахь нэмэлт зардал - гааль, НӨАТ үүнээс бодогдоно">Нийт төлбөр</th><th class="r tx" title="Гаалийн татварын хувь">Гааль %</th><th class="r tx" title="НӨАТ-ын хувь">НӨАТ %</th><th class="r tx">Гаалийн татвар</th><th class="r tx">НӨАТ</th><th class="r" title="Зарах үнэ ₮ - хоосон бол ERP-ийн 001 үндсэн үнэ (саарал); гараар оруулсныг шараар ялгана">Зарах үнэ ₮</th><th class="r" title="Бохир ашгийн хувь = (зарах үнэ × тоо − өртөг) ÷ (зарах үнэ × тоо); өртөг = гаалийн үнэ (бараа + тээвэр) + гааль + НӨАТ, ₮">Ашиг %</th></tr></thead>
                             <tbody data-lines>
                                 {% for l in o.lines.all %}
                                 <tr data-line data-saved>
                                     <td class="no"><span class="no-n" data-no>{{ forloop.counter }}</span>{% if editable %}<button type="button" class="xbtn" data-remove title="Мөрийг устгах" aria-label="Устгах"><svg viewBox="0 0 20 20" width="14" height="14" aria-hidden="true"><path d="M5 5l10 10M15 5L5 15" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button>{% endif %}</td>
-                                    <td><input class="field" name="so{{ o.id|unlocalize }}_line_name" value="{{ l.item_name }}" list="dl-so{{ o.id|unlocalize }}" data-k="name">
+                                    <td><input class="field" name="so{{ o.id|unlocalize }}_line_name" value="{{ l.item_name }}" list="dl-so{{ o.id|unlocalize }}" autocomplete="off" data-k="name">
                                         <div class="hint" data-hint>{% if l.item_id %}{{ l.item_id }}{% else %}шинэ бараа{% endif %}</div></td>
                                     <td><select class="field" name="so{{ o.id|unlocalize }}_line_measure" data-k="measure">{% for m in measures %}<option {% if m == l.measure %}selected{% endif %}>{{ m }}</option>{% endfor %}</select></td>
                                     <td><input class="field n" type="number" step="any" min="0" name="so{{ o.id|unlocalize }}_line_boxes" value="{{ l.box_qty|unlocalize }}" data-k="boxes" style="width:80px"></td>
@@ -170,24 +226,29 @@
                                         <input type="hidden" name="so{{ o.id|unlocalize }}_line_last" value="price" data-k="last"></td>
                                     <td><input class="field n" type="number" step="any" min="0" max="100" name="so{{ o.id|unlocalize }}_line_disc" value="{{ l.discount_rate|floatformat:'-4'|unlocalize }}" data-k="disc" style="width:70px"></td>
                                     <td><input class="field n font-semibold" type="number" step="any" min="0" name="so{{ o.id|unlocalize }}_line_net" value="{{ l.total_amount|unlocalize }}" data-k="net" style="width:115px"></td>
+                                    <td class="r num text-gray-600" data-extra>{{ l.extra_share|floatformat:'2g' }}</td>
+                                    <td class="r num font-semibold" data-paytotal>{{ l.pay_total|floatformat:'2g' }}</td>
                                     <td class="tx"><input class="field n" type="number" step="any" min="0" max="100" name="so{{ o.id|unlocalize }}_line_duty" value="{{ l.duty_rate|unlocalize }}" data-k="duty" style="width:62px"></td>
                                     <td class="tx"><input class="field n" type="number" step="any" min="0" max="100" name="so{{ o.id|unlocalize }}_line_vat" value="{{ l.vat_rate|unlocalize }}" data-k="vat" style="width:62px"></td>
                                     <td class="r num tx" data-duty title="Гаалийн үнэ {{ l.customs_value|floatformat:'2g' }} {{ l.tax_currency }}">{{ l.duty_amount|floatformat:'2g' }}</td>
                                     <td class="r num tx" data-vat>{{ l.vat_amount|floatformat:'2g' }}</td>
+                                    <td><input class="field n{% if l.price_manual %} manual{% endif %}" type="number" step="any" min="0" name="so{{ o.id|unlocalize }}_line_sale" value="{{ l.sale_price|default_if_none:''|unlocalize }}" placeholder="{% if l.erp_price is not None %}{{ l.erp_price|floatformat:'0'|unlocalize }}{% endif %}" data-erp="{{ l.erp_price|default_if_none:''|unlocalize }}" data-k="sale" style="width:100px"
+                                               title="{% if l.erp_price is not None %}ERP 001 үнэ: {{ l.erp_price|floatformat:'0g' }} ₮ ({{ l.erp_price_date|date:'Y-m-d' }}){% else %}ERP-д 001 үнэ алга{% endif %}"></td>
+                                    <td class="r num margin{% if l.profit is not None and l.profit < 0 %} neg{% endif %}" data-margin>{% if l.margin is not None %}{{ l.margin }}%{% endif %}</td>
                                 </tr>
                                 {% endfor %}
                             </tbody>
-                            <tfoot><tr><td></td><td>Нийт</td><td></td><td class="r num" data-sum-boxes>{{ o.box_total|floatformat:'-2g' }}</td><td></td><td></td><td></td><td class="r num text-gray-500" data-sum-gross>{{ o.gross_total|floatformat:'2g' }}</td><td></td><td class="r num" data-sum-total>{{ o.goods_total|floatformat:'2g' }}</td><td></td><td class="r text-xs text-gray-500" data-tax-cur>{% if o.tax_currency == 'MNT' %}₮{% else %}{{ o.tax_currency }}{% endif %}</td><td class="r num" data-sum-duty>{{ o.tax_duty|floatformat:'2g' }}</td><td class="r num" data-sum-vat>{{ o.tax_vat|floatformat:'2g' }}</td></tr></tfoot>
+                            <tfoot><tr><td></td><td>Нийт</td><td></td><td class="r num" data-sum-boxes>{{ o.box_total|floatformat:'-2g' }}</td><td></td><td></td><td></td><td class="r num text-gray-500" data-sum-gross>{{ o.gross_total|floatformat:'2g' }}</td><td></td><td class="r num" data-sum-total>{{ o.goods_total|floatformat:'2g' }}</td><td class="r"><input class="field n" type="number" step="any" min="0" name="so{{ o.id|unlocalize }}_foreign_extra" value="{% if o.foreign_extra %}{{ o.foreign_extra|unlocalize }}{% endif %}" data-extra-input style="width:115px" title="Гадаад дахь нэмэлт зардлын нийт дүн, {{ o.currency }}" placeholder="0"></td><td class="r num" data-sum-paytotal>{{ o.pay_all_total|floatformat:'2g' }}</td><td></td><td class="r text-xs text-gray-500" data-tax-cur>{% if o.tax_currency == 'MNT' %}₮{% else %}{{ o.tax_currency }}{% endif %}</td><td class="r num" data-sum-duty>{{ o.tax_duty|floatformat:'2g' }}</td><td class="r num" data-sum-vat>{{ o.tax_vat|floatformat:'2g' }}</td><td></td><td></td></tr></tfoot>
                         </table>
                     </div>
                     <div class="edit-only px-4 py-3 flex flex-wrap gap-2 items-center">
                         <button type="button" class="text-sm px-3 py-1.5 rounded-lg border border-dashed border-sky-700 text-sky-800 hover:bg-sky-50" data-add-line>+ Бараа нэмэх</button>
-                        <span class="text-xs text-gray-500">{% if o.suggested %}Энэ нийлүүлэгчээс өмнө авч байсан {{ o.suggested|length }} бараа жагсаалтын эхэнд гарна.{% else %}Энэ нийлүүлэгчээс өмнө авсан түүх алга.{% endif %} Жагсаалтад байхгүй барааг нэрээр нь шинээр бичиж болно.</span>
+                        <span class="text-xs text-gray-500">{% if o.suggested %}Зөвхөн энэ нийлүүлэгчээс өмнө авч байсан {{ o.suggested|length }} бараа санал болгоно.{% else %}Энэ нийлүүлэгчээс өмнө авсан түүх алга - бүх бараанаас хайна.{% endif %} Жагсаалтад байхгүй барааг нэрээр нь шинээр бичиж болно.</span>
                     </div>
                     <template data-line-tpl>
                         <tr data-line>
                             <td class="no"><span class="no-n" data-no></span><button type="button" class="xbtn" data-remove title="Мөрийг устгах" aria-label="Устгах"><svg viewBox="0 0 20 20" width="14" height="14" aria-hidden="true"><path d="M5 5l10 10M15 5L5 15" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button></td>
-                            <td><input class="field" name="so{{ o.id|unlocalize }}_line_name" list="dl-so{{ o.id|unlocalize }}" data-k="name" placeholder="Барааны нэрээр хайх эсвэл шинээр бичих"><div class="hint" data-hint></div></td>
+                            <td><input class="field" name="so{{ o.id|unlocalize }}_line_name" list="dl-so{{ o.id|unlocalize }}" autocomplete="off" data-k="name" placeholder="Барааны нэрээр хайх эсвэл шинээр бичих"><div class="hint" data-hint></div></td>
                             <td><select class="field" name="so{{ o.id|unlocalize }}_line_measure" data-k="measure">{% for m in measures %}<option>{{ m }}</option>{% endfor %}</select></td>
                             <td><input class="field n" type="number" step="any" min="0" name="so{{ o.id|unlocalize }}_line_boxes" value="0" data-k="boxes" style="width:80px"></td>
                             <td><input class="field n" type="number" step="any" min="0" name="so{{ o.id|unlocalize }}_line_per" value="0" data-k="per" style="width:90px"></td>
@@ -197,10 +258,14 @@
                                 <input type="hidden" name="so{{ o.id|unlocalize }}_line_last" value="price" data-k="last"></td>
                             <td><input class="field n" type="number" step="any" min="0" max="100" name="so{{ o.id|unlocalize }}_line_disc" value="0" data-k="disc" style="width:70px"></td>
                             <td><input class="field n font-semibold" type="number" step="any" min="0" name="so{{ o.id|unlocalize }}_line_net" value="0" data-k="net" style="width:115px"></td>
+                            <td class="r num text-gray-600" data-extra>0.00</td>
+                            <td class="r num font-semibold" data-paytotal>0.00</td>
                             <td class="tx"><input class="field n" type="number" step="any" min="0" max="100" name="so{{ o.id|unlocalize }}_line_duty" value="{{ default_duty|unlocalize }}" data-k="duty" style="width:62px"></td>
                             <td class="tx"><input class="field n" type="number" step="any" min="0" max="100" name="so{{ o.id|unlocalize }}_line_vat" value="{{ default_vat|unlocalize }}" data-k="vat" style="width:62px"></td>
                             <td class="r num tx" data-duty>0</td>
                             <td class="r num tx" data-vat>0</td>
+                            <td><input class="field n" type="number" step="any" min="0" name="so{{ o.id|unlocalize }}_line_sale" data-k="sale" style="width:100px" placeholder="001 үнэ" title="Хоосон бол ERP-ийн 001 үндсэн үнэ"></td>
+                            <td class="r num margin" data-margin></td>
                         </tr>
                     </template>
                     {% if editable %}
@@ -236,13 +301,13 @@
                         <input class="field" name="transport_mode" value="{{ shipment.transport_mode }}" list="dl-transport" placeholder="Далай, төмөр зам, ачааны машин, түүвэр ачаа эсвэл шинээр бичих"></label>
                     <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
                         <label><span class="lbl">Ачих огноо</span><input class="field" type="date" name="load_planned" value="{{ shipment.load_planned|date:'Y-m-d' }}"></label>
-                        <label><span class="lbl">Ачигдсан огноо</span><input class="field" type="date" name="load_actual" value="{{ shipment.load_actual|date:'Y-m-d' }}" data-load-date></label>
+                        <label><span class="lbl">Ачигдсан огноо</span><input class="field" type="date" name="load_actual" value="{{ shipment.load_actual|date:'Y-m-d' }}" max="{{ today|date:'Y-m-d' }}" title="Ирээдүйн огноо оруулахгүй - болоогүй бол «Ачих огноо»-нд" data-load-date></label>
                         <label><span class="lbl">Ачигдсан газар</span><input class="field" name="load_place" value="{{ shipment.load_place }}" placeholder="Жишээ: Гамбург" data-load-place></label>
                     </div>
                     <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
                         <label><span class="lbl">Ирэх газар</span><input class="field" name="arrival_place" value="{{ shipment.arrival_place }}"></label>
                         <label><span class="lbl">Ирэх огноо</span><input class="field" type="date" name="arrival_planned" value="{{ shipment.arrival_planned|date:'Y-m-d' }}"></label>
-                        <label><span class="lbl">Ирсэн огноо</span><input class="field" type="date" name="arrival_actual" value="{{ shipment.arrival_actual|date:'Y-m-d' }}"></label>
+                        <label><span class="lbl">Ирсэн огноо</span><input class="field" type="date" name="arrival_actual" value="{{ shipment.arrival_actual|date:'Y-m-d' }}" max="{{ today|date:'Y-m-d' }}" title="Ирээдүйн огноо оруулахгүй - болоогүй бол «Ирэх огноо»-нд"></label>
                     </div>
                     <label><span class="lbl">Тайлбар</span><input class="field" name="note" value="{{ shipment.note }}"></label>
                 </section>
@@ -304,7 +369,7 @@
 
                 <section class="bg-white rounded-xl shadow-sm border border-gray-100 p-4 space-y-3" id="customs">
                     <h2 class="font-semibold">Гааль, НӨАТ</h2>
-                    <p class="text-xs text-gray-500">Гаалийн үнэ = барааны үнэ + тээвэр (барааны үнийн жингээр хуваарилна), төгрөгөөр. Гаалийн татвар = гаалийн үнэ × %; НӨАТ = (гаалийн үнэ + гаалийн татвар) × %. Хувийг бараа бүрийн мөрөнд засна.</p>
+                    <p class="text-xs text-gray-500">Гаалийн үнэ = нийт төлбөр (төлөх дүн + гадаад дахь нэмэлт зардал) + тээвэр (үнийн жингээр хуваарилна), төгрөгөөр. Гаалийн татвар = гаалийн үнэ × %; НӨАТ = (гаалийн үнэ + гаалийн татвар) × %. Хувийг бараа бүрийн мөрөнд засна.</p>
                     {% if shipment.rate_rows %}
                     <div class="grid grid-cols-2 gap-3">
                         {% for c, manual, auto, auto_date in shipment.rate_rows %}
@@ -325,6 +390,46 @@
                         <tr><td class="py-1">НӨАТ</td><td class="py-1 text-right num font-semibold" data-t="vat">{{ shipment.tax.vat|floatformat:'2g' }} ₮</td></tr>
                         <tr class="border-t border-gray-200"><td class="pt-2 font-semibold">Нийт татвар</td><td class="pt-2 text-right num font-bold" data-t="total">{{ shipment.tax.total|floatformat:'2g' }} ₮</td></tr>
                     </table>
+                    {% if shipment.arrival_actual %}
+                    {# Ирсэн: гаалийн мэдүүлгийн бодит нийт дүн - мөрүүдэд тооцоолсон татварынх нь жингээр хуваагдана #}
+                    <div class="border-t border-gray-100 pt-3 space-y-2">
+                        <p class="text-xs text-gray-500">Бодит дүн (гаалийн мэдүүлгээр). Оруулбал бараа бүрийн мөрөнд үнийн дүнгийн (гаалийн үнийн) жингээр хуваагдана. Хоосон = тооцоолсноор.</p>
+                        <div class="grid grid-cols-2 gap-3">
+                            <label><span class="lbl">Бодит гаалийн татвар, ₮</span>
+                                <input class="field text-right" type="number" step="any" min="0" name="customs_duty_actual" value="{{ shipment.customs_duty_actual|default_if_none:''|unlocalize }}" data-actual="duty" placeholder="{{ shipment.tax_calc.duty|unlocalize }}">
+                                <span class="text-xs text-gray-500">Тооцоолсон: <span class="num" data-calc="duty">{{ shipment.tax_calc.duty|floatformat:'2g' }}</span> ₮</span></label>
+                            <label><span class="lbl">Бодит НӨАТ, ₮</span>
+                                <input class="field text-right" type="number" step="any" min="0" name="customs_vat_actual" value="{{ shipment.customs_vat_actual|default_if_none:''|unlocalize }}" data-actual="vat" placeholder="{{ shipment.tax_calc.vat|unlocalize }}">
+                                <span class="text-xs text-gray-500">Тооцоолсон: <span class="num" data-calc="vat">{{ shipment.tax_calc.vat|floatformat:'2g' }}</span> ₮</span></label>
+                        </div>
+                    </div>
+                    {# Бусад зардал - мөр нэмж оруулна; нийлбэр нь барааны гаалийн үнийн жингээр өртөгт хуваагдана #}
+                    <div class="border-t border-gray-100 pt-3 space-y-2" data-other>
+                        <input type="hidden" name="other_present" value="1">
+                        <div class="flex items-baseline justify-between gap-2">
+                            <span class="font-semibold text-sm">Бусад зардал, ₮</span>
+                            <span class="text-sm">Нийт: <b class="num" data-other-total>{{ shipment.other_total|floatformat:'2g' }}</b> ₮</span>
+                        </div>
+                        <p class="text-xs text-gray-500">Ачилт буулгалт, зуучлал, агуулах, дотоодын тээвэр гэх мэт. Нийт дүн барааны өртөгт гаалийн үнийн жингээр хуваагдаж, бохир ашигт тусна.</p>
+                        <div class="space-y-1.5" data-other-rows>
+                            {% for name, amount in shipment.other_rows %}
+                            <div class="flex gap-2 items-center" data-other-row>
+                                <input class="field flex-1" name="other_name" value="{{ name }}" placeholder="Зардлын нэр">
+                                <input class="field text-right" style="width:150px" type="number" step="any" min="0" name="other_amount" value="{{ amount|unlocalize }}" placeholder="Дүн ₮" data-other-amount>
+                                <button type="button" class="xbtn" data-other-remove title="Мөрийг устгах" aria-label="Устгах"><svg viewBox="0 0 20 20" width="14" height="14" aria-hidden="true"><path d="M5 5l10 10M15 5L5 15" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button>
+                            </div>
+                            {% endfor %}
+                        </div>
+                        <template data-other-tpl>
+                            <div class="flex gap-2 items-center" data-other-row>
+                                <input class="field flex-1" name="other_name" placeholder="Зардлын нэр">
+                                <input class="field text-right" style="width:150px" type="number" step="any" min="0" name="other_amount" placeholder="Дүн ₮" data-other-amount>
+                                <button type="button" class="xbtn" data-other-remove title="Мөрийг устгах" aria-label="Устгах"><svg viewBox="0 0 20 20" width="14" height="14" aria-hidden="true"><path d="M5 5l10 10M15 5L5 15" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button>
+                            </div>
+                        </template>
+                        <button type="button" class="edit-only text-sm px-3 py-1.5 rounded-lg border border-dashed border-sky-700 text-sky-800 hover:bg-sky-50" data-other-add>+ Зардал нэмэх</button>
+                    </div>
+                    {% endif %}
                 </section>
             </div>
 
@@ -349,11 +454,13 @@
 {% block extra_js %}
 {% if editable %}
 {{ catalog|json_script:"im-catalog" }}
+{{ last_duty|json_script:"im-last-duty" }}
 {{ weight_measures|json_script:"im-weight" }}
 {{ freight_json|json_script:"im-freight" }}
 <script>
 (function () {
     var CATALOG = JSON.parse(document.getElementById('im-catalog').textContent);
+    var LAST_DUTY = JSON.parse(document.getElementById('im-last-duty').textContent);
     var WEIGHT = JSON.parse(document.getElementById('im-weight').textContent);
     var FREIGHT = JSON.parse(document.getElementById('im-freight').textContent);
     var form = document.getElementById('im-form');
@@ -407,6 +514,17 @@
         }
     }
 
+    // services.imports.distribute-тай ижил: жингээр 0.01 нарийвчлалтай, тойруулгын үлдэгдэл хамгийн том жинтэйд
+    function split(total, weights) {
+        if (!weights.length) return [];
+        var wsum = weights.reduce(function (s, w) { return s + w; }, 0);
+        if (!wsum) { weights = weights.map(function () { return 1; }); wsum = weights.length; }
+        var parts = weights.map(function (w) { return round(total * w / wsum, 2); });
+        var big = weights.indexOf(Math.max.apply(null, weights));
+        parts[big] = round(parts[big] + total - parts.reduce(function (s, v) { return s + v; }, 0), 2);
+        return parts;
+    }
+
     function sums(block) {
         var boxes = 0, gross = 0, total = 0;
         block.querySelectorAll('[data-line]').forEach(function (row) {
@@ -428,10 +546,22 @@
         document.querySelectorAll('[data-so]').forEach(function (block) {
             var cur = block.querySelector('[data-currency]').value;
             needed[cur] = 1;
-            block.querySelectorAll('[data-line]').forEach(function (row) {
-                lines.push({ row: row, block: block, cur: cur, total: num(field(row, 'net').value),
+            // Гадаад дахь нэмэлт зардал - мөрүүдийн төлөх дүнгийн жингээр; нийт төлбөр = төлөх дүн + хуваарь
+            var rows = Array.prototype.slice.call(block.querySelectorAll('[data-line]'));
+            var extraEl = block.querySelector('[data-extra-input]'), extra = extraEl ? Math.max(num(extraEl.value), 0) : 0;
+            var nets = rows.map(function (row) { return num(field(row, 'net').value); });
+            var shares = extra ? split(extra, nets) : nets.map(function () { return 0; });
+            var payAll = 0;
+            rows.forEach(function (row, i) {
+                var pay = round(nets[i] + shares[i], 2);
+                payAll += pay;
+                row.querySelector('[data-extra]').textContent = fmt(shares[i], 2);
+                row.querySelector('[data-paytotal]').textContent = fmt(pay, 2);
+                lines.push({ row: row, block: block, cur: cur, total: pay,
                              duty: num(field(row, 'duty').value), vat: num(field(row, 'vat').value) });
             });
+            var payEl = block.querySelector('[data-sum-paytotal]');
+            if (payEl) payEl.textContent = fmt(payAll, 2);
         });
         if (FREIGHT.total) needed[FREIGHT.currency] = 1;
         var missing = Object.keys(needed).filter(function (c) { return !rates[c]; });
@@ -444,12 +574,47 @@
         var goodsAll = lines.reduce(function (s, l) { return s + (rates[l.cur] ? l.total * rates[l.cur] : 0); }, 0);
         var t = { goods: 0, freight: 0, customs_value: 0, duty: 0, vat: 0 }, perBlock = new Map();
         lines.forEach(function (l) {
-            var rated = !!rates[l.cur], base = rated ? l.total * rates[l.cur] : l.total;
-            var share = rated && freight && goodsAll ? freight * base / goodsAll : 0;
-            var cv = round(base + share, 2), duty = round(cv * l.duty / 100, 2), vat = round((cv + duty) * l.vat / 100, 2);
+            l.rated = !!rates[l.cur];
+            l.base = l.rated ? l.total * rates[l.cur] : l.total;
+            l.share = l.rated && freight && goodsAll ? freight * l.base / goodsAll : 0;
+            l.cv = round(l.base + l.share, 2);
+            l.dutyAmt = round(l.cv * l.duty / 100, 2);
+            l.vatAmt = round((l.cv + l.dutyAmt) * l.vat / 100, 2);
+        });
+        // Ирсэн захиалгын бодит нийт дүн (₮) - compute_taxes-тай ижил: үнийн дүнгийн (гаалийн үнийн) жингээр хуваана
+        var rated = lines.filter(function (l) { return l.rated; });
+        ['duty', 'vat'].forEach(function (k) {
+            var calc = rated.reduce(function (s, l) { return s + l[k + 'Amt']; }, 0);
+            var calcEl = document.querySelector('[data-calc="' + k + '"]');
+            if (calcEl) calcEl.textContent = fmt(calc, 2);
+            var input = document.querySelector('[data-actual="' + k + '"]');
+            if (!input || input.value.trim() === '' || !rated.length) return;
+            var parts = split(num(input.value), rated.map(function (l) { return l.cv; }));
+            rated.forEach(function (l, i) { l[k + 'Amt'] = parts[i]; });
+        });
+        var otherTotal = 0;
+        document.querySelectorAll('[data-other-amount]').forEach(function (el) { otherTotal += Math.max(num(el.value), 0); });
+        var otherEl = document.querySelector('[data-other-total]');
+        if (otherEl) otherEl.textContent = fmt(otherTotal, 2);
+        if (rated.length && otherTotal && document.querySelector('[data-other]')) {
+            var parts = split(otherTotal, rated.map(function (l) { return l.cv; }));
+            rated.forEach(function (l, i) { l.other = parts[i]; });
+        }
+        lines.forEach(function (l) {
+            var rated = l.rated, base = l.base, share = l.share, cv = l.cv, duty = l.dutyAmt, vat = l.vatAmt;
             l.row.querySelector('[data-duty]').textContent = fmt(duty, 2);
             l.row.querySelector('[data-duty]').title = 'Гаалийн үнэ ' + fmt(cv, 2) + ' ' + (rated ? '₮' : l.cur);
             l.row.querySelector('[data-vat]').textContent = fmt(vat, 2);
+            // Бохир ашгийн хувь - services.imports.attach_base_prices-тай ижил (гараар үнэ, үгүй бол ERP 001 үнэ)
+            var marginEl = l.row.querySelector('[data-margin]');
+            if (marginEl) {
+                var saleEl = field(l.row, 'sale'), price = num(saleEl.value) || num(saleEl.dataset.erp || '');
+                var sale = price * num(field(l.row, 'qty').value), cost = cv + duty + vat + (l.other || 0);
+                var pct = rated && sale ? Math.round((sale - cost) / sale * 1000) / 10 : null;
+                marginEl.textContent = pct === null ? '' : pct.toFixed(1) + '%';
+                marginEl.classList.toggle('neg', pct !== null && pct < 0);
+                marginEl.title = pct === null ? '' : 'Борлуулалт ' + fmt(sale, 0) + ' ₮ − өртөг ' + fmt(cost, 0) + ' ₮ = ' + fmt(sale - cost, 0) + ' ₮';
+            }
             var b = perBlock.get(l.block) || { duty: 0, vat: 0 };
             b.duty += duty; b.vat += vat; perBlock.set(l.block, b);
             if (rated) { t.goods += base; t.freight += share; t.customs_value += cv; t.duty += duty; t.vat += vat; }
@@ -475,11 +640,12 @@
             field(row, 'measure').value = item.measure;
             field(row, 'measure').disabled = false;
             if (item.pack) field(row, 'per').value = item.pack;
-            if (item.duty != null) field(row, 'duty').value = item.duty;  // малын гаралтай 15%, бусад 10%
+            if (item.duty != null) field(row, 'duty').value = item.duty;  // сүүлд хадгалсан хувь, анх удаа бол 15% / 10%
             hint.textContent = item.id + (item.pack ? ' · хайрцагт ' + item.pack + (isWeight(row) ? ' кг' : ' ш')
                                                     : (isWeight(row) ? ' · хайрцаг дахь эсвэл нийт кг-г оруулна' : ' · хайрцаг дахь тоог оруулна уу'));
         } else {
             hint.textContent = name ? 'шинэ бараа - нэгжийг сонгоно уу' : '';
+            if (LAST_DUTY[name] != null) field(row, 'duty').value = LAST_DUTY[name];
         }
         setMode(row);
     }
@@ -578,6 +744,7 @@
         row.addEventListener('input', function (e) {
             var k = e.target.dataset.k;
             if (!k) return;
+            if (k === 'sale') { e.target.classList.toggle('manual', e.target.value.trim() !== ''); taxes(); return; }  // гараар оруулсан үнийг ялгана, ашгийг дахин бодно
             if (k !== 'name' && k !== 'duty' && k !== 'vat') recalc(row, k);
             sums(block);
         });
@@ -640,11 +807,84 @@
             markDirty();
         });
     });
+    // Шилжүүлэг: мөр нэмэх / хасах, сонгосон баримтын тоо
+    var payKey = 1;
+    form.querySelectorAll('[data-pay-new]').forEach(function (box) {
+        var rows = box.querySelector('[data-pay-rows]');
+        box.querySelector('[data-pay-add]').addEventListener('click', function () {
+            var html = box.querySelector('[data-pay-tpl]').innerHTML.replace(/__KEY__/g, 'n' + (payKey++));
+            rows.insertAdjacentHTML('beforeend', html);
+            rows.lastElementChild.querySelector('input[type=number]').focus();
+            markDirty();
+        });
+        box.addEventListener('click', function (e) {
+            var btn = e.target.closest('[data-pay-remove]');
+            if (!btn) return;
+            var row = btn.closest('[data-pay-row]');
+            // Сүүлийн мөрийг хасахгүй - хоослоно
+            if (rows.children.length > 1) row.remove();
+            else row.querySelectorAll('input:not([type=hidden]):not([type=date])').forEach(function (i) { i.value = ''; });
+            markDirty();
+        });
+    });
+    form.addEventListener('change', function (e) {
+        if (!e.target.matches('[data-pay-files]')) return;
+        var input = e.target, label = input.closest('.att').querySelector('[data-att-picked]');
+        var tooBig = Array.prototype.filter.call(input.files, function (f) { return f.size > {{ max_attachment_mb }} * 1024 * 1024; });
+        label.textContent = input.files.length ? input.files.length + ' баримт сонгосон' + (input.files.length > {{ max_receipts }} ? ' ({{ max_receipts }}-аас илүүг хадгалахгүй)' : '') : '';
+        if (tooBig.length) label.textContent += ' (' + tooBig.map(function (f) { return f.name; }).join(', ') + ' {{ max_attachment_mb }}MB-аас том)';
+        markDirty();
+    });
     form.addEventListener('input', markDirty);
-    document.querySelectorAll('[data-rate], [data-incl], [data-currency]').forEach(function (el) { el.addEventListener('input', taxes); el.addEventListener('change', taxes); });
+    document.querySelectorAll('[data-rate], [data-incl], [data-currency], [data-actual], [data-extra-input]').forEach(function (el) { el.addEventListener('input', taxes); el.addEventListener('change', taxes); });
+    // Бусад зардал: мөр нэмэх / устгах, дүн өөрчлөхөд ашгийг дахин бодно
+    var other = document.querySelector('[data-other]');
+    if (other) {
+        var otherRows = other.querySelector('[data-other-rows]');
+        other.querySelector('[data-other-add]').addEventListener('click', function () {
+            var row = other.querySelector('[data-other-tpl]').content.firstElementChild.cloneNode(true);
+            otherRows.appendChild(row);
+            row.querySelector('input').focus();
+            markDirty();
+        });
+        other.addEventListener('click', function (e) {
+            var btn = e.target.closest('[data-other-remove]');
+            if (!btn) return;
+            btn.closest('[data-other-row]').remove();
+            markDirty();
+            taxes();
+        });
+        other.addEventListener('input', function (e) { if (e.target.matches('[data-other-amount]')) taxes(); });
+    }
     form.addEventListener('submit', function () { dirty = false; });
     window.addEventListener('beforeunload', function (e) { if (dirty) { e.preventDefault(); e.returnValue = ''; } });
 })();
 </script>
 {% endif %}
+<script>
+// Барааны нэр нүдэнд багтахгүй бол курсор очих (хулгана / фокус) үед бүтэн нэрийг дээр нь харуулна
+(function () {
+    var tip = document.createElement('div');
+    tip.className = 'fixed z-50 hidden max-w-xl px-2 py-1 rounded-md bg-gray-900 text-white text-xs shadow-lg pointer-events-none';
+    document.body.appendChild(tip);
+    var current = null;
+    function show(input) {
+        if (!input.value || input.scrollWidth <= input.clientWidth) { hide(); return; }
+        current = input;
+        tip.textContent = input.value;
+        var r = input.getBoundingClientRect();
+        tip.style.left = r.left + 'px';
+        tip.style.top = (r.top - 4) + 'px';
+        tip.style.transform = 'translateY(-100%)';
+        tip.classList.remove('hidden');
+    }
+    function hide() { current = null; tip.classList.add('hidden'); }
+    function nameInput(e) { return e.target.closest && e.target.closest('.lines [data-k="name"]'); }
+    document.addEventListener('mouseover', function (e) { var i = nameInput(e); if (i) show(i); else if (current && current !== document.activeElement) hide(); });
+    document.addEventListener('focusin', function (e) { var i = nameInput(e); if (i) show(i); });
+    document.addEventListener('focusout', function (e) { if (nameInput(e)) hide(); });
+    document.addEventListener('input', function (e) { if (nameInput(e) && current === e.target) show(e.target); });
+    window.addEventListener('scroll', hide, true);
+})();
+</script>
 {% endblock %}

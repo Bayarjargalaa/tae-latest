@@ -59,7 +59,7 @@
                 <!-- Product Image -->
                 <a href="{% url 'shop:product_detail' product.id %}">
                     <div class="h-48 bg-gray-50 overflow-hidden">
-                        <img src="{{ product|product_image_url }}" 
+                        <img src="{{ product|product_thumb_url }}" 
                              alt="{{ product.name }}"
                              class="w-full h-full object-contain hover:scale-110 transition-transform duration-300">
                     </div>
@@ -87,7 +87,7 @@
                         <div class="hidden lg:block">🌍 {{ product.extension.country_of_origin }}</div>
                         {% endif %}
                         {% if product.extension and product.extension.qty_per_box %}
-                        <div class="hidden lg:block">📦 {{ product.extension.qty_per_box }} ш/хайрцаг</div>
+                        <div class="hidden lg:block">📦 {{ product.extension.box_label }}</div>
                         {% endif %}
                     </div>
 
@@ -116,10 +116,10 @@
                         {% endif %}
                     </button>
                     
-                    {% if 'product_edit' in visible_menu_keys %}
+                    {% if 'product_edit' in visible_menu_keys or 'product_image_upload' in visible_menu_keys %}
                     <a href="{% url 'shop:product_edit' product.id %}" 
                        class="block text-center w-full mt-2 bg-gray-100 text-gray-700 py-2 rounded-lg hover:bg-gray-200 transition text-xs lg:text-sm">
-                        ✏️ Засах
+                        {% if 'product_edit' in visible_menu_keys %}✏️ Засах{% else %}🖼️ Зураг оруулах{% endif %}
                     </a>
                     {% endif %}
                 </div>

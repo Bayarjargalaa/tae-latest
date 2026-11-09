@@ -66,3 +66,44 @@ def print_account(raw):
     text = f'{a[:4]} {a[4:8]} {a[8:10]} {a[10:]}'
     short = BANK_SHORT_NAMES.get(info['bank'])
     return f'{text} {short}' if short else text
+
+
+# --- Картын цалингийн багц гүйлгээ (Худалдаа хөгжлийн банк) -------------------------------------------------------
+TDB_BANK_CODE = '0004'
+
+
+def iban_check_digits(bban):
+    """Монгол IBAN-ы шалгах 2 орон (ISO 7064 mod 97-10): bban = 4 банкны код + 12 дансны дугаар."""
+    number = int(''.join(str(int(ch, 36)) for ch in bban + 'MN00'))
+    return f'{98 - number % 97:02d}'
+
+
+def card_account(raw, bank_code=TDB_BANK_CODE):
+    """Ажилтны мэдээлэл дэх картын дансыг IBAN болгоно: {'account', 'status', 'converted'}.
+    "MN..." бол цэгцэлж, хуучин дансны дугаар (зөвхөн тоо, ≤12 орон, ХХБ) бол банкны код + 12 орон болгож шалгах
+    оронг бодно (converted=True). "100004000440036205" шиг MN-гүй 18 оронтой бол MN нэмнэ."""
+    info = account_info(raw)
+    if info['status'] != 'invalid' or 'mn' in (raw or '').lower():
+        return {'account': info['account'], 'status': info['status'], 'converted': False}
+    digits = re.sub(r'\D', '', raw)
+    if len(digits) == IBAN_LENGTH - 2:  # MN-гүй IBAN
+        return {'account': 'MN' + digits, 'status': 'ok', 'converted': True}
+    if 5 <= len(digits) <= 12 and bank_code:
+        bban = bank_code + digits.zfill(12)
+        return {'account': 'MN' + iban_check_digits(bban) + bban, 'status': 'ok', 'converted': True}
+    return {'account': info['account'], 'status': 'invalid', 'converted': False}
+
+
+def tdb_branch(account):
+    """ХХБ-ны IBAN-аас салбарын код: MNkk 0004 000 [ССС] ... -> ССС (дансны дугаарын эхний 3 орон)."""
+    if len(account or '') == IBAN_LENGTH and account[4:8] == TDB_BANK_CODE:
+        return account[11:14]
+    return ''
+
+
+def bulk_name(name):
+    """Багц гүйлгээний "Хүлээн авагчийн нэр": "Мөнхбат.Д" -> "Мөнхбат", "Очгэрэл //" -> "Очгэрэл",
+    "Сарангэрэл.Э /Алтжин/" -> "Сарангэрэл" (налуу зураасан доторх тайлбар, эцгийн нэрийн үсгийг хасна)."""
+    text = re.sub(r'/[^/]*/', ' ', name or '').replace('/', ' ')
+    text = re.sub(r'\.\s*\S{1,2}\s*$', '', text.strip())
+    return re.sub(r'\s+', ' ', text).strip(' .')

@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{{ report.title }}</title>
 <style>
-@page { size: A4 landscape; margin: 10mm; }
+@page { size: A4 {% if report.portrait %}portrait{% else %}landscape{% endif %}; margin: 10mm; }
 * { box-sizing: border-box; }
 body { font-family: Arial, 'Segoe UI', sans-serif; font-size: 11px; color: #000; margin: 0; padding: 12px; background: #fff; }
 .head { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #000; padding-bottom: 6px; margin-bottom: 8px; }

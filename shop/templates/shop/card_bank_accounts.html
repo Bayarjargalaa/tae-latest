@@ -1,0 +1,161 @@
+{% extends 'base.html' %}
+
+{% block title %}Картын цалингийн данс - Euro Foods{% endblock %}
+
+{% block hide_mobile_menu %}hidden{% endblock %}
+
+{% block content %}
+{% load l10n %}
+<div class="flex min-h-screen bg-gray-50">
+    {% include 'shop/_sidebar.html' with active_page='card_bank_accounts' %}
+
+    <main class="flex-1 p-2 lg:p-8 lg:ml-0 min-w-0">
+        <div class="flex flex-wrap items-center justify-between gap-2 mb-6">
+            <div>
+                <h1 class="text-2xl lg:text-3xl font-bold text-gray-900">🏧 Картын цалингийн данс</h1>
+                <p class="text-gray-600 mt-2">{{ month_label }}ын картын {% if kind == 'advance' %}урьдчилгаа{% else %}цалингийн олгох дүн (Картанд орох){% endif %}{% if not close %} (урьдчилсан){% else %} 🔒{% endif %} -
+                    Худалдаа хөгжлийн банкны цалингийн багц гүйлгээний загвараар Excel-д гаргана.</p>
+            </div>
+            <div class="flex flex-wrap gap-2">
+                <a href="{{ export_url }}" class="bg-primary text-white px-4 py-2 rounded-lg hover:bg-green-700 transition whitespace-nowrap">⬇ Багц гүйлгээ (Excel)</a>
+                <a href="{{ ndsh_url }}" class="bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50 transition whitespace-nowrap"
+                   title="Нийгмийн даатгалын сарын тайлан: картын цалин бодолтын бүх ажилтан, Үндсэн цалин баганад бодогдсон нийт цалин">⬇ Нийгмийн даатгалын Excel</a>
+            </div>
+        </div>
+
+        {% if messages %}
+        <div class="mb-4 space-y-2">{% for m in messages %}<div class="rounded-lg px-4 py-2 text-sm {% if m.tags == 'error' %}bg-red-50 text-red-800{% else %}bg-green-50 text-green-800{% endif %}">{{ m }}</div>{% endfor %}</div>
+        {% endif %}
+
+        <form method="get" class="bg-white rounded-lg shadow p-4 mb-4 flex flex-wrap items-end gap-3">
+            <a href="?kind={{ kind }}&note={{ note|urlencode }}&year={{ prev_month.year|unlocalize }}&month={{ prev_month.month }}" class="bg-white border border-gray-300 text-gray-700 px-3 py-2 rounded-lg hover:bg-gray-50" title="Өмнөх сар">←</a>
+            <div>
+                <label for="cc-year" class="block text-xs font-medium text-gray-600 mb-1">Он</label>
+                <select id="cc-year" name="year" class="border border-gray-300 rounded-lg px-2 py-2" onchange="this.form.submit()">
+                    {% for y in years %}<option value="{{ y|unlocalize }}" {% if y == year %}selected{% endif %}>{{ y|unlocalize }}</option>{% endfor %}
+                </select>
+            </div>
+            <div>
+                <label for="cc-month" class="block text-xs font-medium text-gray-600 mb-1">Сар</label>
+                <select id="cc-month" name="month" class="border border-gray-300 rounded-lg px-2 py-2" onchange="this.form.submit()">
+                    {% for num, label in months %}<option value="{{ num }}" {% if num == month %}selected{% endif %}>{{ label }}</option>{% endfor %}
+                </select>
+            </div>
+            <a href="?kind={{ kind }}&note={{ note|urlencode }}&year={{ next_month.year|unlocalize }}&month={{ next_month.month }}" class="bg-white border border-gray-300 text-gray-700 px-3 py-2 rounded-lg hover:bg-gray-50" title="Дараагийн сар">→</a>
+            <div>
+                <label for="cc-kind" class="block text-xs font-medium text-gray-600 mb-1">Гүйлгээ</label>
+                <select id="cc-kind" name="kind" class="border border-gray-300 rounded-lg px-2 py-2" onchange="this.form.submit()">
+                    <option value="final" {% if kind != 'advance' %}selected{% endif %}>Цалин (сүүл) - Картанд орох</option>
+                    <option value="advance" {% if kind == 'advance' %}selected{% endif %}>Урьдчилгаа (урд)</option>
+                </select>
+            </div>
+            <div>
+                <label for="cc-note" class="block text-xs font-medium text-gray-600 mb-1">Гүйлгээний утга</label>
+                <input id="cc-note" name="note" value="{{ note }}" maxlength="100" class="border border-gray-300 rounded-lg px-3 py-2 w-40">
+            </div>
+            <button type="submit" class="bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50">Харах</button>
+        </form>
+
+        <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+            <div class="bg-white rounded-lg shadow p-4">
+                <div class="text-sm text-gray-500">Гүйлгээ</div>
+                <div class="text-2xl font-bold text-gray-900">{{ summary.ready }}</div>
+                <div class="text-xs text-gray-500">{{ summary.count }} ажилтнаас{% if skipped %} · {{ skipped }} нь дүнгүй{% endif %}</div>
+            </div>
+            <div class="bg-white rounded-lg shadow p-4 ring-2 ring-primary">
+                <div class="text-sm text-gray-500">Excel-д орох дүн</div>
+                <div class="text-2xl font-bold text-primary">{{ summary.ready_total|floatformat:'-2g' }}₮</div>
+                {% if summary.ready_total != summary.total %}<div class="text-xs text-amber-700">Нийт {{ summary.total|floatformat:'-2g' }}₮</div>{% endif %}
+            </div>
+            <div class="bg-white rounded-lg shadow p-4">
+                <div class="text-sm text-gray-500">IBAN болгосон</div>
+                <div class="text-2xl font-bold text-gray-900">{{ summary.converted }}</div>
+                <div class="text-xs text-gray-500">хуучин дугаараас шалгах оронг бодож</div>
+            </div>
+            <div class="bg-white rounded-lg shadow p-4">
+                <div class="text-sm text-gray-500">Анхаарах</div>
+                <div class="text-2xl font-bold {% if summary.problems %}text-red-600{% else %}text-gray-900{% endif %}">{{ summary.problems|length }}</div>
+                <div class="text-xs text-gray-500">данс / салбаргүй - Excel-д орохгүй</div>
+            </div>
+        </div>
+
+        {% if summary.problems %}
+        <div class="bg-red-50 border border-red-200 text-red-800 rounded-lg p-3 mb-4 text-sm">
+            ⚠ Дараах ажилтны данс эсвэл салбар тодорхойгүй тул Excel-д орсонгүй:
+            {% for r in summary.problems %}<b>{{ r.name }}</b> ({{ r.amount|floatformat:'-2g' }}₮){% if not forloop.last %}, {% endif %}{% endfor %}.
+            Дансыг ажилтны мэдээлэлд (эх системд) засна уу.
+        </div>
+        {% endif %}
+
+        <form method="post" class="bg-white rounded-lg shadow p-4 lg:p-6">
+            {% csrf_token %}
+            <input type="hidden" name="year" value="{{ year|unlocalize }}">
+            <input type="hidden" name="month" value="{{ month }}">
+            <input type="hidden" name="kind" value="{{ kind }}">
+            <input type="hidden" name="note" value="{{ note }}">
+            {% if not rows %}
+            <p class="text-gray-500">Энэ сард {% if kind == 'advance' %}урьдчилгаатай{% else %}картанд орох дүнтэй{% endif %} ажилтан алга байна.</p>
+            {% else %}
+            <div class="overflow-x-auto">
+                <table class="min-w-full text-sm border border-gray-200">
+                    <thead>
+                        <tr class="bg-gray-100 text-left align-bottom">
+                            <th class="px-3 py-2 font-semibold text-gray-700">№</th>
+                            <th class="px-3 py-2 font-semibold text-gray-700">Ажилтан</th>
+                            <th class="px-3 py-2 font-semibold text-gray-700">Гүйлгээний төрөл</th>
+                            <th class="px-3 py-2 font-semibold text-gray-700">Хүлээн авах банк/салбар</th>
+                            <th class="px-3 py-2 font-semibold text-gray-700">Хүлээн авах данс</th>
+                            <th class="px-3 py-2 font-semibold text-gray-700">Хүлээн авагчийн нэр</th>
+                            <th class="px-3 py-2 font-semibold text-gray-700" title="Нийгмийн даатгалын Excel-д">Ургийн овог{% if missing_family %} <span class="text-amber-600 font-normal text-xs">({{ missing_family }} хоосон)</span>{% endif %}</th>
+                            <th class="px-3 py-2 font-semibold text-gray-700">Валют</th>
+                            <th class="px-3 py-2 font-semibold text-gray-700">Гүйлгээний утга</th>
+                            <th class="px-3 py-2 font-semibold text-gray-700 text-right">Гүйлгээний дүн</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for r in rows %}
+                        <tr class="border-t {% if not r.ready %}bg-red-50{% endif %}">
+                            <td class="px-3 py-2 text-gray-500">{{ r.no }}</td>
+                            <td class="px-3 py-2 whitespace-nowrap"><div class="font-medium text-gray-900">{{ r.name }}</div><div class="text-xs text-gray-500">{{ r.code }}{% if r.position %} · {{ r.position }}{% endif %}</div></td>
+                            <td class="px-3 py-2 text-center">10</td>
+                            <td class="px-3 py-2">
+                                <input type="hidden" name="employee_code" value="{{ r.code }}">
+                                <input name="branch" value="{{ r.branch_override }}" placeholder="{{ r.auto_branch|default:'—' }}" maxlength="10"
+                                       class="w-20 border {% if r.branch_override %}border-primary ring-1 ring-primary{% else %}border-gray-300{% endif %} rounded px-2 py-1 font-mono"
+                                       title="Хоосон бол дансны дугаараас ({{ r.auto_branch|default:'тодорхойгүй' }})">
+                            </td>
+                            <td class="px-3 py-2 whitespace-nowrap">
+                                {% if r.status == 'missing' %}<span class="text-red-700 text-xs">Данс оруулаагүй</span>
+                                {% else %}
+                                <span class="font-mono tracking-wide text-gray-900">{{ r.account }}</span>
+                                {% if r.converted %}<span class="text-xs text-blue-700" title="Ажилтны мэдээлэлд: {{ r.raw }}">← {{ r.raw }}</span>{% endif %}
+                                {% if r.status == 'invalid' %}<span class="text-xs text-red-700" title="IBAN нь MN + 18 оронтой тоо байх ёстой">⚠ шалгах ({{ r.raw }})</span>{% endif %}
+                                {% endif %}
+                            </td>
+                            <td class="px-3 py-2 whitespace-nowrap">{{ r.bulk_name }}</td>
+                            <td class="px-3 py-2"><input name="family_name" value="{{ r.family_name }}" maxlength="100" class="w-36 border border-gray-300 rounded px-2 py-1"></td>
+                            <td class="px-3 py-2">MNT</td>
+                            <td class="px-3 py-2">{{ r.note }}</td>
+                            <td class="px-3 py-2 text-right whitespace-nowrap font-semibold">{{ r.amount|floatformat:'-2g' }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                    <tfoot>
+                        <tr class="border-t-2 border-gray-300 font-semibold bg-gray-50">
+                            <td class="px-3 py-2" colspan="9">Нийт ({{ summary.count }} ажилтан)</td>
+                            <td class="px-3 py-2 text-right whitespace-nowrap">{{ summary.total|floatformat:'-2g' }}</td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+            <div class="flex flex-wrap items-center justify-between gap-3 mt-4">
+                <p class="text-xs text-gray-500 max-w-3xl">Данс - ажилтны мэдээлэл дэх (эх систем) картын данс; зөвхөн тоогоор бичсэн хуучин дугаарыг
+                    ХХБ-ны IBAN болгов. Салбар - IBAN-ы дансны эхний 3 орон (MNkk 0004 000 <b>ССС</b>…); өөр бол талбарт бичээд хадгална
+                    (хоосон бол автомат). Хүлээн авагчийн нэрээс эцгийн нэрийн үсэг, налуу зураасан тайлбарыг хасав.</p>
+                <button type="submit" class="bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50 whitespace-nowrap">💾 Салбар, ургийн овог хадгалах</button>
+            </div>
+            {% endif %}
+        </form>
+    </main>
+</div>
+{% endblock %}
